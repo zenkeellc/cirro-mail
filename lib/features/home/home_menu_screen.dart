@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -45,6 +46,12 @@ class HomeMenuScreen extends ConsumerWidget {
             ),
           ],
         ),
+        // 扩展的图标按钮。主屏是窄屏下用户落地的第一屏 —— 搜索这类
+        // 「一进来就想用」的东西不该只活在邮件列表页里。
+        //
+        // 宽屏不走这一页（侧栏本身就是菜单），那条路在 `_SidebarHeader`
+        // 上，两处各接一次是刻意的，不是重复。
+        actions: AppExtensionRegistry.instance.shellActions(context),
       ),
       // 写邮件入口**不在这里**：外壳（`AppShell`）统一挂着一颗 FAB，画在各页
       // 之上。这一页再挂一颗会被它盖住 —— 看不见，却还在跑代码。

@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/data/models/enums.dart';
@@ -71,19 +72,61 @@ void main() {
         0,
       );
     });
+
+    /// 免打扰规则要在**后台**也生效 —— 后台 isolate 不跑 `main()`，
+    /// 它的注册由 `backgroundSyncCallbackDispatcher()` 那句
+    /// `registerAll(kAppExtensions)` 负责。这里钉的是下游那半段：
+    /// 注册表里有一个静音 `a@b.com` 的扩展时，这个计数要跟着降下来。
+    ///
+    /// 之所以值得单独钉：`countNotifiable` 与前台闸门
+    /// （`NotificationGate.select`）**本来是各写一遍过滤条件的**，两处
+    /// 漂了就会出现「横幅不弹、后台静默通知照旧报 N 封」—— 而用户看不出
+    /// 数字是哪儿来的。两边现在都走 `isNotifiable`。
+    test('有扩展静音某个发件人时，计数跟着降', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _MuteSenderExt('a@b.com'),
+      ]);
+      addTearDown(AppExtensionRegistry.instance.reset);
+
+      final rows = <MailRow>[
+        _row(1), // a@b.com，静音 → 不算
+        _row(2), // a@b.com，静音 → 不算
+        _row(3, sendEmail: 'c@d.com'), // 别的发件人 → 算
+      ];
+
+      expect(BackgroundSyncTask.countNotifiable(rows), 1);
+      // 反过来：注册表清空之后语义回到从前（这条防的是「规则被记住了」）。
+      AppExtensionRegistry.instance.reset();
+      expect(BackgroundSyncTask.countNotifiable(rows), 3);
+    });
   });
+}
+
+/// 一个按发件人地址静音的假扩展 —— 形状与商业版那条规则一致。
+class _MuteSenderExt extends AppExtension {
+  const _MuteSenderExt(this.muted);
+
+  final String muted;
+
+  @override
+  String get id => 'test.mute';
+
+  @override
+  bool allowsNotification(NotificationCandidate candidate) =>
+      candidate.sendEmail.toLowerCase() != muted;
 }
 
 MailRow _row(
   int emailId, {
   int type = MailType.receive,
   int unread = UnreadState.unread,
+  String sendEmail = 'a@b.com',
 }) =>
     MailRow(
       profileId: 'p-1',
       emailId: emailId,
       subject: 's$emailId',
-      sendEmail: 'a@b.com',
+      sendEmail: sendEmail,
       type: type,
       unread: unread,
     );

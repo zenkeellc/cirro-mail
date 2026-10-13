@@ -1,7 +1,7 @@
 /// Cirro Mail 的**扩展接缝**。
 ///
 /// 核心 App（根包 `mail_app`）只做两件事：启动时把扩展注册进
-/// [AppExtensionRegistry]，然后在三个固定位置把注册表里的东西取出来用。
+/// [AppExtensionRegistry]，然后在几个固定位置把注册表里的东西取出来用。
 /// 它**不认识任何一个具体的扩展** —— 商业版与第三方模块各自实现
 /// [AppExtension] 接口，核心一行都不用改。
 ///
@@ -22,8 +22,12 @@ import 'package:flutter/widgets.dart';
 
 export 'src/app_extension.dart' show AppExtension;
 export 'src/app_extension_registry.dart' show AppExtensionRegistry;
+export 'src/mail_store.dart'
+    show LocalMail, MailDeleted, MailStore, MailStoreEvent, MailStoreReset, MailUpserted;
+export 'src/notification_policy.dart' show NotificationCandidate;
+export 'src/settings_section.dart' show SettingsSection;
 
-/// 扩展往 UI 里插一块内容时的统一入口签名（目前只有「关于」页用到）。
+/// 扩展往 UI 里插一块内容时的统一入口签名（「关于」页的附加块用它）。
 ///
 /// 放在这里只是让使用方少 import 一个 `flutter/widgets.dart`；不 re-export
 /// `go_router` —— 路由相关的类型由 [AppExtension] 的签名直接带出来。

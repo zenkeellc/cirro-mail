@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
 import 'bootstrap.dart';
+import 'core/db/core_mail_store.dart';
+import 'core/extensions.dart';
 import 'core/theme/app_theme.dart';
 import 'features/notifications/background_sync_task.dart';
 import 'features/notifications/push_service.dart';
@@ -16,13 +18,23 @@ import 'providers/core_providers.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 扩展注册。**公开版这里是空的** —— `main` 分支不注册任何扩展，商业版
-  // 在商业分支上把这一行换成 `registerAll(const <AppExtension>[CirroMailPro()])`。
+  // 扩展注册。清单在 `core/extensions.dart` —— **公开版它是空的**，
+  // 商业版把那一个常量换成自己的扩展。
+  //
+  // 为什么不直接写在这行里：后台 isolate 跑的是另一个引擎、**不执行
+  // `main()`**，它也要读到同一份清单（见 `background_sync_task.dart` 的入口）。
+  // 抽出那个常量之后两个入口共用一份事实来源，副作用是**这个文件两个检出
+  // 逐字节相同** —— 以后公开版与商业版合并时它永远不会冲突。
   //
   // 放在最前面（早于下面的后台任务登记、早于 `runApp`）：注册本身是纯内存
   // 写入，而 `bootstrapAll` 会在下面被调用 —— 顺序反了扩展就收不到启动钩子。
-  AppExtensionRegistry.instance.registerAll(const <AppExtension>[]);
+  AppExtensionRegistry.instance.registerAll(kAppExtensions);
   // **不 await**：扩展初始化不该拖慢首帧（见 `AppExtension.onBootstrap`）。
+  //
+  // 这里**还没轮到**挂本地邮件读取口：库要到 `bootstrap()` 里才建（那是一段
+  // 异步流程，第一帧才跑），所以扩展在这个时刻 `mailStore` 必然是 null。
+  // 要用它的扩展去等 `AppExtensionRegistry.instance.mailStoreReady`，
+  // 别在这里想办法提前挂。
   AppExtensionRegistry.instance.bootstrapAll();
 
   // 后台任务的入口句柄要在进程一开始就登记好（平台侧要用它来唤醒后台
@@ -83,9 +95,27 @@ class _BootstrapGateState extends State<BootstrapGate> {
         final data = snapshot.data;
         if (data == null) return const _SplashScreen();
 
+        // 本地邮件读取口**在这里挂**，不早也不晚。
+        //
+        // 早不了：`main()` 里那会儿库还不存在（`bootstrap()` 是下面这行才发起
+        //   的异步流程）。扩展的启动钩子早于库、晚于它自己拿到 store，正是
+        //   为这个顺序才留了 `mailStoreReady`。
+        // 晚不得：挂得越早，扩展的索引器越早开始灌 —— 而 `data` 已经拿到手、
+        //   下面马上要建 UI 树，再往后拖没有任何好处。
+        //
+        // 这一句**在 `main.dart` 里，所以两个版本逐字节相同** —— `data.db` 是
+        // 核心自己的库，公开版挂上去也没人读（注册表里没有扩展）。
+        AppExtensionRegistry.instance.attachMailStore(CoreMailStore(data.db));
+
         // `key` 用 data 的身份：重试后是一份新的 BootstrapData，
         // 换 key 会让整个 ProviderScope（以及底下所有 provider）从头建，
         // 不会残留上一次那半截坏状态。
+        //
+        // 重试那条路不会重挂：`bootstrap()` 会新开一个 `AppDatabase`，而
+        // `attachMailStore` 第二次是空操作（见其注释）。也就是说重试之后
+        // 扩展手上还是**上一个**（可能已经关掉的）库句柄。这是刻意的取舍 ——
+        // 两个 store 意味着两个索引器灌同一份数据、互相抢锁，比「搜索不生效」
+        // 难查得多。
         return ProviderScope(
           key: ObjectKey(data),
           // 不写 `<Override>[]`：`Override` 在 riverpod 3 里是 `sealed` 且

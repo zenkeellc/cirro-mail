@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,6 +35,10 @@ import 'sections/push_section.dart';
 /// 「写邮件」排在「外观」之后：签名与常用语是**写信这件事本身**的一部分，
 /// 与调色板那种纯表现层的东西并列；而 AI 是「帮忙写」，是外加的助力，
 /// 所以排在它后面。
+///
+/// **扩展加进来的栏不在这个枚举里**（[AppExtension.settingsSections]）——
+/// 它们在运行时被插到「诊断」之后、「关于」之前。枚举只描述**内置**的那九个，
+/// `test/settings_layout_test.dart` 钉的也是它们九个数目与顺序，与扩展无关。
 enum SettingsCategory {
   instances,
   mailboxes,
@@ -92,6 +97,41 @@ enum SettingsCategory {
       };
 }
 
+/// 分类栏里的一项 —— **内置分类**或**扩展分类**。
+///
+/// ## 为什么要多这一层
+///
+/// 分类栏里的东西以前恒等于 `SettingsCategory.values`，于是「选中态」直接
+/// 存成枚举值就够了。扩展分类进来之后不行了：枚举描述不了它，而扩展栏是
+/// 每次 `build` 时从注册表现造的（`settingsSections(context)` 返回新对象），
+/// 所以**身份必须按 [key] 字符串比**，不能按对象 identity。
+///
+/// 内置用枚举名（`instances`…），扩展用 `ext:<SettingsSection.id>` ——
+/// 两者拼得出不同前缀，不会撞。
+class _SectionRef {
+  const _SectionRef.builtIn(SettingsCategory this.category) : section = null;
+
+  const _SectionRef.extension(SettingsSection this.section) : category = null;
+
+  final SettingsCategory? category;
+  final SettingsSection? section;
+
+  String get key => category?.name ?? 'ext:${section!.id}';
+
+  IconData get icon => category?.icon ?? section!.icon;
+
+  IconData get selectedIcon => category?.selectedIcon ?? section!.selectedIcon;
+
+  @override
+  bool operator ==(Object other) => other is _SectionRef && other.key == key;
+
+  @override
+  int get hashCode => key.hashCode;
+
+  @override
+  String toString() => '_SectionRef($key)';
+}
+
 /// 设置页。
 ///
 /// ## 两种形态
@@ -126,7 +166,11 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  SettingsCategory _selected = SettingsCategory.instances;
+  static const _SectionRef _default = _SectionRef.builtIn(
+    SettingsCategory.instances,
+  );
+
+  _SectionRef _selected = _default;
 
   /// 窄屏下「用户已经点进某个分类了没有」。
   ///
@@ -134,7 +178,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 看两列 → 拖回来」仍然停在外观，不会莫名退回分类列表。
   bool _opened = false;
 
-  /// **已经构造过**的分类。
+  /// **已经构造过**的分类，按 [_SectionRef.key] 记。
   ///
   /// 宽屏右栏用 `IndexedStack` 把构造过的分类留着（切走再切回来，草稿还在），
   /// 但**不一次把九个都建出来**：`PushSection` 一构造就会去读钥匙串、打中转端
@@ -149,14 +193,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// `ComposeSection` **不需要**加进来：它构造时只读 `PrefsStore`（内存、
   /// 同步），不碰钥匙串也不发请求 —— 那条规矩是为 `PushSection` 那种
   /// 「一构造就有副作用」的正文准备的。
-  final Set<SettingsCategory> _built = <SettingsCategory>{
-    SettingsCategory.instances,
-  };
+  ///
+  /// **扩展那一栏一律懒建**（点进去才构造），与内置同一套规矩 ——
+  /// 扩展正文多半要读盘或者打接口，「打开设置页」不该等于「把每个扩展都跑一遍」。
+  final Set<String> _built = <String>{_default.key};
 
-  void _select(SettingsCategory next) {
+  void _select(_SectionRef next) {
     setState(() {
       _selected = next;
-      _built.add(next);
+      _built.add(next.key);
       // 窄屏：点分类栏里的项 = 进那一页。
       _opened = true;
     });
@@ -164,32 +209,71 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _back() => setState(() => _opened = false);
 
-  /// 一个分类的正文。宿主已经搭好 Scaffold / AppBar / 分类栏，这里只出内容。
-  Widget _body(SettingsCategory category) => switch (category) {
-        SettingsCategory.instances => const InstancesSection(),
-        SettingsCategory.mailboxes => const MailboxesSection(),
-        SettingsCategory.polling => const PollingSection(),
-        SettingsCategory.appearance => const AppearanceSection(),
-        SettingsCategory.compose => const ComposeSection(),
-        SettingsCategory.ai => const AiSettingsSection(),
-        SettingsCategory.push => PushSection(onExit: _back),
-        SettingsCategory.diagnostics => const DiagnosticsSection(),
-        SettingsCategory.about => const AboutSection(),
-      };
+  /// 这一栏的正文。宿主已经搭好 Scaffold / AppBar / 分类栏，这里只出内容。
+  ///
+  /// 扩展的正文由扩展自己给（[SettingsSection.body]），宿主只负责把它放在
+  /// 同一个位置。
+  Widget _bodyOf(_SectionRef ref) {
+    final builder = ref.section?.body;
+    if (builder != null) return builder(context);
+    return switch (ref.category!) {
+      SettingsCategory.instances => const InstancesSection(),
+      SettingsCategory.mailboxes => const MailboxesSection(),
+      SettingsCategory.polling => const PollingSection(),
+      SettingsCategory.appearance => const AppearanceSection(),
+      SettingsCategory.compose => const ComposeSection(),
+      SettingsCategory.ai => const AiSettingsSection(),
+      SettingsCategory.push => PushSection(onExit: _back),
+      SettingsCategory.diagnostics => const DiagnosticsSection(),
+      SettingsCategory.about => const AboutSection(),
+    };
+  }
 
   /// 分类页的标题：推送与邮箱用长名字（分类栏里那两个短名字是为了塞得下，
   /// 到了整页/右栏顶部的标题就没有宽度压力了）。
-  String _titleOf(SettingsCategory category, AppLocalizations l10n) =>
-      switch (category) {
-        SettingsCategory.push => l10n.pushTitle,
-        SettingsCategory.mailboxes => l10n.mailboxTitle,
-        _ => category.label(l10n),
-      };
+  ///
+  /// 扩展栏的标题就是它自己给的那个（扩展自己按 locale 选好了）。
+  String _titleOf(_SectionRef ref, AppLocalizations l10n) {
+    final section = ref.section;
+    if (section != null) return section.title;
+    return switch (ref.category!) {
+      SettingsCategory.push => l10n.pushTitle,
+      SettingsCategory.mailboxes => l10n.mailboxTitle,
+      _ => ref.category!.label(l10n),
+    };
+  }
+
+  /// 分类栏 / 分类列表里的短名字。
+  String _labelOf(_SectionRef ref, AppLocalizations l10n) =>
+      ref.section?.title ?? ref.category!.label(l10n);
+
+  /// 当前要铺出来的分类清单：**九个内置 + N 个扩展**，扩展插在「诊断」之后、
+  /// 「关于」之前。
+  ///
+  /// 「关于」永远收尾这条规矩写在 `SettingsSection` 的文档里 —— 扩展各自
+  /// 决定不了自己该排第几，只能由宿主统一插在一个固定位置。
+  List<_SectionRef> _sections(BuildContext context) {
+    final extensions = <_SectionRef>[
+      for (final section in AppExtensionRegistry.instance.settingsSections(context))
+        _SectionRef.extension(section),
+    ];
+    final about = _SectionRef.builtIn(SettingsCategory.about);
+    return <_SectionRef>[
+      for (final category in SettingsCategory.values)
+        if (category != SettingsCategory.about) _SectionRef.builtIn(category),
+      ...extensions,
+      about,
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final panes = Breakpoints.panesOf(context);
+    final sections = _sections(context);
+    // 注册表可能在本次 build 之前变过（只有测试会这么做）—— 选中的那一栏
+    // 没了就退回第一栏，不然窄屏会停在一个点不回去的空页上。
+    final selected = sections.contains(_selected) ? _selected : _default;
 
     if (!panes) {
       if (!_opened) {
@@ -198,10 +282,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           body: ListView(
             padding: const EdgeInsets.only(bottom: 32),
             children: <Widget>[
-              for (final category in SettingsCategory.values)
+              for (final ref in sections)
                 _CategoryTile(
-                  category: category,
-                  onTap: () => _select(category),
+                  icon: ref.icon,
+                  label: _labelOf(ref, l10n),
+                  onTap: () => _select(ref),
                 ),
             ],
           ),
@@ -216,13 +301,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         },
         child: Scaffold(
           appBar: AppBar(
-            title: Text(_titleOf(_selected, l10n)),
+            title: Text(_titleOf(selected, l10n)),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back),
               onPressed: _back,
             ),
           ),
-          body: _body(_selected),
+          body: _bodyOf(selected),
         ),
       );
     }
@@ -247,13 +332,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     child: ListView(
                       padding: const EdgeInsets.only(top: 4, bottom: 12),
                       children: <Widget>[
-                        for (final category in SettingsCategory.values)
+                        for (final ref in sections)
                           NavSidebarItem(
-                            icon: category.icon,
-                            selectedIcon: category.selectedIcon,
-                            label: category.label(l10n),
-                            selected: category == _selected,
-                            onTap: () => _select(category),
+                            icon: ref.icon,
+                            selectedIcon: ref.selectedIcon,
+                            label: _labelOf(ref, l10n),
+                            selected: ref == selected,
+                            onTap: () => _select(ref),
                           ),
                       ],
                     ),
@@ -267,18 +352,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 children: <Widget>[
                   PaneHeader(
                     child: Text(
-                      _titleOf(_selected, l10n),
+                      _titleOf(selected, l10n),
                       style: Theme.of(context).textTheme.titleMedium
                           ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
                   Expanded(
                     child: IndexedStack(
-                      index: SettingsCategory.values.indexOf(_selected),
+                      index: sections.indexOf(selected),
                       children: <Widget>[
-                        for (final category in SettingsCategory.values)
-                          if (_built.contains(category))
-                            _body(category)
+                        for (final ref in sections)
+                          if (_built.contains(ref.key))
+                            _bodyOf(ref)
                           else
                             const SizedBox.shrink(),
                       ],
@@ -296,17 +381,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
 /// 窄屏分类列表里的一行。
 class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.category, required this.onTap});
+  const _CategoryTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
-  final SettingsCategory category;
+  final IconData icon;
+  final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return ListTile(
-      leading: Icon(category.icon),
-      title: Text(category.label(l10n)),
+      leading: Icon(icon),
+      title: Text(label),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
     );

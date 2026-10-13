@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -241,7 +242,14 @@ class _MailListScreenState extends ConsumerState<MailListScreen> {
     //
     // 它自己的语义见 `SyncStatusButton`：空闲时点它 = 当场同步一轮
     // （与下拉刷新是同一件事的两条路径），同步中时点它才进同步页。
-    final actions = <Widget>[const SyncStatusButton()];
+    //
+    // 扩展的图标按钮接在同步按钮**之后**：这是窄屏下绝大多数时候用户待着的
+    // 一屏（也是窄屏唯一有顶栏按钮的主入口），所以它必须在这儿。位置在最后 —
+    // 同步是全屏通有的动作，扩展是外加的。
+    final actions = <Widget>[
+      const SyncStatusButton(),
+      ...AppExtensionRegistry.instance.shellActions(context),
+    ];
     final denied = caps.hasAccountQuery == ProbeState.denied;
 
     // 这一屏是不是正在多选，以及那一批的统计。

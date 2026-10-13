@@ -12,6 +12,7 @@ import '../../../data/models/mail_row.dart';
 import '../../../features/mail_list/mailbox_filter.dart';
 import '../../../providers/profile_providers.dart' show kAllMailboxes;
 import '../database.dart';
+import '../mail_store_events.dart';
 import '../mappers.dart';
 import '../tables.dart';
 
@@ -87,6 +88,13 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
         );
       }
     });
+
+    // 扩展的增量水位线建在这上面（见 `mail_store_events.dart`）。
+    // 放在 `batch` 之后：事务没提交就发事件，订阅方可能读到旧数据。
+    publishMailsUpserted(
+      incoming.first.profileId,
+      incoming.map((r) => r.emailId),
+    );
   }
 
   /// 按 `emailId` 读同一页里已存在的行。`profileId` 从第一个元素取 ——
@@ -170,6 +178,8 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
         cachedAt: DateTime.now().toUtc(),
       ),
     );
+    // 正文补齐走的就是这条路 —— 内容变了，扩展的索引必须跟着动。
+    publishMailsUpserted(row.profileId, <int>[row.emailId]);
   }
 
   /// 把本地已有的行按「投递地址 → accountId」重新归位。
@@ -277,8 +287,10 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
   /// 删除：物理删本地行（服务端已经删了）。附件记录一起清，
   /// 但**磁盘上的文件留给 `AttachmentCache` 决定**（可能被其他邮件共用）。
   Future<void> deleteRefs(Iterable<MailRef> refs) async {
+    final refList = refs.toList(growable: false);
+    if (refList.isEmpty) return;
     await transaction(() async {
-      for (final ref in refs) {
+      for (final ref in refList) {
         await (delete(attachments)
               ..where((t) =>
                   t.profileId.equals(ref.profileId) &
@@ -301,6 +313,17 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
             .go();
       }
     });
+    // 本仓唯一允许按 profileId 分组的地方（`MailRef` 自带 profileId）。
+    _byProfile(refList).forEach(publishMailsDeleted);
+  }
+
+  /// 把一批 ref 按 `profileId` 分组 —— 事件是「一个实例一批 id」的形状。
+  Map<String, List<int>> _byProfile(Iterable<MailRef> refs) {
+    final out = <String, List<int>>{};
+    for (final ref in refs) {
+      (out[ref.profileId] ??= <int>[]).add(ref.emailId);
+    }
+    return out;
   }
 
   /// 删掉一个邮箱在本地的**全部痕迹**。服务端删邮箱是物理删除
@@ -327,7 +350,7 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
     // `features/mail_list/mailbox_filter.dart` 的注释同一条分寸）。
     // 走散的风险由 `test/mail_dao_purge_test.dart` 最后一条用例钉住。
     final scopePrefix = 'mailbox:$accountId:type:';
-    return transaction(() async {
+    final emailIds = await transaction(() async {
       final rows = await (select(mails)
             ..where((t) =>
                 t.profileId.equals(profileId) &
@@ -451,6 +474,9 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
           .go();
       return emailIds;
     });
+    // 事务之后才发：订阅方读库时删已经落定，否则会读回一批正要消失的行。
+    publishMailsDeleted(profileId, emailIds);
+    return emailIds;
   }
 
   // ---------------------------------------------------------- 列表查询

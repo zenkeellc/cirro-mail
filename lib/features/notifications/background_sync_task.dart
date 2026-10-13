@@ -1,15 +1,16 @@
 import 'dart:async';
 
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../../core/db/database.dart';
+import '../../core/extensions.dart';
 import '../../core/network/auth_events.dart';
 import '../../core/storage/prefs_store.dart';
 import '../../core/storage/token_store.dart';
-import '../../data/models/enums.dart';
 import '../../data/models/mail_row.dart';
 import '../../data/models/profile.dart';
 import '../../data/repositories/account_repository.dart';
@@ -19,6 +20,7 @@ import '../../data/repositories/profile_repository.dart';
 import '../../instance/runtime_registry.dart';
 import '../../instance/sync_engine.dart';
 import '../../l10n/app_localizations.dart';
+import 'notification_policy_seam.dart';
 import 'notification_service.dart';
 
 /// 后台兜底同步（Android 的 `workmanager`）。
@@ -139,13 +141,14 @@ class BackgroundSyncTask {
 
   /// 一批「本轮新写入的行」里，有多少封**值得提醒**。
   ///
-  /// 与 `NotificationGate.select` 的过滤条件刻意保持一致（未读 + 收件方向）——
-  /// 两边不一致的话，静默通知的数字会和正常横幅的内容对不上，
-  /// 而用户是拿这两个当同一件事看的。抽出来单独放是为了能单测。
+  /// 与 `NotificationGate.select` 走的是**同一个**判定（[isNotifiable]）——
+  /// 两边不一致的话，静默通知的数字会和正常横幅的内容对不上，而用户是拿这两个
+  /// 当同一件事看的。以前这里是手抄的第二份条件，现在物理上共用。
+  ///
+  /// 扩展规则（免打扰）因此也自动生效：静音掉一封之后，这个数字同样会少一。
   @visibleForTesting
-  static int countNotifiable(Iterable<MailRow> rows) => rows
-      .where((row) => row.isUnread && row.type == MailType.receive)
-      .length;
+  static int countNotifiable(Iterable<MailRow> rows) =>
+      rows.where(isNotifiable).length;
 }
 
 /// 后台 isolate 的入口。**必须是顶层函数**，`@pragma('vm:entry-point')`
@@ -155,6 +158,15 @@ class BackgroundSyncTask {
 /// 静态分析看不出来它被引用过。
 @pragma('vm:entry-point')
 void backgroundSyncCallbackDispatcher() {
+  // **这里必须重新注册一遍扩展。** 后台引擎是 `workmanager` 自己新建的
+  // （`BackgroundWorker.kt` 里 `FlutterEngine(applicationContext)`），
+  // **`main()` 不会被跑** —— 注册表在那边是空的。少了这一句，Android 的后台
+  // 兜底轮询就完全看不到扩展：免打扰规则不生效，「静音了这个发件人、结果退到
+  // 后台它又弹了」。
+  //
+  // 读的是同一个 `kAppExtensions`（`lib/core/extensions.dart`）—— 两个入口
+  // 共用一份事实来源，正是那个常量存在的理由。
+  AppExtensionRegistry.instance.registerAll(kAppExtensions);
   Workmanager().executeTask((_, _) => _runBackgroundSync());
 }
 
@@ -181,6 +193,16 @@ Future<bool> _runBackgroundSync() async {
 
     // 用户在设置里关掉了「后台轮询与通知」——后台当然也不该拉。
     if (!prefs.notifyEnabled) return true;
+
+    // 扩展的通知规则要**在读信之前**读进内存。
+    //
+    // 前台那条路是 `onBootstrap` 顺手准备的，而这里跑的是另一个引擎 ——
+    // `onBootstrap` 根本没机会执行。不显式补这一下的话，第一轮判定会按
+    // 「没有任何规则」放行，用户静音过的发件人照样弹。
+    //
+    // 前面那个 `return true` 也说明这里放得对：用户整个关掉了通知时，
+    // 没必要为一次用不上的判定去读盘。
+    await AppExtensionRegistry.instance.prepareNotificationPolicies();
 
     final tokens = TokenStore();
     final profiles = ProfileRepository(db: db, tokens: tokens, prefs: prefs);

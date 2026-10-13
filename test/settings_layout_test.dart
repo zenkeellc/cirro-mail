@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -30,6 +31,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 它们可能出现在用户的浏览历史 / 通知 / 旧文档里，落到 404 会让人以为坏了。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // 单例注册表跨用例存活。这一组里有几条会注册假扩展，不清会漏到别的用例里
+  // —— 表现是「窄屏分类列表莫名多一行」，跟出错的那条用例毫无关系。
+  setUp(AppExtensionRegistry.instance.reset);
+  tearDown(AppExtensionRegistry.instance.reset);
 
   final zh = lookupAppLocalizations(const Locale('zh'));
 
@@ -303,6 +309,120 @@ void main() {
       'https://half-typed.example',
     );
   });
+
+  // ── 扩展分类（`AppExtension.settingsSections`）────────────────────
+
+  /// 一个只往设置页加一栏的假扩展。
+  ///
+  /// 图标刻意选两颗**不与内置九栏重复**的字形：重复的话「扩展那栏排在第几」
+  /// 这条断言会退化成「某个内置图标出现了两次」，而它照样通过。
+  group('扩展分类', () {
+    testWidgets('登记之后窄屏多一行，且排在「关于」之前', (tester) async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        const _SectionExt(),
+      ]);
+      await pumpNarrow(tester);
+
+      // 内置九栏原样都在 —— 扩展是**追加**，不是替换。
+      for (final label in <String>[
+        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '关于',
+      ]) {
+        expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
+      }
+      expect(find.widgetWithText(ListTile, '免打扰'), findsOneWidget);
+
+      // 顺序：「诊断」→ 扩展 → 「关于」。「关于」按惯例永远收尾。
+      final labels = tester
+          .widgetList<ListTile>(find.byType(ListTile))
+          .map((tile) => (tile.title! as Text).data)
+          .toList();
+      expect(labels, <String>[
+        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '关于',
+      ]);
+    });
+
+    testWidgets('点进去渲染扩展自己的正文（宿主不套 Scaffold 之外的东西）',
+        (tester) async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        const _SectionExt(),
+      ]);
+      await pumpNarrow(tester);
+
+      await tester.tap(find.widgetWithText(ListTile, '免打扰'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('扩展正文'), findsOneWidget);
+      // 标题是扩展自己给的（核心的 ARB 里没有它的词条）。
+      expect(find.text('免打扰'), findsWidgets);
+      expect(find.byIcon(Icons.arrow_back), findsOneWidget,
+          reason: '扩展分类页与内置的一样有返回箭头');
+    });
+
+    testWidgets('宽屏：扩展进分类栏，且与内置一样按需构造', (tester) async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        const _SectionExt(),
+      ]);
+      await pumpWide(tester);
+
+      Finder railItem(String label) => find.descendant(
+            of: find.byType(NavSidebarItem),
+            matching: find.text(label),
+          );
+      for (final label in <String>[
+        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '关于',
+      ]) {
+        expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
+      }
+      expect(find.byType(NavSidebarItem), findsNWidgets(10));
+
+      // **没点进去之前不构造它的正文** —— 与 `PushSection` 那条同一条规矩：
+      // 扩展正文多半要读盘或者打接口，「打开设置页」不该等于「把每个扩展跑一遍」。
+      expect(find.text('扩展正文'), findsNothing);
+
+      await tester.tap(railItem('免打扰'));
+      await tester.pumpAndSettle();
+      expect(find.text('扩展正文'), findsOneWidget);
+      // 内嵌，不整页推入。
+      expect(find.byIcon(Icons.arrow_back), findsNothing);
+      expect(find.text('设置'), findsOneWidget);
+    });
+
+    /// 空注册表时**一条都不多** —— 公开版（以及没装扩展的商业版）看到的
+    /// 设置页与从前逐像素相同。
+    testWidgets('没有扩展时不多任何一栏', (tester) async {
+      await pumpNarrow(tester);
+      expect(find.byType(ListTile), findsNWidgets(9));
+    });
+  });
+}
+
+/// 一个只往设置页加一栏的假扩展（文案硬编码，与商业版同一条路：扩展自带
+/// 文案，核心的 ARB 里不加词条）。
+class _SectionExt extends AppExtension {
+  const _SectionExt();
+
+  @override
+  String get id => 'test.dnd';
+
+  @override
+  List<SettingsSection> settingsSections(BuildContext context) =>
+      <SettingsSection>[
+        SettingsSection(
+          id: 'test.dnd.rules',
+          icon: Icons.do_not_disturb_on_outlined,
+          selectedIcon: Icons.do_not_disturb_on,
+          title: '免打扰',
+          body: (context) => const _ExtensionBody(),
+        ),
+      ];
+}
+
+class _ExtensionBody extends StatelessWidget {
+  const _ExtensionBody();
+
+  @override
+  Widget build(BuildContext context) =>
+      const Center(child: Text('扩展正文'));
 }
 
 /// 那三条重定向的闭包不看 `context`（返回值是常量），随便给一个即可 ——

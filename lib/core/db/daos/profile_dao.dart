@@ -6,6 +6,7 @@ import '../../../data/models/mail_row.dart';
 import '../../../data/models/mailbox_account.dart';
 import '../../../data/models/profile.dart';
 import '../database.dart';
+import '../mail_store_events.dart';
 import '../mappers.dart';
 import '../tables.dart';
 
@@ -101,6 +102,8 @@ class ProfileDao extends DatabaseAccessor<AppDatabase> with _$ProfileDaoMixin {
       await _clearDataOf(id);
       await (delete(profiles)..where((t) => t.id.equals(id))).go();
     });
+    // 事务之后才发：订阅方读库时删已经落定。
+    publishMailStoreReset(id);
   }
 
   /// 清掉某个实例的**全部本地数据，但保留 profile 行本身**。
@@ -112,6 +115,7 @@ class ProfileDao extends DatabaseAccessor<AppDatabase> with _$ProfileDaoMixin {
       await _clearDataOf(id);
       await updateProfileFields(id, userId: 0, needsLogin: true);
     });
+    publishMailStoreReset(id);
   }
 
   Future<void> _clearDataOf(String id) async {

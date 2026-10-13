@@ -2,10 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
-import '../../data/models/enums.dart';
 import '../../data/models/mail_ref.dart';
 import '../../data/models/mail_row.dart';
 import '../../l10n/app_localizations.dart';
+import 'notification_policy_seam.dart';
 
 /// 新邮件的**本地**通知。
 ///
@@ -525,7 +525,16 @@ class NotificationService {
 /// 而那部分完全不需要真插件、也不需要平台通道。
 @visibleForTesting
 class NotificationGate {
-  NotificationGate();
+  /// [policy] 是「这一行该不该弹」的判定，默认走 [isNotifiable]（通用条件 +
+  /// 已注册扩展的规则，见 `notification_policy_seam.dart`）。
+  ///
+  /// 留一个可注入的口子是为了**闸门自己的测试**：它关心的是游标语义（基线
+  /// 什么时候推进），不该被「当前进程里恰好注册了哪些扩展」影响，也不该为了
+  /// 造一条假的静音规则去搭一个真的扩展。
+  NotificationGate({NotifiablePredicate? policy})
+      : _policy = policy ?? isNotifiable;
+
+  final NotifiablePredicate _policy;
 
   /// 每个实例「已经见过」的最大 `emailId`。
   ///
@@ -571,12 +580,16 @@ class NotificationGate {
     // - `emailId > baseline` —— 基线之后**真的新**的那些。`rows` 里可能
     //   混着旧邮件（服务端补发、空洞重扫），不筛的话重扫一次就把整页
     //   旧邮件弹一遍。基线为 null 时（后台那种 delta 调用）不挡；
-    // - 未读 + 收件方向 —— 发件方向的行也会走这条总线（「已发送」补偿
-    //   轮询时会带出来），给自己发出去的信弹通知没有意义；已读的
-    //   （别的设备上刚读完）也一样。
+    // - [_policy] —— 未读 + 收件方向（这两条以前写在这儿），外加已注册扩展
+    //   的规则。抽成 [isNotifiable] 是因为后台计数那条路要用**同一个**判定，
+    //   两处各写一遍早晚会漂（见 `notification_policy_seam.dart`）。
+    //
+    // 注意这一道**不参与上面基线的推进** —— 被静音的行照样把游标推过去。
+    // 静音是「这次别弹」，不是「当它没来过」：游标停在被静音的那封上，之后
+    // 用户解除静音，攒下的旧信不会被补弹一遍。
     return rows
         .where((row) => baseline == null || row.emailId > baseline)
-        .where((row) => row.isUnread && row.type == MailType.receive)
+        .where(_policy)
         .toList(growable: false);
   }
 }

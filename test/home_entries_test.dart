@@ -1,3 +1,5 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/data/models/enums.dart';
 import 'package:mail_app/features/home/home_entries.dart';
@@ -11,6 +13,9 @@ import 'package:mail_app/router.dart';
 /// 2. 每个入口的「选中判据」互不重叠 —— 收件箱与未读邮件的路径相同、
 ///    只差一个 `unread=1`，判据写错会让两个入口同时高亮。
 void main() {
+  setUp(AppExtensionRegistry.instance.reset);
+  tearDown(AppExtensionRegistry.instance.reset);
+
   test('七个入口，顺序固定：置顶组在前，邮件组在后', () {
     expect(
       HomeEntries.all.map((e) => e.id).toList(),
@@ -198,4 +203,62 @@ void main() {
       expect(item.value.contains('account'), isFalse, reason: item.key);
     }
   });
+
+  /// 守卫：**扩展是另开一张表，不是往这两组里塞。**
+  ///
+  /// 主屏那七格与侧栏那两排入口的构成是**核心**的事。扩展要往顶栏加按钮
+  /// （`AppExtension.shellActions`）、往设置页加栏（`settingsSections`），
+  /// 但**碰不到**这里 —— 一旦某个扩展能被塞进 `topActions` / `mailGroup`，
+  /// 主屏的布局就会随装了什么扩展而变，而布局本身是要稳的。
+  ///
+  /// 注册一个假扩展再断言这两组的构成不变，等于把这条边界写成可执行的。
+  test('注册扩展之后，主屏那两组入口一个不多一个不少', () {
+    AppExtensionRegistry.instance.registerAll(<AppExtension>[
+      const _NoisyExt(),
+    ]);
+    expect(HomeEntries.topActions.length, 2);
+    expect(HomeEntries.mailGroup.length, 5);
+    expect(HomeEntries.all, hasLength(7));
+    expect(
+      HomeEntries.all.map((e) => e.id).toList(),
+      <String>[
+        'starred',
+        'attachmentCache',
+        'unread',
+        'inbox',
+        'sent',
+        'outbox',
+        'drafts',
+      ],
+    );
+  });
+}
+
+/// 一个「样样都要」的扩展 —— 它把能加的钩子都加满，好让上面那条守卫真的
+/// 有东西可挡。只加一两个的话，边界看着成立只是因为没去碰。
+class _NoisyExt extends AppExtension {
+  const _NoisyExt();
+
+  @override
+  String get id => 'test.noisy';
+
+  @override
+  List<Widget> aboutExtras(BuildContext context) =>
+      const <Widget>[Text('关于页附加')];
+
+  @override
+  List<Widget> shellActions(BuildContext context) =>
+      const <Widget>[Icon(Icons.search)];
+
+  @override
+  List<SettingsSection> settingsSections(BuildContext context) =>
+      <SettingsSection>[
+        SettingsSection(
+          id: 'test.noisy.section',
+          icon: Icons.circle_outlined,
+          selectedIcon: Icons.circle,
+          title: '扩展示例',
+          body: (context) => const SizedBox.shrink(),
+        ),
+      ];
 }

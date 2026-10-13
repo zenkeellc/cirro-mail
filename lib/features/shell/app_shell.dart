@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -385,6 +386,10 @@ class _SidebarHeader extends ConsumerWidget {
         ),
         const ComposeAction(),
         const SyncStatusButton(),
+        // 扩展的图标按钮。**排在最后**：写邮件与同步状态是核心的一级动作，
+        // 位置固定；扩展进来的东西跟在它们后面，不挤走任何一个。
+        // 空注册表（公开版）时这里什么都没有 —— 那一行与从前逐像素相同。
+        ...AppExtensionRegistry.instance.shellActions(context),
       ],
     );
   }
