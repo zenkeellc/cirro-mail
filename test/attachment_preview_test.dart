@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/data/models/mail_attachment.dart';
@@ -25,6 +27,13 @@ const _platforms = <TargetPlatform>[
   TargetPlatform.windows,
   TargetPlatform.linux,
 ];
+
+/// 跑测试的这台机器有没有 PDF 渲染后端。
+///
+/// **不能拿 [defaultTargetPlatform] 判**：`flutter test` 会把运行时的值
+/// 按住成 android（`_platform_io.dart` 里那句 `FLUTTER_TEST` 断言）。所以
+/// 问到的是「像不像 android」，而不是「是不是 linux」。
+bool get _hostSupportsPdf => !Platform.isLinux;
 
 Widget _host(Widget child) => MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -153,12 +162,24 @@ void main() {
       await expectLands<PptxViewerScreen>(tester, 'd.pptx');
     });
 
-    testWidgets('图片 / PDF / 音频 / 视频各就各位', (tester) async {
-      await expectLands<LocalImageViewerScreen>(tester, 'p.png');
-      await expectLands<PdfViewerScreen>(tester, 'a.pdf');
-      await expectLands<AudioViewerScreen>(tester, 'v.m4a');
-      await expectLands<VideoViewerScreen>(tester, 'c.mp4');
-    });
+    testWidgets(
+      '图片 / PDF / 音频 / 视频各就各位',
+      (tester) async {
+        await expectLands<LocalImageViewerScreen>(tester, 'p.png');
+        await expectLands<PdfViewerScreen>(tester, 'a.pdf');
+        await expectLands<AudioViewerScreen>(tester, 'v.m4a');
+        await expectLands<VideoViewerScreen>(tester, 'c.mp4');
+      },
+      // 这一条与上面那组 `canPreview` 不同：它真的 push 页面进去，于是
+      // `pdfx` 会走一遍 `assertHasPdfSupport()` —— 那里读的是**真平台**，
+      // 不是上面那个恒为 android 的 `defaultTargetPlatform`。Linux 上
+      // `pdfx` 没有渲染后端（它的平台表里就没有 linux），于是
+      // `PdfDocument.openFile` 抛 `PlatformNotSupportedException`，CI 的
+      // ubuntu 跑必红；而 `ViewerSupport.pdf` 早就判了 Linux 不支持，真机
+      // 上这一页在那平台上根本走不到。所以这里如实跳过，而不是去断言一个
+      // 到达不了的落点。`skip` 只要 bool —— 理由写在注释里。
+      skip: !_hostSupportsPdf,
+    );
 
     testWidgets('octet-stream 的 .png 也落到图片页（扩展名兜底那一半）', (tester) async {
       await tester.pumpWidget(_host(
