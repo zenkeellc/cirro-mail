@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconFile</key>
+	<string></string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Cirro Mail</string>
+	<key>CFBundleDisplayName</key>
+	<string>Cirro Mail</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<!-- 「同一份 App 只跑一个进程」的一半，管的是 **LaunchServices 那条路**：
+	     点 Dock 图标、资源库 / Finder 里双击、`open` / `open -n`。带上这个键
+	     之后，第二次启动不会再起进程，而是把「再次打开」这个事件转给已经在跑
+	     的那一份（落进 `applicationShouldHandleReopen`，见 `AppDelegate.swift`）。
+
+	     **另一半在这份 plist 之外**：从终端**直接跑可执行文件**（`flutter run`
+	     就是这么启动的）不经过 LaunchServices，这个键管不着 —— 那一半靠
+	     `SingleInstance.swift` 抢 flock。两半都要，缺一个就从某个入口漏出第二个
+	     进程，而后果是静默的：两个进程抢同一份 SQLite、各登记一份 FCM token、
+	     同一封信弹两遍。
+
+	     刻意**不加** `LSUIElement`：那会把 Dock 图标一起收走，而点 Dock 图标
+	     是这个 App 把窗口叫回来的既有路径之一。 -->
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>$(PRODUCT_COPYRIGHT)</string>
+	<key>NSMainNibFile</key>
+	<string>MainMenu</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>

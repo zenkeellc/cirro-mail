@@ -1,0 +1,147 @@
+name: mail_app
+description: "Cirro Mail 多实例 Flutter 客户端（Android / iOS / macOS / Windows / Linux）"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  # 3.12 是 `flutter_riverpod` 3.4.x / `go_router` 18.x 的下限，
+  # 3.44 是 `cached_network_image` 4.x / `go_router` 18.x 的下限。
+  # 本机 / CI 实际跑 Flutter 3.47.7 + Dart 3.13.5。
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # ---- 网络 ----
+  dio: ^5.11.1
+  # 钉到 7.3.1：7.3.2 起依赖 nm ^0.6.0 → dbus ^0.8.0，
+  # 而 flutter_local_notifications 22.3.1（当前最新）走 flutter_local_notifications_linux ^8.0.1
+  # → dbus ^0.7.8，两者在 dbus 上冲突（Linux 桌面通知需要 dbus 0.7 线）。
+  # 这条与 Flutter 版本无关，升到 3.47.7 依旧解不开 —— 等 flutter_local_notifications
+  # 换到 dbus ^0.8 之后才能放开。
+  connectivity_plus: '>=7.3.1 <7.3.2'
+  logger: ^2.8.0
+
+  # ---- 状态 / 路由 ----
+  flutter_riverpod: ^3.4.3
+  go_router: ^18.0.2
+
+  # ---- 存储 ----
+  flutter_secure_storage: ^11.2.0
+  shared_preferences: ^2.5.6
+  path_provider: ^2.1.6
+
+  # ---- 本地缓存库（多实例共用一张 SQLite，用 profileId 区分）----
+  drift: ^2.35.1
+  drift_flutter: ^0.3.1
+
+  # ---- 邮件正文渲染（纯 Dart，五平台一致）----
+  flutter_widget_from_html_core: ^0.17.4
+  fwfh_cached_network_image: ^0.16.3
+  fwfh_url_launcher: ^0.16.1
+  cached_network_image: ^4.0.4
+  photo_view: ^0.15.0
+  html: ^0.15.7
+
+  # ---- 附件 / 写邮件 ----
+  file_picker: ^13.1.0
+  open_filex: ^4.7.0
+  share_plus: ^13.3.1
+  pdfx: ^2.11.0
+  mime: ^2.1.0
+  url_launcher: ^6.3.3
+  flutter_slidable: ^4.0.3
+
+  # ---- 富文本编辑器 / 写邮件 ----
+  flutter_quill: ^11.6.0
+  flutter_quill_extensions: ^11.0.0
+  flutter_quill_delta_from_html: ^1.5.3
+  # 取系统剪贴板的 HTML 风味（不只是纯文本）；Web 不支持，本项目不涉及。
+  quill_native_bridge: ^11.2.0
+  # 从 Finder / 资源管理器拖文件进来。桌面三平台。
+  desktop_drop: ^0.8.4
+
+  # ---- 通知 / 后台 ----
+  # 只为 `zonedSchedule` 要的 `tz.TZDateTime`。**不用 initializeTimeZone()** ——
+  # `tz.UTC` 是预置的，而我们存的就是 UTC（见 `ReminderDao.remindAt`）。
+  # 显式声明是因为 `depend_on_referenced_packages` 会对传递依赖报错。
+  # 钉到 0.11.1 是因为 flutter_local_notifications 22.3.1 已经传递解析到
+  # 它；显式声明只是把这条传递依赖摆上台面，不引入新版本。
+  timezone: ^0.11.1
+  flutter_local_notifications: ^22.3.1
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
+  workmanager: ^0.10.10
+
+  # ---- 附件预览 ----
+  # 文本类附件的编码兜底：BOM → 严格 UTF-8 → GBK/GB18030 → 宽容 UTF-8。
+  # 国内邮箱里 GBK 的 CSV / 老 txt 并不罕见，只做 UTF-8 会整篇乱码。
+  charset: ^2.0.1
+  # `.md` 附件渲染成排版（再把 HTML 交给既有的 HtmlBodyView），
+  # **不新写一套 markdown→widget 映射**。它本来就在 lock 里
+  # （flutter_quill → markdown ^7.1.0），这里只是摆上台面。
+  markdown: ^7.3.1
+  # docx / xlsx / pptx 都是 zip + XML。**不引第三方的 xlsx / docx 解析器** ——
+  # 那些包要么只做半件事，要么把 `xml` 钉回 5.x（`excel` 包就是），
+  # 而这三兄弟本来就是同一层 zip+XML，复用一套读写更省事。
+  #
+  # `archive` 4.5 起有解压炸弹防护（`maxSize` / `maxOutputSize`），
+  # 附件是不可信输入，这条必须有 —— 一个几 KB 的 zip 能解出几个 GB。
+  archive: ^4.5.1
+  # 显式声明 `xml`：lock 里本来就有（flutter_local_notifications_windows
+  # 传递依赖，约束是 >=6.5.0 <8.0.0）。摆上台面是为了让
+  # `depend_on_referenced_packages` 闭嘴，也免得哪天那条传递链断了
+  # 才在下游发现。**别换成 `excel` 包**，它会把 xml 降回 5.x。
+  xml: ^7.0.1
+  # 音频播放。选它是因为**五平台都有实现**（`just_audio` 缺
+  # windows / linux）。Linux 上它转发给系统 gstreamer：缺库时构造播放器会
+  # 抛，播放页捕获后降级成「用其他应用打开」，不做静默失败。
+  #
+  # 播放器不直接被控件层使用，中间隔着一层 `AudioPlayback` 接口
+  # （`features/attachment/audio_playback.dart`）—— 插件在
+  # `flutter_tester` 里只有 `MissingPluginException`，不隔一层的话
+  # 播放控件一个用例都写不了。
+  audioplayers: ^6.7.1
+  # 视频播放。**本来就在 lock 里**（`flutter_quill_extensions` →
+  # `video_player: ^2.8.0`），macOS / iOS / Android 的插件也早就注册上了
+  # （见 `macos/Flutter/GeneratedPluginRegistrant.swift`），提成直接依赖
+  # 不改变任何插件注册。
+  #
+  # **Windows / Linux 没有实现** —— 那两个平台的 `canPreview` 直接返回
+  # false，退回「用其他应用打开」（见 `attachment_kind.dart` 的
+  # `ViewerSupport.video`）。要补齐得换 `fvp`（FFmpeg 后端），单独一笔账。
+  video_player: ^2.14.1
+
+  # ---- 模型 / 工具 ----
+  intl: any
+  uuid: ^4.6.0
+  package_info_plus: ^10.2.2
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.16.2
+  drift_dev: ^2.35.1
+  mocktail: ^1.0.5
+
+flutter:
+  uses-material-design: true
+  generate: true
+
+# `third_party/riverpod` 是**上游 3.4.3 的源码副本 + 一处补丁**，不是我们自己写的
+# 包：为什么要有它、补丁是什么、什么时候能删，都在 `third_party/README.md`
+# 与 `third_party/PATCHES.md` 里。
+#
+# 只需要覆盖 `riverpod` 这一个包：`flutter_riverpod` 3.4.3 对它是**精确约束**
+# （`riverpod: 3.4.3`），版本号对得上，覆盖照样生效。
+#
+# 路径是相对这个文件（`mail-app/`）写的，不是相对仓库根。
+dependency_overrides:
+  riverpod:
+    path: third_party/riverpod

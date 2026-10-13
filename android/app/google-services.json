@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "287514373935",
+    "project_id": "voltaic-psyche-462808-q2",
+    "storage_bucket": "voltaic-psyche-462808-q2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:287514373935:android:f78d95fdea7d63127efbda",
+        "android_client_info": {
+          "package_name": "com.zenkee.mailapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBS7RHsxiMCJf_MU7_RutFTAOi6qBjLcTY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:287514373935:android:3b12a4fb1db024917efbda",
+        "android_client_info": {
+          "package_name": "ke.dong.mailapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBS7RHsxiMCJf_MU7_RutFTAOi6qBjLcTY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Cirro Mail
+Comment=Mail client for cloud-mail servers
+Exec=mail_app
+Icon=cirro-mail
+Terminal=false
+Categories=Network;Email;

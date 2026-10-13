@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- APNs 推送凭据。**没有它 macOS 上 FCM 注册不出 token。**
+	     与 iOS 的 `Runner.entitlements` 同源，但 macOS 必须走
+	     `com.apple.developer.` 这个前缀 —— iOS 那边写的裸 `aps-environment`
+	     在原生 macOS App 上会被 codesign 忽略，从而静默地永远拿不到 APNs
+	     token。实测可查的证据：本机 136 个 /Applications 里，只有写
+	     `com.apple.developer.aps-environment` 的原生 mac App（ChatGPT、WPS）
+	     真的有这条权利；写裸 key 的那批（闲鱼、bilibili、Twitter）都是跑在
+	     Mac 上的 iOS App / Mac Catalyst，不是原生 mac 的路子。
+
+	     Release 写 `production`；这一条会被签名时换成描述文件里的值，所以
+	     本机用开发描述文件构建时产物上仍是 development —— 属预期，别被
+	     `codesign -d` 的输出误导。
+
+	     这条权利要生效**必须有带 Push Notifications 的 Mac 描述文件**
+	     （Xcode 自动签名在 App ID 勾了推送之后会自己申请），否则构建会直接
+	     失败：`Provisioning profile ... doesn't include the Push
+	     Notifications capability`。 -->
+	<key>com.apple.developer.aps-environment</key>
+	<string>production</string>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

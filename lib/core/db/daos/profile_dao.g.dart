@@ -1,0 +1,22 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'profile_dao.dart';
+
+// ignore_for_file: type=lint
+mixin _$ProfileDaoMixin on DatabaseAccessor<AppDatabase> {
+  $ProfilesTable get profiles => attachedDatabase.profiles;
+  $CapabilitiesTable get capabilities => attachedDatabase.capabilities;
+  $MailboxesTable get mailboxes => attachedDatabase.mailboxes;
+  ProfileDaoManager get managers => ProfileDaoManager(this);
+}
+
+class ProfileDaoManager {
+  final _$ProfileDaoMixin _db;
+  ProfileDaoManager(this._db);
+  $$ProfilesTableTableManager get profiles =>
+      $$ProfilesTableTableManager(_db.attachedDatabase, _db.profiles);
+  $$CapabilitiesTableTableManager get capabilities =>
+      $$CapabilitiesTableTableManager(_db.attachedDatabase, _db.capabilities);
+  $$MailboxesTableTableManager get mailboxes =>
+      $$MailboxesTableTableManager(_db.attachedDatabase, _db.mailboxes);
+}

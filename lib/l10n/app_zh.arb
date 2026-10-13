@@ -1,0 +1,1420 @@
+{
+  "@@locale": "zh",
+  "appTitle": "Cirro Mail",
+  "servers": "服务器",
+  "addServer": "添加服务器",
+  "addInstance": "添加实例",
+  "serverAddress": "服务器地址",
+  "serverAddressHint": "https://example.com/api",
+  "testConnection": "测试连接",
+  "testing": "测试中…",
+  "connectedTo": "已连接：{title}",
+  "@connectedTo": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "addAndSignIn": "添加并登录",
+  "login": "登录",
+  "logout": "退出登录",
+  "logoutKeepServer": "退出登录（保留服务器）",
+  "removeServer": "移除服务器",
+  "removeServerConfirm": "移除「{name}」及其本地缓存的邮件？",
+  "@removeServerConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "email": "邮箱",
+  "password": "密码",
+  "signingIn": "登录中…",
+  "nickname": "备注名",
+  "save": "保存",
+  "cancel": "取消",
+  "delete": "删除",
+  "confirm": "确定",
+  "retry": "重试",
+  "copied": "已复制",
+  "copy": "复制",
+  "all": "全部",
+  "aggregateInbox": "聚合",
+  "markAllRead": "全部标记已读",
+  "markRead": "标记已读",
+  "markUnread": "标记未读",
+  "refresh": "刷新",
+  "settings": "设置",
+  "diagnostics": "诊断",
+  "inbox": "收件箱",
+  "sent": "已发送",
+  "starred": "星标",
+  "star": "标星",
+  "unstar": "取消星标",
+  "newMail": "新邮件",
+  "newMailSummary": "{name}：{count} 封新邮件",
+  "@newMailSummary": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notifyBanner": "应用内横幅提醒",
+  "notifyBannerHint": "关闭后照样收信（列表会更新），只是不再弹通知。",
+  "pushTitle": "后台推送（FCM）",
+  "pushShort": "推送",
+  "pushHint": "App 退到后台或被系统冻结时，靠推送中转把新邮件提醒送到手机。不配也能用 —— 只是后台不再提醒。",
+  "pushRelayUrl": "中转地址",
+  "pushRelayUrlHint": "自建的 mail-push Worker，形如 https://push.example.com",
+  "pushInstanceId": "实例位 id",
+  "pushInstanceIdHint": "部署者在中转端 /admin/instances 开的那个 id",
+  "pushPairingCode": "配对码",
+  "pushPairingCodeHint": "开实例位时只显示一次，丢了就重新轮换",
+  "pushDeviceId": "设备号",
+  "pushDeviceIdHint": "本机自动生成、并且带实例位前缀，不需要你改。排查时有用：中转端就是靠它认这台设备的。",
+  "pushEnable": "开启后台推送",
+  "pushEnabledHint": "只影响后台提醒。前台收信、轮询、应用内提醒都不受影响。",
+  "pushRegister": "登记这台设备",
+  "pushUnregister": "退订",
+  "pushTestOk": "中转连上了",
+  "pushRegistrations": "中转端记着的邮箱",
+  "pushRegistrationsEmpty": "这台设备在中转端还没有登记任何邮箱",
+  "pushUnsupported": "这个平台没有 FCM 实现（只有 Linux / Windows 是这样，那两端的后台提醒靠 App 在运行时轮询）。",
+  "pushNotConfigured": "还没有填中转配置，当前只能靠 App 在运行时收信。",
+  "pushNoFirebaseConfig": "这份构建里没有 Firebase 配置文件（google-services.json / GoogleService-Info.plist），FCM 不可用。需要你先在 Firebase 建项目再重新构建。",
+  "pushRelayFcmMissing": "中转端没有配 FCM 服务账号，推送发不出去。",
+  "pushWebhookHint": "把下面两条填进**你那个 cloud-mail 实例**后台的「Webhook 推送」里，再把开关打开。这一步只能你自己做：中转端不认识实例的登录体系，替不了。",
+  "pushWebhookUrl": "Webhook 地址",
+  "pushWebhookSecret": "Webhook 密钥",
+  "pushWebhookNoSecret": "还没有配对码，拿不到密钥",
+  "pushCopy": "复制",
+  "pushCopied": "已复制",
+  "pushChecking": "自检中…",
+  "pushSelfCheckOk": "配对码与地址都对上了",
+  "pushSelfCheckSecretBad": "配对码不对 —— 这个实例位的密钥已经轮换过，去重新要一个",
+  "pushSelfCheckUrlBad": "地址填错了 —— 要带上 /<实例位>/webhook 这一段",
+  "pushSelfCheckNoEventYet": "配置看着没问题，但这个位还没有真的收到过来信 —— 记得去实例后台保存并打开开关。",
+  "pushSelfCheckGotEvent": "最近一次收到 webhook：{time}",
+  "@pushSelfCheckGotEvent": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pushNeedLoginFirst": "先在上面把配对码和实例位填好，自检才知道要问哪一条。",
+  "pushLimits": "限制（先说清楚，免得白等）",
+  "pushLimit1": "只覆盖外部来信：站内互发、以及别的客户端发出的信不触发推送，只有轮询能收到。",
+  "pushLimit2": "实例若把收信规则设成「按规则收信」，webhook 完全不触发。",
+  "pushLimit3": "推送里只有元数据（发件人/主题/验证码），正文仍由 App 带 token 去实例拉。",
+  "pushLimit4": "中转端能看到所有实例的来信元数据 —— 自建的话就是你自己。",
+  "pushAdvanced": "高级",
+  "pushPageStepOf": "第 {index} 步 / 共 {total} 步",
+  "@pushPageStepOf": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "pushPageBack": "上一步",
+  "pushPageNext": "下一步",
+  "pushPageDone": "完成",
+  "pushPageRecheck": "重新检查状态",
+  "pushPageStatusTitle": "推送现在通不通？",
+  "pushPageStatusBody": "三件事互相独立：这个平台支不支持、三条值填没填全、这台设备在中转端登记上没有。缺任何一件，App 不在时都不会有提醒。",
+  "pushPageStatusPlatform": "这个平台支持 FCM",
+  "pushPageStatusOk": "没问题",
+  "pushPageStatusConfigured": "中转的三条值填全了",
+  "pushPageStatusRegisteredCount": "已登记 {count} 个",
+  "@pushPageStatusRegisteredCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pushPageStatusOff": "总开关是关着的 —— 下面这些都不会发生。",
+  "pushPageStatusGo": "去把开关打开",
+  "pushPageValuesTitle": "把三条值填进来",
+  "pushPageValuesBody": "三条都从中转端来：地址是那个 Worker 的域名，实例位是它给你开的位置，配对码只在开位那一刻显示一次。",
+  "pushPageValuesSave": "保存这三条值",
+  "pushPageValuesSaved": "已保存",
+  "pushPageValuesKeep": "配对码只在开实例位时显示一次，之后两端都读不回来。丢了只能重新轮换。",
+  "pushPageValuesProvision": "中转是我部署的 —— 现开一个实例位",
+  "pushPageEnableTitle": "打开「后台推送」",
+  "pushPageEnableBody": "这个开关只管 App 不在前台时要不要提醒；前台收信、轮询、应用内提醒都不受影响。",
+  "pushPageEnableOff": "关掉开关会顺手退订，中转不再往这台设备推。",
+  "pushPageEnrollTitle": "登记这台设备",
+  "pushPageEnrollBody": "把每个邮箱绑到这台设备的 FCM token 上。启动时也会自动登记一次，所以这一步主要是用来确认「真的登记上了」。",
+  "pushPageEnrollPermission": "第一次点登记时，系统会问一次通知权限 —— 就是这一步。",
+  "pushPageEnrollBlocked": "先去第 ② 页把三条值填上，再去第 ③ 页打开开关。",
+  "pushPageEnrollUnsubHint": "退订会把本机在中转端的注册全删掉，之后不再收到推送。",
+  "pushPageWebhookTitle": "去实例后台打开 Webhook 推送",
+  "pushPageWebhookBody": "这是唯一必须在另一个网站上做的一步，也是最常被漏掉的一步。",
+  "pushPageWebhookAdminAsk": "这个 cloud-mail 实例是你在管吗？",
+  "pushPageWebhookAdminYes": "是，我去后台填",
+  "pushPageWebhookAdminNo": "不是，发给管理员",
+  "pushPageWebhookAdminOtherHint": "把下面这段话复制下来，发给管这个实例的人。",
+  "pushPageWebhookRelayCopy": "复制要转达的话",
+  "pushPageWebhookRelayMessage": "麻烦在 cloud-mail 实例后台的「Webhook 推送」里填上地址 {url}、密钥 {code}，并把那一栏的开关打开。这样新邮件才能推到我的手机上。",
+  "@pushPageWebhookRelayMessage": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      },
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "pushPageWebhookStatus0": "提醒：那个开关在库里叫 webhookStatus，0 才是「启用」，字段名与直觉相反 —— 收不到推送时第一嫌疑永远是它。",
+  "pushPageWebhookConfirm": "我已经在实例后台填好这两条，并把 Webhook 推送开关打开了",
+  "pushPageWebhookConfirmed": "已确认过。上面的地址或配对码改过之后，这一步要重新确认一次。",
+  "pushPageWebhookUnconfirmed": "你在另一个网站上做的事，App 看不到，所以这一步得你自己点一下那个勾；不点的话它会一直显示成「没做」。",
+  "pushPageWebhookEvidence": "中转端已经真的收到过 webhook（{time}）—— 这一步通了，不需要再确认。",
+  "@pushPageWebhookEvidence": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pushPageCheckRememberedAt": "上次检查是通过的（{time}），上面的值也没改过 —— 不用重新检查也会记着。",
+  "@pushPageCheckRememberedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pushPageCheckNever": "还没检查过。点上面那个按钮问一次，结论会一直记着。",
+  "pushRefreshed": "已刷新：中转端记着 {count} 个邮箱",
+  "@pushRefreshed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pushRefreshedEmpty": "已刷新：中转端还没有登记任何邮箱",
+  "pushRegistering": "登记中…",
+  "pushUnregistering": "退订中…",
+  "pushRefreshing": "刷新中…",
+  "pushPageCheckTitle": "检查这条链路",
+  "pushPageCheckBody": "一次问清四件事：中转连不连得上、它有没有配 FCM、这个配对码对不对、实例后台里那个地址填对没有。",
+  "pushPageCheckAction": "检查这条链路",
+  "pushPageCheckStale": "上面的值改过了 —— 再检查一次才会得到新的结论。",
+  "pushPageCheckFcmOk": "中转端配了 FCM 服务账号",
+  "pushPageNotesTitle": "先说清楚的几件事",
+  "pushPageNotesBody": "后台推送刻意做得很窄：只覆盖外部来信，其余的照旧靠轮询。",
+  "pushPageNotesTurnOff": "怎么关掉",
+  "pushPageNotesTurnOffBody": "回到第 ③ 页把开关关掉即可，App 会顺手退订。",
+  "pushPageNotesSwitchSlot": "换一个实例位会怎样",
+  "pushPageNotesSwitchSlotBody": "App 会自动把旧实例位上的注册退掉，不用你手动清理。",
+  "pushPageDocsHint": "完整命令与故障排查见仓库里的 docs/push-setup.md。",
+  "compose": "写邮件",
+  "composeSectionSignatures": "签名",
+  "composeSignatureFor": "{email} 的签名",
+  "@composeSignatureFor": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "composePhrases": "常用语",
+  "composePhrasesFor": "{email} 的常用语",
+  "@composePhrasesFor": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "composePhraseName": "名字",
+  "composePhraseText": "内容",
+  "composeSignatureEmpty": "还没有邮箱 —— 先登录一个实例",
+  "composeSnippetsHint": "签名与常用语按邮箱地址存，换实例也还在",
+  "noMailbox": "没有可用邮箱",
+  "needAccountPerm": "该账号没有「account:query」权限，无法列出全部邮箱，仅显示主邮箱。",
+  "emptyList": "暂无邮件",
+  "loadFailed": "加载失败",
+  "attachmentUnavailable": "附件不可用",
+  "serverUnreachable": "服务器不可达",
+  "sessionExpired": "登录已失效，请重新登录",
+  "sessionExpiredHint": "可能是其他设备登录把本次会话挤掉了（同一账号仅保留 10 个会话）。",
+  "needsLogin": "需要重新登录",
+  "syncNow": "立即同步",
+  "close": "关闭",
+  "switchMailbox": "切换邮箱",
+  "pickMail": "选择一封邮件",
+  "syncing": "正在同步",
+  "lastSync": "上次同步 {time}",
+  "@lastSync": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pollInterval": "检查邮件间隔",
+  "pollIntervalHint": "多久收一次新邮件（1 分钟 – 1 小时）。越短越及时，也越费电。",
+  "minutesCount": "{minutes} 分钟",
+  "@minutesCount": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "notifications": "通知",
+  "notifyEnabledHint": "关闭后停止轮询收信，也不再提醒新邮件；已收到的邮件仍可正常阅读。",
+  "clearCache": "清理缓存",
+  "unnamed": "（未命名）",
+  "unknown": "未知",
+  "noSubject": "（无主题）",
+  "pageNotFound": "页面不存在",
+  "cannotOpen": "无法打开：{uri}",
+  "@cannotOpen": {
+    "placeholders": {
+      "uri": {
+        "type": "String"
+      }
+    }
+  },
+  "backToInbox": "回到收件箱",
+  "startupFailed": "启动失败",
+  "startupFailedHint": "本地数据打不开，App 无法继续。下面是具体原因。",
+  "keystoreDegraded": "系统密钥库不可用，本次运行只能把登录状态放在内存里，重启后需要重新登录。",
+  "removeServerLostDrafts": "仍然失败时，可以移除实例后重新添加（未发送的草稿会一并丢失）。",
+  "instances": "实例",
+  "noInstances": "还没有实例",
+  "addFirstInstance": "添加第一个实例",
+  "editInstance": "编辑实例",
+  "edit": "编辑",
+  "instanceName": "实例备注名",
+  "connectionOk": "连接正常",
+  "connectionFailed": "连接失败",
+  "checkAddress": "请检查服务器地址与网络。",
+  "serverAddressRequired": "请填写服务器地址",
+  "emailRequired": "请填写邮箱",
+  "passwordRequired": "请填写密码",
+  "loginFailed": "登录失败",
+  "signedInAs": "已登录：{email}",
+  "@signedInAs": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "instanceNeedsLoginHint": "这个实例的登录已失效，重新登录即可 —— 不影响其他实例。",
+  "noInstancesLoggedIn": "还没有登录的实例",
+  "polling": "轮询",
+  "appearance": "外观",
+  "theme": "主题",
+  "themeSystem": "跟随系统",
+  "themeLight": "浅色",
+  "themeDark": "深色",
+  "language": "语言",
+  "languageSystem": "跟随系统",
+  "about": "关于",
+  "version": "版本",
+  "capabilities": "能力",
+  "syncStatus": "同步状态",
+  "intervalLabel": "间隔",
+  "lastSyncAt": "上次同步：{time}",
+  "@lastSyncAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "consecutiveFailures": "连续失败",
+  "cursor": "游标",
+  "endpointSelfCheck": "端点自检",
+  "rawEnvelope": "原始响应",
+  "notFoundInWindow": "这封邮件不在已加载的窗口里。",
+  "openExternally": "用浏览器打开",
+  "probeNotRun": "未探测",
+  "send": "发送",
+  "sendFailed": "发送失败",
+  "composeTo": "收件人",
+  "composeSubject": "主题",
+  "composeBody": "正文",
+  "removeInstance": "删除实例",
+  "checkingSession": "正在检查登录状态…",
+  "setAsCurrent": "设为当前实例",
+  "setAsCurrentOk": "已切换到 {name}",
+  "removeInstanceConfirm": "删除「{name}」并清除它的本地缓存邮件？",
+  "signOutConfirm": "退出「{name}」？未发送的草稿会保留。",
+  "prefetchTitle": "后台预取完整正文",
+  "prefetchHint": "列表翻页时顺带拉 full=1，打开邮件更快；关闭可省流量",
+  "selfCheckHint": "点一下逐个打一遍关键端点，看服务端到底回了什么",
+  "selfCheckLoginFirst": "先登录 —— 没登录打这些端点只会拿到一串 401",
+  "noMailboxCache": "还没有邮箱缓存",
+  "noScheduler": "调度器未运行 —— 没有登录的实例，或用户暂停了轮询",
+  "allMailboxes": "全部邮箱",
+  "lastSyncedAt": "上次同步",
+  "domainList": "域名单",
+  "siteConfig": "站点配置",
+  "probedAt": "探测时间",
+  "fieldTitle": "title",
+  "fieldR2Domain": "r2Domain",
+  "missingGoesOssApi": "缺失（走 /api/oss/）",
+  "mailbox": "邮箱",
+  "toggleInstanceMailboxList": "展开或收起这个实例的邮箱",
+  "@toggleInstanceMailboxList": {
+    "description": "sidebar: disclosure arrow on a profile row (per-instance, unlike toggleMailboxList which is the whole group)"
+  },
+  "mailboxCountUnknown": "—",
+  "@mailboxCountUnknown": {
+    "description": "sidebar: placeholder for a mailbox total that has not been probed yet"
+  },
+  "mailboxCountsLabel": "共 {total} 封，其中 {unread} 封未读",
+  "@mailboxCountsLabel": {
+    "description": "sidebar: screen-reader label for the 未读/总数 pair (the visible text is symbols only)",
+    "placeholders": {
+      "unread": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "nicknameHint": "留空时用站点标题或邮箱",
+  "download": "下载",
+  "downloading": "下载中…",
+  "openWith": "用其他应用打开",
+  "share": "分享",
+  "saveAs": "另存为",
+  "preview": "预览",
+  "attachmentDownloaded": "已下载",
+  "attachmentDeleted": "已删除本地副本",
+  "attachmentCache": "附件缓存",
+  "attachmentCacheHint": "已下载的附件会留在这里，方便离线打开",
+  "cacheEmpty": "还没有下载过附件",
+  "pickAttachment": "选择一个附件",
+  "cacheUsage": "{files} 个文件 · {size}",
+  "@cacheUsage": {
+    "placeholders": {
+      "files": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "clearAllAttachments": "清空全部附件",
+  "clearAllAttachmentsConfirm": "删掉所有已下载的附件？邮件本身不受影响，但下次打开要重新下载。",
+  "clearProfileAttachments": "清理这个实例的附件",
+  "clearProfileAttachmentsConfirm": "删掉「{name}」已下载的全部附件？",
+  "@clearProfileAttachmentsConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "savedTo": "已保存到 {path}",
+  "@savedTo": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "openFailed": "打不开 —— 系统里没有能处理这种文件的应用",
+  "shareUnavailable": "这个平台没有分享面板，试试「另存为」",
+  "previewUnsupported": "这种格式不能应用内预览，可以下载后用其他应用打开",
+  "viewerSource": "源码",
+  "viewerRendered": "排版",
+  "@viewerRendered": {
+    "description": "text viewer: switch a .md attachment back to formatted rendering"
+  },
+  "viewerTruncated": "只显示前 {chars} 个字符",
+  "@viewerTruncated": {
+    "description": "text viewer: footer note when there is more content than the preview cap allows",
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "viewerEncodingLossy": "按 {encoding} 解码，个别字可能显示为 ?",
+  "@viewerEncodingLossy": {
+    "description": "text viewer: footer note when the text had to be decoded with a lossy fallback",
+    "placeholders": {
+      "encoding": {
+        "type": "String"
+      }
+    }
+  },
+  "viewerMarkdownTooDeep": "嵌套太深，没法按 Markdown 渲染，改看源码",
+  "@viewerMarkdownTooDeep": {
+    "description": "text viewer: markdown preview fell back to plain source because MarkdownDoc refused it"
+  },
+  "viewerFileGone": "文件已经不在了",
+  "viewerOfficePartial": "此预览不显示图片与版式",
+  "@viewerOfficePartial": {
+    "description": "docx viewer: footer note about what the simplified renderer leaves out"
+  },
+  "viewerNotADocument": "这不是 Word / Excel / PowerPoint 文档",
+  "@viewerNotADocument": {
+    "description": "office viewer: the bytes aren't an OOXML package at all"
+  },
+  "viewerDocumentBroken": "文档已损坏，读不出来",
+  "@viewerDocumentBroken": {
+    "description": "office viewer: the package opened but a part is missing or unparseable"
+  },
+  "viewerEmpty": "（空文件）",
+  "csvTruncated": "只显示前 {rows} 行、{columns} 列",
+  "@csvTruncated": {
+    "description": "csv viewer: footer note when the table was cut off at the parser caps",
+    "placeholders": {
+      "rows": {
+        "type": "int"
+      },
+      "columns": {
+        "type": "int"
+      }
+    }
+  },
+  "csvDelimiter": "分隔符：{delimiter}",
+  "@csvDelimiter": {
+    "description": "csv viewer: footer note naming the separator the sniffer picked",
+    "placeholders": {
+      "delimiter": {
+        "type": "String"
+      }
+    }
+  },
+  "xlsxSheetsTruncated": "只显示前 {count} 张工作表",
+  "@xlsxSheetsTruncated": {
+    "description": "xlsx viewer: footer note when the workbook has more sheets than the parser keeps",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "xlsxPartial": "数字格式已简化，图表与图片未显示",
+  "@xlsxPartial": {
+    "description": "xlsx viewer: footer note about what the simplified renderer leaves out"
+  },
+  "xlsxSheetEmpty": "（空工作表）",
+  "@xlsxSheetEmpty": {
+    "description": "xlsx viewer: a sheet with no rows"
+  },
+  "pptxSlideOf": "第 {index} 页 / 共 {total} 页",
+  "@pptxSlideOf": {
+    "description": "pptx viewer: the header of each slide card",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "pptxPartial": "幻灯片只显示了文字，版式、图片与动画未显示",
+  "@pptxPartial": {
+    "description": "pptx viewer: footer note about what the text-only renderer leaves out"
+  },
+  "pptxSlidesTruncated": "只显示前 {count} 页",
+  "@pptxSlidesTruncated": {
+    "description": "pptx viewer: footer note when the deck has more slides than the parser keeps",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pptxSlideEmpty": "（这一页没有文字）",
+  "@pptxSlideEmpty": {
+    "description": "pptx viewer: a slide whose shapes held no extractable text"
+  },
+  "play": "播放",
+  "pause": "暂停",
+  "playbackRate": "倍速",
+  "@playbackRate": {
+    "description": "audio viewer: label for the playback speed selector"
+  },
+  "audioFailed": "这台机器放不了这个文件",
+  "@audioFailed": {
+    "description": "audio viewer: the platform refused to load or play the file (e.g. no gstreamer on Linux)"
+  },
+  "videoFailed": "这个视频放不了",
+  "@videoFailed": {
+    "description": "video viewer: the player failed to initialize for this file"
+  },
+  "reply": "回复",
+  "forward": "转发",
+  "wrote": "写道：",
+  "composeFrom": "发件邮箱",
+  "composeSenderSearch": "搜索发件邮箱",
+  "composeSenderNoMatch": "没有匹配的邮箱",
+  "composeRecipientsHint": "输入邮箱地址后回车",
+  "composeBodyHint": "写点什么…",
+  "composeAttach": "添加附件",
+  "composeImageTooLarge": "图片太大了（上限 5 MB）",
+  "composeImageTooMany": "正文里最多 10 张图",
+  "composeDropFolderIgnored": "文件夹不能当附件",
+  "composeAiSelectFirst": "先选中要改写的文字",
+  "composeAiSelectionHasEmbed": "选区里有图片，没法改写",
+  "composeAiSelectionGone": "原来的选区已经不在了，请重新选中要改写的文字",
+  "composeAttachmentTitle": "附件",
+  "composeAttachmentCount": "{count} 个附件",
+  "@composeAttachmentCount": {
+    "count": {
+      "type": "int"
+    }
+  },
+  "composeAttachmentTotal": "附件合计 {size}",
+  "@composeAttachmentTotal": {
+    "size": {
+      "type": "String"
+    }
+  },
+  "composeTooManyAttachments": "附件最多 {count} 个",
+  "@composeTooManyAttachments": {
+    "count": {
+      "type": "int"
+    }
+  },
+  "composeTooManyInline": "正文内嵌图片最多 {count} 张",
+  "@composeTooManyInline": {
+    "count": {
+      "type": "int"
+    }
+  },
+  "composeTooLarge": "附件总量超出上限（{limit}）",
+  "@composeTooLarge": {
+    "limit": {
+      "type": "String"
+    }
+  },
+  "composeNoRecipient": "请至少填写一个收件人",
+  "composeBadRecipient": "收件人地址格式不正确：{address}",
+  "@composeBadRecipient": {
+    "address": {
+      "type": "String"
+    }
+  },
+  "composeEmptyBody": "正文不能为空",
+  "composeSenderUnavailable": "发件邮箱不可用",
+  "composeNoMailbox": "没有可用的发件邮箱",
+  "composeQuotaUnlimited": "发信不限量",
+  "composeQuotaUsed": "已发 {used} 封",
+  "@composeQuotaUsed": {
+    "used": {
+      "type": "int"
+    }
+  },
+  "composeQuotaRemaining": "还剩 {remaining} 封",
+  "@composeQuotaRemaining": {
+    "remaining": {
+      "type": "int"
+    }
+  },
+  "composeQuotaDay": "今日 {used}/{limit}",
+  "@composeQuotaDay": {
+    "used": {
+      "type": "int"
+    },
+    "limit": {
+      "type": "int"
+    }
+  },
+  "composeQuotaTotal": "配额 {used}/{limit}",
+  "@composeQuotaTotal": {
+    "used": {
+      "type": "int"
+    },
+    "limit": {
+      "type": "int"
+    }
+  },
+  "composeQuotaExhausted": "发信配额已用完",
+  "composeQuotaUnknown": "配额未知",
+  "composeQuotaBanned": "当前角色被禁止发信",
+  "composeQuotaInternal": "只能发给站内邮箱",
+  "composeInternalOnlyHint": "这个角色的配额只允许发给站内邮箱，外部地址会被服务端拒绝",
+  "composeRemoveRecipient": "移除",
+  "composeRecentRecipients": "最近联系人",
+  "sending": "发送中…",
+  "sendingProgress": "正在发送 {percent}%",
+  "@sendingProgress": {
+    "percent": {
+      "type": "int"
+    }
+  },
+  "sendSuccess": "已发送",
+  "sendQueued": "已放进发件箱，联网后自动发送",
+  "sendQueuedRetry": "网络不通，已存进发件箱，稍后自动重试",
+  "sendUnknownResult": "发送结果未知 —— 服务端可能已经收到了。请先在发件箱里确认，再决定是否重发。",
+  "sendAttachmentMissing": "附件已不在本地：{name}",
+  "@sendAttachmentMissing": {
+    "name": {
+      "type": "String"
+    }
+  },
+  "sendDraftCorrupted": "草稿已损坏，无法重发",
+  "sendNow": "立即发送",
+  "sendLater": "存进发件箱",
+  "outbox": "发件箱",
+  "outboxEmpty": "发件箱是空的",
+  "outboxPending": "待发送",
+  "outboxSending": "发送中",
+  "outboxFailed": "发送失败",
+  "outboxAttempts": "已尝试 {count} 次",
+  "@outboxAttempts": {
+    "count": {
+      "type": "int"
+    }
+  },
+  "outboxLastError": "失败原因：{error}",
+  "@outboxLastError": {
+    "error": {
+      "type": "String"
+    }
+  },
+  "outboxUnknownResultHint": "这封信可能在服务端已经发出去了。确认收件人收到之前，先别重发。",
+  "outboxRetry": "重试",
+  "outboxDiscard": "删除",
+  "outboxDiscardConfirm": "删掉这封还没发出去的信？内容会一起丢掉。",
+  "draft": "草稿",
+  "draftSaved": "已存草稿",
+  "draftSavedAt": "保存于 {when}",
+  "@draftSavedAt": {
+    "when": {
+      "type": "String"
+    }
+  },
+  "draftDiscard": "丢弃草稿",
+  "draftDiscardConfirm": "丢弃这封草稿？内容会一起丢掉。",
+  "draftEmpty": "还没有草稿",
+  "draftsHint": "草稿只存在这台设备上，和网页版不互通",
+  "discardChanges": "放弃这些修改？",
+  "keepEditing": "继续编辑",
+  "discard": "放弃",
+  "composeFailedStayHint": "内容还在编辑框里，改完可以直接重试",
+  "outboxSent": "已发出",
+  "outboxUnknown": "结果未知",
+  "drafts": "草稿箱",
+  "sendSavedToOutbox": "已存入发件箱，稍后自动发出",
+  "composeLargeAttachmentHint": "大附件是分块上传的，完成前请保持应用在前台",
+  "close_": "关闭",
+  "composeCloseTooltip": "关闭（Esc）",
+  "composeQuotedAttached": "原邮件会作为引用附在正文末尾",
+  "mailUnavailable": "无法读取原邮件",
+  "outboxFlush": "立即全部发出",
+  "outboxHint": "这里排队的邮件只存在本机，会按顺序一封一封发出。重试会真的再发一次 —— 服务端无法识别重复投递。",
+  "outboxAddressed": "收件人 {to}",
+  "@outboxAddressed": {
+    "placeholders": {
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStatusTitle": "同步状态",
+  "syncStateSyncing": "同步中…",
+  "syncStateWaiting": "等待中",
+  "syncStateStopped": "已停止",
+  "syncedCount": "已同步 {count} 封",
+  "@syncedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "unsyncedCount": "未同步 {count} 封",
+  "@unsyncedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "unsyncedUnknown": "剩余数量未知",
+  "unsyncedUnknownHint": "服务端总数只有完整拉过一次列表才知道，所以刚装上时这里是空的。",
+  "syncLastSuccess": "上次成功：{time}",
+  "@syncLastSuccess": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "syncNeverSucceeded": "还没有成功同步过",
+  "syncFailCount": "已连续失败 {count} 次",
+  "@syncFailCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bodyNotSynced": "正文尚未同步",
+  "pendingMore": "还有 {count} 封未同步 · 点击继续加载",
+  "@pendingMore": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pendingMorePassive": "还有 {count} 封未同步",
+  "@pendingMorePassive": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "listLoadingMore": "加载中…",
+  "listNoMore": "没有更多了",
+  "listAggregateFooter": "聚合视图按实例分别拉取，滚到底会自动同步",
+  "syncNowOne": "立即同步",
+  "syncNowFailed": "这个实例现在没法收信（还没登录或会话已失效），请先重新登录。",
+  "syncStarted": "已开始同步",
+  "syncButtonHint": "点一下立即同步 · 长按或右键打开同步页",
+  "syncingThisMail": "正在同步这封邮件…",
+  "syncBatchBlocked": "这台实例现在收不了信（还没登录或会话已失效），请先重新登录。",
+  "pushAutoProvision": "一键开通（部署者）",
+  "pushAutoProvisionHint": "用部署者的管理员口令为本机开一个中转实例位。口令只用于这一次请求，不落 prefs、不进钥匙串、不写日志。",
+  "pushAdminToken": "管理员口令",
+  "pushAdminTokenHint": "只在当前页面可见，离开即清空",
+  "pushAutoProvisionDone": "已开通，实例位与配对码已填好",
+  "sendDelay": "发送延迟",
+  "sendDelayHint": "点「发送」之后等这么久才真的发出去 —— 想反悔的话在这段时间里还来得及取消。",
+  "sendDelayNone": "立即发送",
+  "sendDelayMinutes": "{minutes} 分钟",
+  "@sendDelayMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "queuedNotice": "已加入队列，{minutes} 分钟后发送。可以在列表底部的发送队列里取消。",
+  "@queuedNotice": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sendQueueTitle": "发送队列",
+  "sendQueueCount": "发送队列 {count} 封",
+  "@sendQueueCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sendQueueIn": "{seconds} 秒后发送",
+  "@sendQueueIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "sendQueueSendNow": "立即发送",
+  "sendQueueViewAll": "在发件箱中查看全部",
+  "sendQueueCancelConfirm": "取消这封排队中的邮件？它不会被发出。",
+  "sendScheduled": "{seconds} 秒后发送",
+  "@sendScheduled": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "sendQueuedFailed": "加入队列失败 —— 内容还在编辑器里",
+  "sendScheduledMinutes": "{minutes} 分钟后发送",
+  "@sendScheduledMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "pushAdminTokenNeeded": "请先填管理员口令",
+  "@pushAdminTokenNeeded": {
+    "description": "push settings: pushAdminTokenNeeded"
+  },
+  "pushBuiltInApplied": "已按本次构建的内置配置填好；配对码只存进钥匙串，不写 prefs。",
+  "@pushBuiltInApplied": {
+    "description": "push settings: pushBuiltInApplied"
+  },
+  "aiTitle": "AI",
+  "aiSubtitle": "使用你自己的 Key",
+  "aiPrivacyNotice": "你正文里的片段会被发送到你配置的服务商。Key 存在这台设备的钥匙串里，除发给该服务商的请求之外不会离开它。",
+  "aiProviderSection": "服务商",
+  "aiModelSection": "模型",
+  "aiModelLabel": "模型",
+  "aiModelHint": "模型名 —— 手填，或用「拉取」挑一个",
+  "aiBaseUrlLabel": "接口地址",
+  "aiBaseUrlHint": "https://api.openai.com/v1",
+  "aiApiFormatLabel": "API 格式",
+  "aiApiFormatOpenai": "OpenAI 兼容",
+  "aiApiFormatAnthropic": "Anthropic",
+  "aiApiFormatNewapi": "New API",
+  "aiBaseUrlHintAnthropic": "https://api.anthropic.com",
+  "aiBaseUrlHintNewapi": "https://你的网关域名 —— 带不带 /v1 都行",
+  "aiBaseUrlInvalid": "地址要以 http:// 或 https:// 开头",
+  "aiModelsFetch": "拉取",
+  "aiModelsFetchNeedKey": "先填 Key 才能拉取",
+  "aiModelsFetchNeedUrl": "先填接口地址",
+  "aiModelsEmpty": "这个端点没有模型列表，手动填模型名即可",
+  "aiModelsFailed": "拉取失败：{message}",
+  "@aiModelsFailed": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "aiTestConnection": "测试连接",
+  "aiTestNeedModel": "先有模型名才能测试 —— 拉取一个或手填",
+  "aiTestOk": "连接正常，模型返回了 {chars} 个字",
+  "@aiTestOk": {
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "aiTestOkNoText": "连接正常（这次只回了思考、没有可见文本 —— 推理模型常常如此，不影响使用）",
+  "aiTestFailed": "连接失败：{message}",
+  "@aiTestFailed": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "aiKeySection": "API Key",
+  "aiKeyLabel": "API Key",
+  "aiKeyStored": "已保存 Key",
+  "aiKeyNotStored": "还没填过 Key",
+  "aiKeySave": "保存",
+  "aiKeyPaste": "粘贴",
+  "aiKeyPasteEmpty": "剪贴板里没有文本",
+  "aiKeyClear": "清除",
+  "aiKeySaved": "Key 已保存",
+  "aiKeyCleared": "Key 已清除",
+  "aiKeyEmpty": "请先填入 Key",
+  "aiKeyWhitespace": "Key 里有空格或换行 —— 检查一下粘贴",
+  "aiKeyDegraded": "这台设备的钥匙串用不了，Key 存不下来。上面填的这次能用，重启就没了。",
+  "aiFeaturesSection": "功能",
+  "aiInlineContinuation": "停笔一会儿，给一句续写建议",
+  "aiInlineContinuationHint": "每次停笔都会消耗一次调用",
+  "aiPreflight": "发送前检查",
+  "aiPreflightHint": "本地规则不花钱；问模型要消耗一次调用",
+  "aiSubjectSuggest": "标题栏起标题",
+  "aiSubjectSuggestHint": "主题栏里点一下，直接填一个好标题；已有主题会作为参考",
+  "aiPolish": "邮件润色",
+  "aiPolishHint": "写信页右上角点开面板：选语气、写要求，再点「生成」换掉你的正文（引用不动，可以撤销）",
+  "aiPolishTooltip": "润色全文",
+  "aiPolishNote": "只润色你自己写的部分，引用的原信一字不动。",
+  "aiPolishExtraHint": "额外要求（可选），例如：保留专业术语、称呼别改",
+  "aiPolishGenerate": "生成",
+  "aiPolishReplaceAll": "替换全文",
+  "aiPolishIdle": "选好语气、写好要求后点「生成」。",
+  "aiSubjectEmpty": "先写点正文，才好起标题",
+  "aiPolishEmpty": "正文还是空的",
+  "aiPolishFailed": "润色没有返回内容，正文没变",
+  "aiBudgetSection": "用量",
+  "aiDailyLimit": "每日调用上限",
+  "aiDailyLimitHint": "软上限 —— 只提示，不拦。填 0 表示不限。",
+  "aiUsedToday": "今天已用：{used} 次",
+  "aiUnavailable": "填好 Key 之后这些才会生效",
+  "syncNextIn": "{seconds} 秒后",
+  "@syncNextIn": {
+    "description": "sync status panel countdown",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "unreadMail": "未读邮件",
+  "@unreadMail": {
+    "description": "home menu: unread only"
+  },
+  "filterByMailbox": "按邮箱筛选",
+  "@filterByMailbox": {
+    "description": "inbox: mailbox filter sheet title / button tooltip"
+  },
+  "toggleMailboxList": "展开或收起邮箱列表",
+  "@toggleMailboxList": {
+    "description": "sidebar: disclosure arrow tooltip on the Inbox item"
+  },
+  "filterByMailboxHint": "勾一下就生效；至少留一个",
+  "@filterByMailboxHint": {
+    "description": "inbox: mailbox filter sheet subtitle"
+  },
+  "selectAll": "全选",
+  "@selectAll": {
+    "description": "inbox: mailbox filter sheet"
+  },
+  "unreadCount": "未读 {count}",
+  "@unreadCount": {
+    "description": "inbox: per-mailbox unread in the filter sheet",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mailboxKeptOne": "至少留一个邮箱",
+  "@mailboxKeptOne": {
+    "description": "inbox: filter sheet, the last checkbox cannot be cleared"
+  },
+  "syncStageSynced": "已同步",
+  "@syncStageSynced": {
+    "description": "sync panel: mail-level stage"
+  },
+  "syncStageSyncing": "正在同步",
+  "@syncStageSyncing": {
+    "description": "sync panel: mail-level stage"
+  },
+  "syncStagePending": "待同步",
+  "@syncStagePending": {
+    "description": "sync panel: mail-level stage"
+  },
+  "syncStagePendingBody": "缺正文",
+  "@syncStagePendingBody": {
+    "description": "sync panel: pending reason"
+  },
+  "syncStagePendingAttachment": "缺附件",
+  "@syncStagePendingAttachment": {
+    "description": "sync panel: pending reason"
+  },
+  "syncAllNow": "立即全部同步",
+  "@syncAllNow": {
+    "description": "sync panel: run every instance now"
+  },
+  "outboxPendingZero": "没有待发的邮件",
+  "@outboxPendingZero": {
+    "description": "home menu: outbox entry subtitle when the badge is 0"
+  },
+  "syncPanelPendingEmpty": "没有待同步的邮件",
+  "@syncPanelPendingEmpty": {
+    "description": "sync panel: empty state of the pending tab"
+  },
+  "mailTab": "邮件",
+  "@mailTab": {
+    "description": "bottom nav / home screen title for the mail branch"
+  },
+  "instanceCount": "{count} 个实例",
+  "@instanceCount": {
+    "description": "home screen subtitle: how many instances are logged in",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "allInstancesAllMailboxes": "全部实例 · 全部邮箱",
+  "@allInstancesAllMailboxes": {
+    "description": "list header subtitle when nothing is filtered"
+  },
+  "mailboxCountSelected": "已选 {count} 个邮箱",
+  "@mailboxCountSelected": {
+    "description": "list header subtitle when several mailboxes are selected",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncPanelSyncedEmpty": "还没有已同步的邮件",
+  "@syncPanelSyncedEmpty": {
+    "description": "sync panel: empty state of the synced tab"
+  },
+  "attachmentProgress": "附件 {done}/{total}",
+  "@attachmentProgress": {
+    "description": "sync panel row: attachment download progress",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "syncBatchDone": "已同步 {bodies} 封正文、{attachments} 个附件",
+  "@syncBatchDone": {
+    "description": "sync panel: result of the batch sync button",
+    "placeholders": {
+      "bodies": {
+        "type": "int"
+      },
+      "attachments": {
+        "type": "int"
+      }
+    }
+  },
+  "syncBatchNothing": "没有待同步的邮件了",
+  "@syncBatchNothing": {
+    "description": "sync panel: batch sync ran but the pending list was empty"
+  },
+  "syncBatchMore": "已同步 {mails} 封，还有更多待同步（再点一次继续）",
+  "@syncBatchMore": {
+    "description": "sync panel: batch sync hit its per-run limit",
+    "placeholders": {
+      "mails": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggest": "AI 建议",
+  "@aiSuggest": {
+    "description": "mail list row menu / detail top bar: AI suggestion entry"
+  },
+  "aiSuggestHint": "读一封邮件，告诉你有哪几件事值得做，点一下直接办（回复 / 转发 / 稍后提醒 / 删除…）",
+  "@aiSuggestHint": {
+    "description": "AI settings: the mail-suggest switch subtitle"
+  },
+  "aiSuggestPanelTitle": "AI 建议",
+  "@aiSuggestPanelTitle": {
+    "description": "suggestion panel title"
+  },
+  "aiSuggestReading": "已阅读：主题、发件人、正文 {chars} 字",
+  "@aiSuggestReading": {
+    "description": "suggestion panel header line 1",
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggestAttachments": "＋ {count} 个附件名",
+  "@aiSuggestAttachments": {
+    "description": "suggestion panel header: attachment count segment",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggestQuotedDropped": "引用部分已裁剪 · 原文 {chars} 字",
+  "@aiSuggestQuotedDropped": {
+    "description": "suggestion panel header: quoted text was trimmed",
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggestTruncated": "正文过长，只取前 {chars} 字",
+  "@aiSuggestTruncated": {
+    "description": "suggestion panel header: body hit the length cap",
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggestFetchingBody": "正在补全正文…",
+  "@aiSuggestFetchingBody": {
+    "description": "suggestion panel: fetching the full body"
+  },
+  "aiSuggestAnalyzing": "正在分析…",
+  "@aiSuggestAnalyzing": {
+    "description": "suggestion panel: analysis in flight"
+  },
+  "aiSuggestReanalyze": "重新分析",
+  "@aiSuggestReanalyze": {
+    "description": "suggestion panel: re-run the analysis"
+  },
+  "aiSuggestRetry": "重试",
+  "@aiSuggestRetry": {
+    "description": "suggestion panel: retry after a failure"
+  },
+  "aiSuggestParseFailed": "没能从模型的回答里读出建议：",
+  "@aiSuggestParseFailed": {
+    "description": "suggestion panel: could not parse the model reply"
+  },
+  "aiSuggestTopPick": "最推荐",
+  "@aiSuggestTopPick": {
+    "description": "suggestion panel: badge on the first (most recommended) item"
+  },
+  "aiSuggestActionReply": "回复",
+  "@aiSuggestActionReply": {
+    "description": "action label: reply"
+  },
+  "aiSuggestActionForward": "转发",
+  "@aiSuggestActionForward": {
+    "description": "action label: forward"
+  },
+  "aiSuggestActionDelete": "删除",
+  "@aiSuggestActionDelete": {
+    "description": "action label: delete"
+  },
+  "aiSuggestActionMarkRead": "标记已读",
+  "@aiSuggestActionMarkRead": {
+    "description": "action label: mark as read"
+  },
+  "aiSuggestActionMarkUnread": "标记未读",
+  "@aiSuggestActionMarkUnread": {
+    "description": "action label: mark as unread"
+  },
+  "aiSuggestActionStar": "加星标",
+  "@aiSuggestActionStar": {
+    "description": "action label: star"
+  },
+  "aiSuggestActionUnstar": "取消星标",
+  "@aiSuggestActionUnstar": {
+    "description": "action label: unstar"
+  },
+  "aiSuggestActionRemind": "稍后提醒",
+  "@aiSuggestActionRemind": {
+    "description": "action label: remind me later"
+  },
+  "aiSuggestActionNone": "无需处理",
+  "@aiSuggestActionNone": {
+    "description": "action label: nothing to do"
+  },
+  "aiSuggestDeleteConfirm": "删除「{subject}」？",
+  "@aiSuggestDeleteConfirm": {
+    "description": "delete confirmation dialog body",
+    "placeholders": {
+      "subject": {
+        "type": "String"
+      }
+    }
+  },
+  "remindTitle": "什么时候提醒你？",
+  "@remindTitle": {
+    "description": "reminder time picker title"
+  },
+  "remindToday": "今天 18:00",
+  "@remindToday": {
+    "description": "reminder quick option: today 18:00 (label only; the time itself is computed)"
+  },
+  "remindTomorrow": "明天 9:00",
+  "@remindTomorrow": {
+    "description": "reminder quick option: tomorrow 9:00"
+  },
+  "remindNextMonday": "下周一 9:00",
+  "@remindNextMonday": {
+    "description": "reminder quick option: next Monday 9:00"
+  },
+  "remindCustom": "自定义…",
+  "@remindCustom": {
+    "description": "reminder quick option: custom date/time"
+  },
+  "remindPast": "这个时间已经过去了",
+  "@remindPast": {
+    "description": "reminder: the chosen time is in the past"
+  },
+  "remindScheduled": "会在 {time} 提醒你",
+  "@remindScheduled": {
+    "description": "snack bar after a reminder is scheduled",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "selectedCount": "已选 {count} 封",
+  "@selectedCount": {
+    "description": "multi-select: title of the selection pane / bottom bar",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionActionWithCount": "{action}（已选 {count} 封）",
+  "@selectionActionWithCount": {
+    "description": "multi-select: a row-menu / pane action applied to the whole selection",
+    "placeholders": {
+      "action": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionClear": "取消选择",
+  "@selectionClear": {
+    "description": "multi-select: leave multi-select mode"
+  },
+  "selectionDeleteConfirm": "删除选中的 {count} 封邮件？此操作不可恢复。",
+  "@selectionDeleteConfirm": {
+    "description": "multi-select: delete confirmation body (server-side delete is permanent)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionUnread": "未读 {count} 封",
+  "@selectionUnread": {
+    "description": "multi-select statistics: how many of the selection are unread",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionWithAttachments": "带附件 {count} 封",
+  "@selectionWithAttachments": {
+    "description": "multi-select statistics: how many of the selection carry attachments",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionTimeRange": "{from} 至 {to}",
+  "@selectionTimeRange": {
+    "description": "multi-select statistics: the span of dates covered by the selection",
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "selectionSelectAll": "全选（本页 {count} 封）",
+  "@selectionSelectAll": {
+    "description": "multi-select: select every row currently loaded in the list",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionStale": "选中的邮件已经不在当前列表里了",
+  "@selectionStale": {
+    "description": "multi-select: none of the selected messages resolve to a row in the current list any more"
+  },
+  "mailboxTitle": "邮箱管理",
+  "@mailboxTitle": {
+    "description": "settings: page title for the mailbox category (the rail uses the shorter `mailbox`)"
+  },
+  "mailboxAdd": "添加邮箱",
+  "@mailboxAdd": {
+    "description": "settings > mailboxes: the add button on each instance group header"
+  },
+  "mailboxAddTitle": "添加邮箱",
+  "@mailboxAddTitle": {
+    "description": "settings > mailboxes: title of the add-mailbox dialog"
+  },
+  "mailboxAddFullAddress": "完整邮箱地址",
+  "@mailboxAddFullAddress": {
+    "description": "settings > mailboxes: label of the single-field fallback when domainList is unavailable"
+  },
+  "mailboxDomainUnavailable": "域名列表暂不可用，请填写完整地址",
+  "@mailboxDomainUnavailable": {
+    "description": "settings > mailboxes: hint under the full-address fallback field"
+  },
+  "mailboxAddDisabledByServer": "这台实例关闭了添加邮箱",
+  "@mailboxAddDisabledByServer": {
+    "description": "settings > mailboxes: shown instead of the add button when addEmail/manyEmail is off server-side"
+  },
+  "mailboxAddDenied": "该账号没有添加邮箱的权限，请联系管理员",
+  "@mailboxAddDenied": {
+    "description": "settings > mailboxes: shown instead of the add button when perm account:add is missing"
+  },
+  "mailboxNeedLogin": "需要先登录这台实例",
+  "@mailboxNeedLogin": {
+    "description": "settings > mailboxes: shown instead of the add button when the instance has no token"
+  },
+  "mailboxAddVerifyRequired": "这台实例要求人机验证，请到网页端添加",
+  "@mailboxAddVerifyRequired": {
+    "description": "settings > mailboxes: banner shown when the server needs a Turnstile token"
+  },
+  "mailboxOpenWeb": "在网页端添加",
+  "@mailboxOpenWeb": {
+    "description": "settings > mailboxes: the button that opens the instance in a browser (Turnstile fallback)"
+  },
+  "mailboxRemoveConfirm": "删除「{email}」？这个邮箱里的邮件会被一并永久删除，且无法恢复。",
+  "@mailboxRemoveConfirm": {
+    "description": "settings > mailboxes: destructive-delete confirmation, the address is spelled out",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "mailboxRemoved": "已删除 {email}",
+  "@mailboxRemoved": {
+    "description": "settings > mailboxes: snackbar after a mailbox was deleted",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "mailboxAdded": "已添加 {email}",
+  "@mailboxAdded": {
+    "description": "settings > mailboxes: snackbar after a mailbox was created",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "mailboxRename": "改名",
+  "@mailboxRename": {
+    "description": "settings > mailboxes: row menu item (email:send perm)"
+  },
+  "mailboxPin": "置顶",
+  "@mailboxPin": {
+    "description": "settings > mailboxes: row menu item; server puts it right after the primary mailbox"
+  },
+  "mailboxPrimaryBadge": "主邮箱",
+  "@mailboxPrimaryBadge": {
+    "description": "settings > mailboxes: badge on the primary mailbox row (cannot be deleted or pinned)"
+  },
+  "mailboxPrefixTooShort": "前缀至少 {n} 个字符",
+  "@mailboxPrefixTooShort": {
+    "description": "settings > mailboxes: local pre-check, mirrors the server minEmailPrefix rule",
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "mailboxInvalidAddress": "邮箱地址格式不正确",
+  "@mailboxInvalidAddress": {
+    "description": "settings > mailboxes: local pre-check, mirrors the server isEmail regex"
+  },
+  "mailboxEmptyName": "名字不能为空",
+  "@mailboxEmptyName": {
+    "description": "settings > mailboxes: rename dialog; the server does NOT reject an empty name, so the client must"
+  },
+  "mailboxNameTooLong": "名字最多 30 个字符",
+  "@mailboxNameTooLong": {
+    "description": "settings > mailboxes: rename dialog; mirrors the server usernameLengthLimit of 30"
+  }
+}

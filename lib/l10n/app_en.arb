@@ -1,0 +1,1457 @@
+{
+  "@@locale": "en",
+  "appTitle": "Cirro Mail",
+  "servers": "Servers",
+  "addServer": "Add server",
+  "addInstance": "Add instance",
+  "serverAddress": "Server address",
+  "serverAddressHint": "https://example.com/api",
+  "testConnection": "Test connection",
+  "testing": "Testing…",
+  "connectedTo": "Connected to {title}",
+  "@connectedTo": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "addAndSignIn": "Add and sign in",
+  "login": "Sign in",
+  "logout": "Sign out",
+  "logoutKeepServer": "Sign out (keep server)",
+  "removeServer": "Remove server",
+  "removeServerConfirm": "Remove \"{name}\" and its cached mail?",
+  "@removeServerConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "email": "Email",
+  "password": "Password",
+  "signingIn": "Signing in…",
+  "nickname": "Nickname",
+  "save": "Save",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "confirm": "Confirm",
+  "retry": "Retry",
+  "copied": "Copied",
+  "copy": "Copy",
+  "all": "All",
+  "aggregateInbox": "All mail",
+  "markAllRead": "Mark all read",
+  "markRead": "Mark read",
+  "markUnread": "Mark unread",
+  "refresh": "Refresh",
+  "settings": "Settings",
+  "diagnostics": "Diagnostics",
+  "inbox": "Inbox",
+  "sent": "Sent",
+  "starred": "Starred",
+  "star": "Star",
+  "unstar": "Unstar",
+  "newMail": "New mail",
+  "newMailSummary": "{name}: {count} new messages",
+  "@newMailSummary": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notifyBanner": "In-app banner",
+  "notifyBannerHint": "Turning this off still fetches mail (the list keeps updating) — it just stops the pop-ups.",
+  "pushTitle": "Background push (FCM)",
+  "pushShort": "Push",
+  "pushHint": "When the app is backgrounded or frozen by the system, a relay delivers new-mail alerts. You can skip this — you just won't be alerted in the background.",
+  "pushRelayUrl": "Relay URL",
+  "pushRelayUrlHint": "Your self-hosted mail-push worker, e.g. https://push.example.com",
+  "pushInstanceId": "Instance slot id",
+  "pushInstanceIdHint": "The id your deployment's /admin/instances created",
+  "pushPairingCode": "Pairing code",
+  "pushPairingCodeHint": "Shown once when the slot was created; rotate if you lost it",
+  "pushDeviceId": "Device id",
+  "pushDeviceIdHint": "Generated automatically on this device and tied to the slot id — you never need to edit it. Handy for support: it's what the relay knows this device as.",
+  "pushEnable": "Enable background push",
+  "pushEnabledHint": "Affects background alerts only — foreground sync, polling and in-app banners are unaffected.",
+  "pushRegister": "Register this device",
+  "pushUnregister": "Unsubscribe",
+  "pushTestOk": "Relay reachable",
+  "pushRegistrations": "Mailboxes on the relay",
+  "pushRegistrationsEmpty": "This device isn't registered for any mailbox yet",
+  "pushUnsupported": "No FCM implementation on this platform (only Linux / Windows — those rely on the app polling while it runs).",
+  "pushNotConfigured": "Relay settings aren't filled in — mail arrives only while the app is running.",
+  "pushNoFirebaseConfig": "This build has no Firebase config file (google-services.json / GoogleService-Info.plist), so FCM is unavailable. Create a Firebase project and rebuild.",
+  "pushRelayFcmMissing": "The relay has no FCM service account configured, so nothing can be delivered.",
+  "pushWebhookHint": "Paste these two into the \"Webhook push\" settings of *your* cloud-mail instance, then turn that switch on. This step can only be done by you — the relay doesn't know the instance's login system and can't do it for you.",
+  "pushWebhookUrl": "Webhook URL",
+  "pushWebhookSecret": "Webhook secret",
+  "pushWebhookNoSecret": "No pairing code yet, so no secret to show",
+  "pushCopy": "Copy",
+  "pushCopied": "Copied",
+  "pushChecking": "Checking…",
+  "pushSelfCheckOk": "Pairing code and URL both check out",
+  "pushSelfCheckSecretBad": "Wrong pairing code — this slot's secret was rotated; get a fresh one",
+  "pushSelfCheckUrlBad": "Wrong URL — it must include the /<slot>/webhook part",
+  "pushSelfCheckNoEventYet": "Config looks fine, but this slot has never actually received an event — remember to save it in the instance admin and turn the switch on.",
+  "pushSelfCheckGotEvent": "Last webhook received: {time}",
+  "@pushSelfCheckGotEvent": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pushNeedLoginFirst": "Fill in the pairing code and slot id above first, so the self-check knows what to ask about.",
+  "pushLimits": "Limits (worth knowing up front)",
+  "pushLimit1": "External mail only: mail sent inside the instance, and mail from other clients, never triggers a push — only polling sees those.",
+  "pushLimit2": "If the instance is set to rule-based receiving, the webhook never fires.",
+  "pushLimit3": "The push carries metadata only (sender / subject / code); the app still fetches the body from the instance with its own token.",
+  "pushLimit4": "The relay can see the metadata of every instance's mail — if you self-host it, that's you.",
+  "pushAdvanced": "Advanced",
+  "pushPageStepOf": "Step {index} of {total}",
+  "@pushPageStepOf": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "pushPageBack": "Back",
+  "pushPageNext": "Next",
+  "pushPageDone": "Done",
+  "pushPageRecheck": "Re-check status",
+  "pushPageStatusTitle": "Is push working right now?",
+  "pushPageStatusBody": "Three things are independent: this platform, the three relay values, and whether this device is registered. If any one of them is missing, nothing reaches you while the app is closed.",
+  "pushPageStatusPlatform": "This platform supports FCM",
+  "pushPageStatusOk": "Looks good",
+  "pushPageStatusConfigured": "The three relay values are filled in",
+  "pushPageStatusRegisteredCount": "Registered: {count}",
+  "@pushPageStatusRegisteredCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pushPageStatusOff": "The master switch is off — none of the steps below will happen.",
+  "pushPageStatusGo": "Turn the switch on",
+  "pushPageValuesTitle": "Enter the three values",
+  "pushPageValuesBody": "All three come from the relay: the URL is the worker's domain, the slot id is the slot it created for you, and the pairing code is shown once, at creation.",
+  "pushPageValuesSave": "Save these three values",
+  "pushPageValuesSaved": "Saved",
+  "pushPageValuesKeep": "The pairing code is shown once, when a slot is created; neither backend can read it back. If you lose it, rotate the slot.",
+  "pushPageValuesProvision": "I run the relay — create a new slot",
+  "pushPageEnableTitle": "Turn on background push",
+  "pushPageEnableBody": "This switch only governs alerts while the app isn't in the foreground — foreground sync, polling and in-app banners are unaffected.",
+  "pushPageEnableOff": "Turning the switch off also unsubscribes, so the relay stops pushing to this device.",
+  "pushPageEnrollTitle": "Register this device",
+  "pushPageEnrollBody": "Binds each mailbox to this device's FCM token. It also runs automatically on launch, so this step is mainly here to confirm it worked.",
+  "pushPageEnrollPermission": "The first time you register, the system asks for notification permission — that prompt is this step.",
+  "pushPageEnrollBlocked": "Fill in the three values on step 2 and turn the switch on in step 3 first.",
+  "pushPageEnrollUnsubHint": "Unsubscribe removes every registration for this device on the relay — no more pushes after that.",
+  "pushPageWebhookTitle": "Turn on Webhook push in your instance's admin",
+  "pushPageWebhookBody": "This is the one step that must be done on another site, and the one people most often forget.",
+  "pushPageWebhookAdminAsk": "Do you run this cloud-mail instance?",
+  "pushPageWebhookAdminYes": "Yes — I'll fill it in",
+  "pushPageWebhookAdminNo": "No — send it to the admin",
+  "pushPageWebhookAdminOtherHint": "Copy the message below and send it to whoever runs your instance.",
+  "pushPageWebhookRelayCopy": "Copy a message to send",
+  "pushPageWebhookRelayMessage": "Please open \"Webhook push\" in the cloud-mail instance admin, fill in the URL {url} and the secret {code}, and turn that switch on. New mail can only reach my phone after that.",
+  "@pushPageWebhookRelayMessage": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      },
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "pushPageWebhookStatus0": "Note: that switch is stored as webhookStatus, and 0 means enabled — the field name reads backwards, so it is the first suspect when nothing arrives.",
+  "pushPageWebhookConfirm": "I've filled in both values in the instance admin, and turned Webhook push on",
+  "pushPageWebhookConfirmed": "Confirmed. Change the URL or the pairing code above and this step needs confirming again.",
+  "pushPageWebhookUnconfirmed": "That part happens on another site, so the app can't see it — you have to tick the box yourself, otherwise this step keeps reading as not done.",
+  "pushPageWebhookEvidence": "The relay has already received a webhook ({time}) — this step works, no confirmation needed.",
+  "@pushPageWebhookEvidence": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pushPageCheckRememberedAt": "The last check passed ({time}) and nothing above has changed — it stays remembered.",
+  "@pushPageCheckRememberedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pushPageCheckNever": "Not checked yet. Tap the button above once; the result is remembered.",
+  "pushRefreshed": "Refreshed: the relay has {count} mailbox(es)",
+  "@pushRefreshed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pushRefreshedEmpty": "Refreshed: the relay has no mailboxes registered yet",
+  "pushRegistering": "Registering…",
+  "pushUnregistering": "Unsubscribing…",
+  "pushRefreshing": "Refreshing…",
+  "pushPageCheckTitle": "Check the whole chain",
+  "pushPageCheckBody": "One pass answers four things: can the relay be reached, does it have FCM, is this pairing code right, and is the URL saved in your instance correct.",
+  "pushPageCheckAction": "Check this chain",
+  "pushPageCheckStale": "You changed the values above — run the check again for a fresh result.",
+  "pushPageCheckFcmOk": "The relay has an FCM service account",
+  "pushPageNotesTitle": "A few things worth knowing first",
+  "pushPageNotesBody": "Background push is deliberately narrow: it covers external mail only, and everything else still arrives through polling.",
+  "pushPageNotesTurnOff": "How to turn it off",
+  "pushPageNotesTurnOffBody": "Go back to step 3 and turn the switch off; the app unsubscribes for you.",
+  "pushPageNotesSwitchSlot": "If you switch to another slot",
+  "pushPageNotesSwitchSlotBody": "The app unsubscribes from the old slot automatically — there is nothing to clean up by hand.",
+  "pushPageDocsHint": "Full commands and troubleshooting are in docs/push-setup.md in the repository.",
+  "compose": "Compose",
+  "composeSectionSignatures": "Signatures",
+  "composeSignatureFor": "Signature for {email}",
+  "@composeSignatureFor": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "composePhrases": "Common phrases",
+  "composePhrasesFor": "Common phrases for {email}",
+  "@composePhrasesFor": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "composePhraseName": "Name",
+  "composePhraseText": "Text",
+  "composeSignatureEmpty": "No mailbox yet — add an instance first",
+  "composeSnippetsHint": "Signatures and phrases are shared across instances by email address",
+  "noMailbox": "No mailbox available",
+  "needAccountPerm": "This account can't list mailboxes (missing \"account:query\" permission); showing the primary mailbox only.",
+  "emptyList": "No mail",
+  "loadFailed": "Load failed",
+  "attachmentUnavailable": "Attachment unavailable",
+  "serverUnreachable": "Server unreachable",
+  "sessionExpired": "Session expired, sign in again",
+  "sessionExpiredHint": "The sign-in may have been replaced by another device (one account allows 10 sessions).",
+  "needsLogin": "Needs sign-in",
+  "syncNow": "Sync now",
+  "close": "Close",
+  "switchMailbox": "Switch mailbox",
+  "pickMail": "Pick a mail",
+  "syncing": "Syncing",
+  "lastSync": "Last sync {time}",
+  "@lastSync": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pollInterval": "Check for mail every",
+  "pollIntervalHint": "How often new mail is fetched (1 minute – 1 hour). Shorter is more timely and uses more battery.",
+  "minutesCount": "{minutes} min",
+  "@minutesCount": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "notifications": "Notifications",
+  "notifyEnabledHint": "Turning this off stops polling and new-mail alerts; mail you already received stays readable.",
+  "clearCache": "Clear cache",
+  "unnamed": "(unnamed)",
+  "unknown": "Unknown",
+  "noSubject": "(no subject)",
+  "pageNotFound": "Page not found",
+  "cannotOpen": "Can't open: {uri}",
+  "@cannotOpen": {
+    "placeholders": {
+      "uri": {
+        "type": "String"
+      }
+    }
+  },
+  "backToInbox": "Back to inbox",
+  "startupFailed": "Startup failed",
+  "startupFailedHint": "Local data couldn't be opened, so the app can't continue. The reason is below.",
+  "keystoreDegraded": "The system keystore is unavailable; sign-in state will only live in memory and must be entered again after a restart.",
+  "removeServerLostDrafts": "If it keeps failing, remove the instance and add it again (unsent drafts will be lost).",
+  "instances": "Instances",
+  "noInstances": "No instances yet",
+  "addFirstInstance": "Add your first instance",
+  "editInstance": "Edit instance",
+  "edit": "Edit",
+  "instanceName": "Instance name",
+  "connectionOk": "Connection OK",
+  "connectionFailed": "Connection failed",
+  "checkAddress": "Check the server address and your network.",
+  "serverAddressRequired": "Enter the server address",
+  "emailRequired": "Enter your email",
+  "passwordRequired": "Enter your password",
+  "loginFailed": "Sign-in failed",
+  "signedInAs": "Signed in as {email}",
+  "@signedInAs": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "instanceNeedsLoginHint": "The session for this instance expired. Sign in again — other instances are unaffected.",
+  "noInstancesLoggedIn": "No instance is signed in",
+  "polling": "Polling",
+  "appearance": "Appearance",
+  "theme": "Theme",
+  "themeSystem": "System",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "language": "Language",
+  "languageSystem": "Follow system",
+  "about": "About",
+  "version": "Version",
+  "capabilities": "Capabilities",
+  "syncStatus": "Sync status",
+  "intervalLabel": "Interval",
+  "lastSyncAt": "Last sync: {time}",
+  "@lastSyncAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "consecutiveFailures": "Consecutive failures",
+  "cursor": "Cursor",
+  "endpointSelfCheck": "Endpoint self-check",
+  "rawEnvelope": "Raw response",
+  "notFoundInWindow": "This message isn't in the loaded window yet.",
+  "openExternally": "Open in browser",
+  "probeNotRun": "Not probed",
+  "send": "Send",
+  "sendFailed": "Send failed",
+  "composeTo": "To",
+  "composeSubject": "Subject",
+  "composeBody": "Message",
+  "removeInstance": "Remove instance",
+  "checkingSession": "Checking session…",
+  "setAsCurrent": "Set as current",
+  "setAsCurrentOk": "Now showing {name}",
+  "removeInstanceConfirm": "Remove \"{name}\" and all of its cached mail?",
+  "signOutConfirm": "Sign out of \"{name}\"? Mail that has not been sent will be kept.",
+  "prefetchTitle": "Prefetch full bodies",
+  "prefetchHint": "Pulls full=1 while paging so messages open instantly; turn off to save data",
+  "selfCheckHint": "Tap to hit the key endpoints once and see what the server actually returns",
+  "selfCheckLoginFirst": "Sign in first — these endpoints would only return 401",
+  "noMailboxCache": "No mailbox cache yet",
+  "noScheduler": "Scheduler not running — no instance is signed in, or polling is paused",
+  "allMailboxes": "All mailboxes",
+  "lastSyncedAt": "Last sync",
+  "domainList": "Domains",
+  "siteConfig": "Site config",
+  "probedAt": "Probed at",
+  "fieldTitle": "title",
+  "fieldR2Domain": "r2Domain",
+  "missingGoesOssApi": "missing (using /api/oss/)",
+  "mailbox": "Mailboxes",
+  "toggleInstanceMailboxList": "Show or hide this instance's mailboxes",
+  "@toggleInstanceMailboxList": {
+    "description": "sidebar: disclosure arrow on a profile row (per-instance, unlike toggleMailboxList which is the whole group)"
+  },
+  "mailboxCountUnknown": "—",
+  "@mailboxCountUnknown": {
+    "description": "sidebar: placeholder for a mailbox total that has not been probed yet"
+  },
+  "mailboxCountsLabel": "{total} messages, {unread} unread",
+  "@mailboxCountsLabel": {
+    "description": "sidebar: screen-reader label for the unread/total pair (the visible text is symbols only)",
+    "placeholders": {
+      "unread": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "nicknameHint": "Falls back to the site title or your email",
+  "download": "Download",
+  "downloading": "Downloading…",
+  "openWith": "Open with another app",
+  "share": "Share",
+  "saveAs": "Save as",
+  "preview": "Preview",
+  "attachmentDownloaded": "Downloaded",
+  "attachmentDeleted": "Local copy deleted",
+  "attachmentCache": "Attachment cache",
+  "attachmentCacheHint": "Downloaded attachments are kept here for offline use",
+  "cacheEmpty": "No attachments downloaded yet",
+  "pickAttachment": "Pick an attachment",
+  "cacheUsage": "{files} files · {size}",
+  "@cacheUsage": {
+    "placeholders": {
+      "files": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "clearAllAttachments": "Clear all attachments",
+  "clearAllAttachmentsConfirm": "Delete every downloaded attachment? Your mail is untouched, but attachments will need downloading again.",
+  "clearProfileAttachments": "Clear this instance's attachments",
+  "clearProfileAttachmentsConfirm": "Delete all attachments downloaded for \"{name}\"?",
+  "@clearProfileAttachmentsConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "savedTo": "Saved to {path}",
+  "@savedTo": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "openFailed": "Couldn't open — no app on this system handles this file type",
+  "shareUnavailable": "No share sheet on this platform; try \"Save as\"",
+  "previewUnsupported": "This format can't be previewed in-app; download it and open it with another app",
+  "viewerSource": "Source",
+  "viewerRendered": "Rendered",
+  "@viewerRendered": {
+    "description": "text viewer: switch a .md attachment back to formatted rendering"
+  },
+  "viewerTruncated": "Only the first {chars} characters are shown",
+  "@viewerTruncated": {
+    "description": "text viewer: footer note when there is more content than the preview cap allows",
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "viewerEncodingLossy": "Decoded as {encoding}; some characters may show as ?",
+  "@viewerEncodingLossy": {
+    "description": "text viewer: footer note when the text had to be decoded with a lossy fallback",
+    "placeholders": {
+      "encoding": {
+        "type": "String"
+      }
+    }
+  },
+  "viewerMarkdownTooDeep": "Nested too deeply to render as Markdown — showing the source",
+  "@viewerMarkdownTooDeep": {
+    "description": "text viewer: markdown preview fell back to plain source because MarkdownDoc refused it"
+  },
+  "viewerFileGone": "The file is no longer on disk",
+  "viewerOfficePartial": "Images and layout aren't shown in this preview",
+  "@viewerOfficePartial": {
+    "description": "docx viewer: footer note about what the simplified renderer leaves out"
+  },
+  "viewerNotADocument": "This file isn't a Word/Excel/PowerPoint document",
+  "@viewerNotADocument": {
+    "description": "office viewer: the bytes aren't an OOXML package at all"
+  },
+  "viewerDocumentBroken": "This document is damaged and can't be read",
+  "@viewerDocumentBroken": {
+    "description": "office viewer: the package opened but a part is missing or unparseable"
+  },
+  "viewerEmpty": "(empty file)",
+  "csvTruncated": "Showing the first {rows} rows and {columns} columns",
+  "@csvTruncated": {
+    "description": "table viewer (csv / xlsx): footer note when the table was cut off at the parser caps",
+    "placeholders": {
+      "rows": {
+        "type": "int"
+      },
+      "columns": {
+        "type": "int"
+      }
+    }
+  },
+  "csvDelimiter": "Delimiter: {delimiter}",
+  "@csvDelimiter": {
+    "description": "csv viewer: footer note naming the separator the sniffer picked",
+    "placeholders": {
+      "delimiter": {
+        "type": "String"
+      }
+    }
+  },
+  "xlsxSheetsTruncated": "Only the first {count} sheets are shown",
+  "@xlsxSheetsTruncated": {
+    "description": "xlsx viewer: footer note when the workbook has more sheets than the parser keeps",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "xlsxPartial": "Number formats are simplified; charts and images aren't shown",
+  "@xlsxPartial": {
+    "description": "xlsx viewer: footer note about what the simplified renderer leaves out"
+  },
+  "xlsxSheetEmpty": "(empty sheet)",
+  "@xlsxSheetEmpty": {
+    "description": "xlsx viewer: a sheet with no rows"
+  },
+  "pptxSlideOf": "Slide {index} of {total}",
+  "@pptxSlideOf": {
+    "description": "pptx viewer: the header of each slide card",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "pptxPartial": "Slides are shown as text only; layout, images and animations aren't shown",
+  "@pptxPartial": {
+    "description": "pptx viewer: footer note about what the text-only renderer leaves out"
+  },
+  "pptxSlidesTruncated": "Only the first {count} slides are shown",
+  "@pptxSlidesTruncated": {
+    "description": "pptx viewer: footer note when the deck has more slides than the parser keeps",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pptxSlideEmpty": "(no text on this slide)",
+  "@pptxSlideEmpty": {
+    "description": "pptx viewer: a slide whose shapes held no extractable text"
+  },
+  "play": "Play",
+  "pause": "Pause",
+  "playbackRate": "Speed",
+  "@playbackRate": {
+    "description": "audio viewer: label for the playback speed selector"
+  },
+  "audioFailed": "Couldn't play this file on this system",
+  "@audioFailed": {
+    "description": "audio viewer: the platform refused to load or play the file (e.g. no gstreamer on Linux)"
+  },
+  "videoFailed": "Couldn't play this video",
+  "@videoFailed": {
+    "description": "video viewer: the player failed to initialize for this file"
+  },
+  "reply": "Reply",
+  "forward": "Forward",
+  "wrote": "wrote:",
+  "composeFrom": "From",
+  "composeSenderSearch": "Search sender",
+  "composeSenderNoMatch": "No matching mailbox",
+  "composeRecipientsHint": "Type an address, then press Enter",
+  "composeBodyHint": "Write your message…",
+  "composeAttach": "Attach files",
+  "composeImageTooLarge": "Image is too large (5 MB max)",
+  "composeImageTooMany": "At most 10 images in the message body",
+  "composeDropFolderIgnored": "Folders can't be attached",
+  "composeAiSelectFirst": "Select the text you want rewritten first",
+  "composeAiSelectionHasEmbed": "The selection contains an image, so it can't be rewritten",
+  "composeAiSelectionGone": "The original selection is gone — select the text again",
+  "composeAttachmentTitle": "Attachments",
+  "composeAttachmentCount": "{count, plural, =1{1 attachment} other{{count} attachments}}",
+  "@composeAttachmentCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composeAttachmentTotal": "Total {size}",
+  "@composeAttachmentTotal": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "composeTooManyAttachments": "At most {count} attachments",
+  "@composeTooManyAttachments": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composeTooManyInline": "At most {count} inline images",
+  "@composeTooManyInline": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composeTooLarge": "Attachments exceed the limit ({limit})",
+  "@composeTooLarge": {
+    "placeholders": {
+      "limit": {
+        "type": "String"
+      }
+    }
+  },
+  "composeNoRecipient": "Add at least one recipient",
+  "composeBadRecipient": "Not a valid address: {address}",
+  "@composeBadRecipient": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "composeEmptyBody": "The message body can't be empty",
+  "composeSenderUnavailable": "Sender address unavailable",
+  "composeNoMailbox": "No usable sender mailbox",
+  "composeQuotaUnlimited": "Sending is unlimited",
+  "composeQuotaUsed": "{used} sent",
+  "@composeQuotaUsed": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      }
+    }
+  },
+  "composeQuotaRemaining": "{remaining} left",
+  "@composeQuotaRemaining": {
+    "placeholders": {
+      "remaining": {
+        "type": "int"
+      }
+    }
+  },
+  "composeQuotaDay": "Today {used}/{limit}",
+  "@composeQuotaDay": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "composeQuotaTotal": "Quota {used}/{limit}",
+  "@composeQuotaTotal": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "composeQuotaExhausted": "Sending quota used up",
+  "composeQuotaUnknown": "Quota unknown",
+  "composeQuotaBanned": "Your role isn't allowed to send",
+  "composeQuotaInternal": "Internal mailboxes only",
+  "composeInternalOnlyHint": "Your quota only allows sending to internal mailboxes; external addresses will be rejected by the server",
+  "composeRemoveRecipient": "Remove",
+  "composeRecentRecipients": "Recent",
+  "sending": "Sending…",
+  "sendingProgress": "Sending {percent}%",
+  "@sendingProgress": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "sendSuccess": "Sent",
+  "sendQueued": "Added to Outbox — it will send once you're online",
+  "sendQueuedRetry": "No network — saved to Outbox and will retry automatically",
+  "sendUnknownResult": "Send result unknown — the server may already have it. Check the Outbox before resending.",
+  "sendAttachmentMissing": "Attachment is no longer on this device: {name}",
+  "@sendAttachmentMissing": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "sendDraftCorrupted": "Draft is corrupted and can't be resent",
+  "sendNow": "Send now",
+  "sendLater": "Save to Outbox",
+  "outbox": "Outbox",
+  "outboxEmpty": "Outbox is empty",
+  "outboxPending": "Queued",
+  "outboxSending": "Sending",
+  "outboxFailed": "Failed",
+  "outboxAttempts": "Tried {count} time(s)",
+  "@outboxAttempts": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "outboxLastError": "Reason: {error}",
+  "@outboxLastError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "outboxUnknownResultHint": "This message may already have been sent. Confirm the recipient didn't get it before resending.",
+  "outboxRetry": "Retry",
+  "outboxDiscard": "Delete",
+  "outboxDiscardConfirm": "Delete this unsent message? Its contents will be lost.",
+  "draft": "Draft",
+  "draftSaved": "Draft saved",
+  "draftSavedAt": "Saved {when}",
+  "@draftSavedAt": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "draftDiscard": "Discard draft",
+  "draftDiscardConfirm": "Discard this draft? Its contents will be lost.",
+  "draftEmpty": "No drafts yet",
+  "draftsHint": "Drafts live on this device only — they don't sync with the web app",
+  "discardChanges": "Discard these changes?",
+  "keepEditing": "Keep editing",
+  "discard": "Discard",
+  "composeFailedStayHint": "Your message is still in the editor — fix it and try again",
+  "outboxSent": "Sent",
+  "outboxUnknown": "Result unknown",
+  "drafts": "Drafts",
+  "sendSavedToOutbox": "Saved to Outbox — it will be sent automatically",
+  "composeLargeAttachmentHint": "Large attachments are uploaded in chunks — keep the app open until it finishes",
+  "close_": "Close",
+  "composeCloseTooltip": "Close (Esc)",
+  "composeQuotedAttached": "The original message will be quoted below your text",
+  "mailUnavailable": "Can't load the original message",
+  "outboxFlush": "Send all now",
+  "outboxHint": "Messages here are queued on this device and sent one at a time. Retrying sends a real message — the server has no way to tell a duplicate.",
+  "outboxAddressed": "Addressed to {to}",
+  "@outboxAddressed": {
+    "placeholders": {
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStatusTitle": "Sync status",
+  "syncStateSyncing": "Syncing…",
+  "syncStateWaiting": "Waiting",
+  "syncStateStopped": "Stopped",
+  "syncedCount": "Synced {count}",
+  "@syncedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "unsyncedCount": "{count} to sync",
+  "@unsyncedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "unsyncedUnknown": "Remaining unknown",
+  "unsyncedUnknownHint": "The server total is only known after a full page of /email/list, so this is blank on a fresh install.",
+  "syncLastSuccess": "Last success: {time}",
+  "@syncLastSuccess": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "syncNeverSucceeded": "No successful sync yet",
+  "syncFailCount": "Failed {count} times in a row",
+  "@syncFailCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bodyNotSynced": "Body not fetched yet",
+  "pendingMore": "{count} messages not synced yet · tap to load more",
+  "@pendingMore": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pendingMorePassive": "{count} messages not synced yet",
+  "@pendingMorePassive": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "listLoadingMore": "Loading…",
+  "listNoMore": "No more messages",
+  "listAggregateFooter": "Aggregate view pulls each instance separately — scrolling to the end syncs again",
+  "syncNowOne": "Sync now",
+  "syncNowFailed": "This instance can't sync (not signed in, or the session is gone). Sign in again first.",
+  "syncStarted": "Sync started",
+  "syncButtonHint": "Tap to sync now · long-press or right-click for the sync page",
+  "syncingThisMail": "Syncing this message…",
+  "syncBatchBlocked": "This instance can't receive mail right now (not signed in, or the session is gone). Sign in again first.",
+  "pushAutoProvision": "One-tap setup (deployer)",
+  "pushAutoProvisionHint": "Creates a relay slot for this device using the deployer admin token. The token is used for this request only — it is never saved to prefs, the keychain, or any log.",
+  "pushAdminToken": "Admin token",
+  "pushAdminTokenHint": "Shown only on this screen; cleared when you leave",
+  "pushAutoProvisionDone": "Provisioned — instance id and pairing code filled in",
+  "sendDelay": "Send delay",
+  "sendDelayHint": "After you tap Send the message waits this long before actually going out — long enough to cancel if you change your mind.",
+  "sendDelayNone": "Send immediately",
+  "sendDelayMinutes": "{minutes} min",
+  "@sendDelayMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "queuedNotice": "Queued — sending in {minutes} min. You can cancel it from the send queue bar.",
+  "@queuedNotice": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sendQueueTitle": "Send queue",
+  "sendQueueCount": "{count} queued",
+  "@sendQueueCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sendQueueIn": "sending in {seconds}s",
+  "@sendQueueIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "sendQueueSendNow": "Send now",
+  "sendQueueViewAll": "View all in Outbox",
+  "sendQueueCancelConfirm": "Cancel this queued message? It will not be sent.",
+  "sendScheduled": "Sends in {seconds}s",
+  "@sendScheduled": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "sendQueuedFailed": "Queued failed — the message is still in the editor",
+  "sendScheduledMinutes": "Sends in {minutes} min",
+  "@sendScheduledMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "pushAdminTokenNeeded": "Enter the admin token first",
+  "@pushAdminTokenNeeded": {
+    "description": "push settings: pushAdminTokenNeeded"
+  },
+  "pushBuiltInApplied": "Pre-filled from this build; the pairing code is stored in the keychain only.",
+  "@pushBuiltInApplied": {
+    "description": "push settings: pushBuiltInApplied"
+  },
+  "aiTitle": "AI",
+  "aiSubtitle": "Bring your own key",
+  "aiPrivacyNotice": "Text from your message is sent to the provider you configure. The key is stored in this device's keychain and never leaves it except in requests to that provider.",
+  "aiProviderSection": "Provider",
+  "aiModelSection": "Model",
+  "aiModelLabel": "Model",
+  "aiModelHint": "Model name — type it, or use Fetch to pick one",
+  "aiBaseUrlLabel": "Endpoint URL",
+  "aiBaseUrlHint": "https://api.openai.com/v1",
+  "aiApiFormatLabel": "API format",
+  "aiApiFormatOpenai": "OpenAI-compatible",
+  "aiApiFormatAnthropic": "Anthropic",
+  "aiApiFormatNewapi": "New API",
+  "aiBaseUrlHintAnthropic": "https://api.anthropic.com",
+  "aiBaseUrlHintNewapi": "https://your-gateway-host — with or without /v1",
+  "aiBaseUrlInvalid": "The URL must start with http:// or https://",
+  "aiModelsFetch": "Fetch",
+  "aiModelsFetchNeedKey": "Save a key first",
+  "aiModelsFetchNeedUrl": "Fill in the URL first",
+  "aiModelsEmpty": "This endpoint has no model list — just type the name",
+  "aiModelsFailed": "Couldn't fetch: {message}",
+  "@aiModelsFailed": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "aiTestConnection": "Test connection",
+  "aiTestNeedModel": "A model name is needed to test — fetch one or type it",
+  "aiTestOk": "Connected — the model returned {chars} characters",
+  "@aiTestOk": {
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "aiTestOkNoText": "Connected (only reasoning came back, no visible text — normal for a reasoning model; nothing wrong)",
+  "aiTestFailed": "Connection failed: {message}",
+  "@aiTestFailed": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "aiKeySection": "API key",
+  "aiKeyLabel": "API key",
+  "aiKeyStored": "A key is saved",
+  "aiKeyNotStored": "No key saved yet",
+  "aiKeySave": "Save",
+  "aiKeyPaste": "Paste",
+  "aiKeyPasteEmpty": "Nothing on the clipboard to paste",
+  "aiKeyClear": "Clear",
+  "aiKeySaved": "Key saved",
+  "aiKeyCleared": "Key cleared",
+  "aiKeyEmpty": "Enter a key first",
+  "aiKeyWhitespace": "The key contains a space or newline — check the paste",
+  "aiKeyDegraded": "This device's keychain is unavailable, so the key can't be stored. The entry above will not survive a restart.",
+  "aiFeaturesSection": "Features",
+  "aiInlineContinuation": "Suggest the next sentence as I pause",
+  "aiInlineContinuationHint": "Costs one call every time you stop typing",
+  "aiPreflight": "Check before sending",
+  "aiPreflightHint": "Local checks are free; asking the model costs one call",
+  "aiSubjectSuggest": "Suggest a subject line",
+  "aiSubjectSuggestHint": "Tap in the subject row to fill one in; an existing subject is used as reference",
+  "aiPolish": "Polish the message",
+  "aiPolishHint": "Open the sheet from the compose toolbar: pick a tone, add notes, then tap Generate to replace your body (the quote is untouched; undoable)",
+  "aiPolishTooltip": "Polish the whole message",
+  "aiPolishNote": "Only your own text is polished — the quoted message is left exactly as is.",
+  "aiPolishExtraHint": "Extra requirements (optional), e.g. keep the terminology, don't change how I address them",
+  "aiPolishGenerate": "Generate",
+  "aiPolishReplaceAll": "Replace the body",
+  "aiPolishIdle": "Pick a tone, add notes, then tap Generate.",
+  "aiSubjectEmpty": "Write some body text first — that's what the subject is drawn from",
+  "aiPolishEmpty": "The body is still empty",
+  "aiPolishFailed": "Polishing returned nothing — the body is unchanged",
+  "aiBudgetSection": "Usage",
+  "aiDailyLimit": "Daily call limit",
+  "aiDailyLimitHint": "A soft limit — it warns, it never blocks. 0 means unlimited.",
+  "aiUsedToday": "Used today: {used}",
+  "@aiUsedToday": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      }
+    }
+  },
+  "aiUnavailable": "Fill in your key to turn these on",
+  "syncNextIn": "next in {seconds}s",
+  "@syncNextIn": {
+    "description": "sync status panel countdown",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "unreadMail": "Unread",
+  "@unreadMail": {
+    "description": "home menu: unread only"
+  },
+  "filterByMailbox": "Filter by mailbox",
+  "@filterByMailbox": {
+    "description": "inbox: mailbox filter sheet title / button tooltip"
+  },
+  "toggleMailboxList": "Show or hide the mailbox list",
+  "@toggleMailboxList": {
+    "description": "sidebar: disclosure arrow tooltip on the Inbox item"
+  },
+  "filterByMailboxHint": "Takes effect on tap; at least one stays selected",
+  "@filterByMailboxHint": {
+    "description": "inbox: mailbox filter sheet subtitle"
+  },
+  "selectAll": "Select all",
+  "@selectAll": {
+    "description": "inbox: mailbox filter sheet"
+  },
+  "unreadCount": "{count} unread",
+  "@unreadCount": {
+    "description": "inbox: per-mailbox unread in the filter sheet",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mailboxKeptOne": "At least one mailbox has to stay selected",
+  "@mailboxKeptOne": {
+    "description": "inbox: filter sheet, the last checkbox cannot be cleared"
+  },
+  "syncStageSynced": "Synced",
+  "@syncStageSynced": {
+    "description": "sync panel: mail-level stage"
+  },
+  "syncStageSyncing": "Syncing",
+  "@syncStageSyncing": {
+    "description": "sync panel: mail-level stage"
+  },
+  "syncStagePending": "Pending",
+  "@syncStagePending": {
+    "description": "sync panel: mail-level stage"
+  },
+  "syncStagePendingBody": "No body",
+  "@syncStagePendingBody": {
+    "description": "sync panel: pending reason"
+  },
+  "syncStagePendingAttachment": "No attachment",
+  "@syncStagePendingAttachment": {
+    "description": "sync panel: pending reason"
+  },
+  "syncAllNow": "Sync everything now",
+  "@syncAllNow": {
+    "description": "sync panel: run every instance now"
+  },
+  "outboxPendingZero": "Nothing waiting to be sent",
+  "@outboxPendingZero": {
+    "description": "home menu: outbox entry subtitle when the badge is 0"
+  },
+  "syncPanelPendingEmpty": "Nothing left to sync",
+  "@syncPanelPendingEmpty": {
+    "description": "sync panel: empty state of the pending tab"
+  },
+  "mailTab": "Mail",
+  "@mailTab": {
+    "description": "bottom nav / home screen title for the mail branch"
+  },
+  "instanceCount": "{count} instances",
+  "@instanceCount": {
+    "description": "home screen subtitle: how many instances are logged in",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "allInstancesAllMailboxes": "All instances · all mailboxes",
+  "@allInstancesAllMailboxes": {
+    "description": "list header subtitle when nothing is filtered"
+  },
+  "mailboxCountSelected": "{count} mailboxes selected",
+  "@mailboxCountSelected": {
+    "description": "list header subtitle when several mailboxes are selected",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncPanelSyncedEmpty": "Nothing synced yet",
+  "@syncPanelSyncedEmpty": {
+    "description": "sync panel: empty state of the synced tab"
+  },
+  "attachmentProgress": "{done}/{total} attachments",
+  "@attachmentProgress": {
+    "description": "sync panel row: attachment download progress",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "syncBatchDone": "Synced {bodies} bodies and {attachments} attachments",
+  "@syncBatchDone": {
+    "description": "sync panel: result of the batch sync button",
+    "placeholders": {
+      "bodies": {
+        "type": "int"
+      },
+      "attachments": {
+        "type": "int"
+      }
+    }
+  },
+  "syncBatchNothing": "Nothing left to sync",
+  "@syncBatchNothing": {
+    "description": "sync panel: batch sync ran but the pending list was empty"
+  },
+  "syncBatchMore": "Synced {mails}; more are waiting (tap again to continue)",
+  "@syncBatchMore": {
+    "description": "sync panel: batch sync hit its per-run limit",
+    "placeholders": {
+      "mails": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggest": "AI suggestions",
+  "@aiSuggest": {
+    "description": "mail list row menu / detail top bar: AI suggestion entry"
+  },
+  "aiSuggestHint": "Read a message and see what's worth doing — tap one to do it (reply / forward / remind / delete…)",
+  "@aiSuggestHint": {
+    "description": "AI settings: the mail-suggest switch subtitle"
+  },
+  "aiSuggestPanelTitle": "AI suggestions",
+  "@aiSuggestPanelTitle": {
+    "description": "suggestion panel title"
+  },
+  "aiSuggestReading": "Read: subject, sender, body ({chars} chars)",
+  "@aiSuggestReading": {
+    "description": "suggestion panel header line 1",
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggestAttachments": "+ {count} attachment names",
+  "@aiSuggestAttachments": {
+    "description": "suggestion panel header: attachment count segment",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggestQuotedDropped": "quoted text trimmed · {chars} chars original",
+  "@aiSuggestQuotedDropped": {
+    "description": "suggestion panel header: quoted text was trimmed",
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggestTruncated": "Body too long — using the first {chars} chars",
+  "@aiSuggestTruncated": {
+    "description": "suggestion panel header: body hit the length cap",
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSuggestFetchingBody": "Fetching the full message…",
+  "@aiSuggestFetchingBody": {
+    "description": "suggestion panel: fetching the full body"
+  },
+  "aiSuggestAnalyzing": "Analyzing…",
+  "@aiSuggestAnalyzing": {
+    "description": "suggestion panel: analysis in flight"
+  },
+  "aiSuggestReanalyze": "Re-analyze",
+  "@aiSuggestReanalyze": {
+    "description": "suggestion panel: re-run the analysis"
+  },
+  "aiSuggestRetry": "Retry",
+  "@aiSuggestRetry": {
+    "description": "suggestion panel: retry after a failure"
+  },
+  "aiSuggestParseFailed": "Couldn't read a suggestion out of the model's reply:",
+  "@aiSuggestParseFailed": {
+    "description": "suggestion panel: could not parse the model reply"
+  },
+  "aiSuggestTopPick": "Top pick",
+  "@aiSuggestTopPick": {
+    "description": "suggestion panel: badge on the first (most recommended) item"
+  },
+  "aiSuggestActionReply": "Reply",
+  "@aiSuggestActionReply": {
+    "description": "action label: reply"
+  },
+  "aiSuggestActionForward": "Forward",
+  "@aiSuggestActionForward": {
+    "description": "action label: forward"
+  },
+  "aiSuggestActionDelete": "Delete",
+  "@aiSuggestActionDelete": {
+    "description": "action label: delete"
+  },
+  "aiSuggestActionMarkRead": "Mark as read",
+  "@aiSuggestActionMarkRead": {
+    "description": "action label: mark as read"
+  },
+  "aiSuggestActionMarkUnread": "Mark as unread",
+  "@aiSuggestActionMarkUnread": {
+    "description": "action label: mark as unread"
+  },
+  "aiSuggestActionStar": "Add star",
+  "@aiSuggestActionStar": {
+    "description": "action label: star"
+  },
+  "aiSuggestActionUnstar": "Remove star",
+  "@aiSuggestActionUnstar": {
+    "description": "action label: unstar"
+  },
+  "aiSuggestActionRemind": "Remind me later",
+  "@aiSuggestActionRemind": {
+    "description": "action label: remind me later"
+  },
+  "aiSuggestActionNone": "Nothing to do",
+  "@aiSuggestActionNone": {
+    "description": "action label: nothing to do"
+  },
+  "aiSuggestDeleteConfirm": "Delete \"{subject}\"?",
+  "@aiSuggestDeleteConfirm": {
+    "description": "delete confirmation dialog body",
+    "placeholders": {
+      "subject": {
+        "type": "String"
+      }
+    }
+  },
+  "remindTitle": "When should we remind you?",
+  "@remindTitle": {
+    "description": "reminder time picker title"
+  },
+  "remindToday": "Today 6:00 PM",
+  "@remindToday": {
+    "description": "reminder quick option: today 18:00 (label only; the time itself is computed)"
+  },
+  "remindTomorrow": "Tomorrow 9:00 AM",
+  "@remindTomorrow": {
+    "description": "reminder quick option: tomorrow 9:00"
+  },
+  "remindNextMonday": "Next Monday 9:00 AM",
+  "@remindNextMonday": {
+    "description": "reminder quick option: next Monday 9:00"
+  },
+  "remindCustom": "Custom…",
+  "@remindCustom": {
+    "description": "reminder quick option: custom date/time"
+  },
+  "remindPast": "That time has already passed",
+  "@remindPast": {
+    "description": "reminder: the chosen time is in the past"
+  },
+  "remindScheduled": "We'll remind you at {time}",
+  "@remindScheduled": {
+    "description": "snack bar after a reminder is scheduled",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "selectedCount": "{count} selected",
+  "@selectedCount": {
+    "description": "multi-select: title of the selection pane / bottom bar",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionActionWithCount": "{action} ({count} selected)",
+  "@selectionActionWithCount": {
+    "description": "multi-select: a row-menu / pane action applied to the whole selection",
+    "placeholders": {
+      "action": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionClear": "Clear selection",
+  "@selectionClear": {
+    "description": "multi-select: leave multi-select mode"
+  },
+  "selectionDeleteConfirm": "Delete the {count} selected messages? This cannot be undone.",
+  "@selectionDeleteConfirm": {
+    "description": "multi-select: delete confirmation body (server-side delete is permanent)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionUnread": "{count} unread",
+  "@selectionUnread": {
+    "description": "multi-select statistics: how many of the selection are unread",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionWithAttachments": "{count} with attachments",
+  "@selectionWithAttachments": {
+    "description": "multi-select statistics: how many of the selection carry attachments",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionTimeRange": "{from} – {to}",
+  "@selectionTimeRange": {
+    "description": "multi-select statistics: the span of dates covered by the selection",
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "selectionSelectAll": "Select all ({count} loaded)",
+  "@selectionSelectAll": {
+    "description": "multi-select: select every row currently loaded in the list",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectionStale": "The selected messages are no longer in this list",
+  "@selectionStale": {
+    "description": "multi-select: none of the selected messages resolve to a row in the current list any more"
+  },
+  "mailboxTitle": "Mailbox management",
+  "@mailboxTitle": {
+    "description": "settings: page title for the mailbox category (the rail uses the shorter `mailbox`)"
+  },
+  "mailboxAdd": "Add mailbox",
+  "@mailboxAdd": {
+    "description": "settings > mailboxes: the add button on each instance group header"
+  },
+  "mailboxAddTitle": "Add mailbox",
+  "@mailboxAddTitle": {
+    "description": "settings > mailboxes: title of the add-mailbox dialog"
+  },
+  "mailboxAddFullAddress": "Full email address",
+  "@mailboxAddFullAddress": {
+    "description": "settings > mailboxes: label of the single-field fallback when domainList is unavailable"
+  },
+  "mailboxDomainUnavailable": "Domain list unavailable — please type the full address",
+  "@mailboxDomainUnavailable": {
+    "description": "settings > mailboxes: hint under the full-address fallback field"
+  },
+  "mailboxAddDisabledByServer": "This instance has adding disabled",
+  "@mailboxAddDisabledByServer": {
+    "description": "settings > mailboxes: shown instead of the add button when addEmail/manyEmail is off server-side"
+  },
+  "mailboxAddDenied": "This account may not add mailboxes — ask your administrator",
+  "@mailboxAddDenied": {
+    "description": "settings > mailboxes: shown instead of the add button when perm account:add is missing"
+  },
+  "mailboxNeedLogin": "Sign in to this instance first",
+  "@mailboxNeedLogin": {
+    "description": "settings > mailboxes: shown instead of the add button when the instance has no token"
+  },
+  "mailboxAddVerifyRequired": "This instance requires a human check — add it on the web",
+  "@mailboxAddVerifyRequired": {
+    "description": "settings > mailboxes: banner shown when the server needs a Turnstile token"
+  },
+  "mailboxOpenWeb": "Add on the web",
+  "@mailboxOpenWeb": {
+    "description": "settings > mailboxes: the button that opens the instance in a browser (Turnstile fallback)"
+  },
+  "mailboxRemoveConfirm": "Delete “{email}”? Its mail will be permanently deleted too — this cannot be undone.",
+  "@mailboxRemoveConfirm": {
+    "description": "settings > mailboxes: destructive-delete confirmation, the address is spelled out",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "mailboxRemoved": "Deleted {email}",
+  "@mailboxRemoved": {
+    "description": "settings > mailboxes: snackbar after a mailbox was deleted",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "mailboxAdded": "Added {email}",
+  "@mailboxAdded": {
+    "description": "settings > mailboxes: snackbar after a mailbox was created",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "mailboxRename": "Rename",
+  "@mailboxRename": {
+    "description": "settings > mailboxes: row menu item (email:send perm)"
+  },
+  "mailboxPin": "Pin to top",
+  "@mailboxPin": {
+    "description": "settings > mailboxes: row menu item; server puts it right after the primary mailbox"
+  },
+  "mailboxPrimaryBadge": "Primary",
+  "@mailboxPrimaryBadge": {
+    "description": "settings > mailboxes: badge on the primary mailbox row (cannot be deleted or pinned)"
+  },
+  "mailboxPrefixTooShort": "Prefix must be at least {n} characters",
+  "@mailboxPrefixTooShort": {
+    "description": "settings > mailboxes: local pre-check, mirrors the server minEmailPrefix rule",
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "mailboxInvalidAddress": "That is not a valid email address",
+  "@mailboxInvalidAddress": {
+    "description": "settings > mailboxes: local pre-check, mirrors the server isEmail regex"
+  },
+  "mailboxEmptyName": "Name cannot be empty",
+  "@mailboxEmptyName": {
+    "description": "settings > mailboxes: rename dialog; the server does NOT reject an empty name, so the client must"
+  },
+  "mailboxNameTooLong": "Name must be at most 30 characters",
+  "@mailboxNameTooLong": {
+    "description": "settings > mailboxes: rename dialog; mirrors the server usernameLengthLimit of 30"
+  }
+}

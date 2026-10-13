@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- APNs 推送凭据。**没有它 FCM 在 iOS 上注册不出 token。**
+	     开发/adhoc 构建用 `development`，TestFlight 与 App Store 构建由
+	     Xcode 在签名时自动换成 `production` —— 但前提是这一条**必须存在**，
+	     否则 provisioning profile 里根本不会带上 APS 的权利，Xcode 也不会
+	     替换成生产值。
+	     取值范围只能是 `development` / `production`（`sandbox` 是 macOS 的写法）。 -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

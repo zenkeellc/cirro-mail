@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- APNs 推送凭据。**没有它 macOS 上 FCM 注册不出 token** —— 少了它
+	     时 `getToken()` 抛 `apns-token-not-set`，原生那边是一条
+	     `OSStatus error 13`，而通知权限其实是允许的（实测日志里
+	     `didGrant: 1`），所以别被「权限没开」这个方向带偏。
+
+	     与 iOS 的 `Runner.entitlements` 是同一个权利，但**键名不同**：
+	     macOS 要 `com.apple.developer.` 前缀。iOS 那边写的裸
+	     `aps-environment` 在原生 macOS App 上会被 codesign 忽略，于是
+	     静默地永远拿不到 APNs token。证据：本机 /Applications 里只有写
+	     `com.apple.developer.aps-environment` 的原生 mac App（ChatGPT、WPS）
+	     真的带上了这条；写裸 key 的那批（闲鱼、bilibili、Twitter）都是
+	     跑在 Mac 上的 iOS App / Mac Catalyst，不是原生 mac 的路子。
+
+	     还要有**带 Push Notifications 的 Mac 描述文件**（App ID 勾上推送后
+	     Xcode 自动签名会申请，落点在
+	     `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`）。没有
+	     的话构建直接失败：`Provisioning profile ... doesn't include the
+	     Push Notifications capability`。 -->
+	<key>com.apple.developer.aps-environment</key>
+	<string>development</string>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>

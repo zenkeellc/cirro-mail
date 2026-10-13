@@ -1,0 +1,133 @@
+name: ci
+
+# 这个仓库本身就是客户端工程（`flutter pub get` 在根上跑），不再有
+# `working-directory` 这一层 —— 早先它作为 monorepo 的子目录时才有。
+on:
+  push:
+    branches: [main, commercial]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # 同一个分支上后一次推送取消前一次 —— 分析 + 测试 + 一次 macOS 构建
+  # 要跑好几分钟，排队没有意义。
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: 静态检查 + 单测
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 版本钉住而不是用 stable：`pubspec.yaml` 里的约束是按这一版逐个
+      # 核对过的（riverpod 3.4.x / go_router 18.x 的下限就是 Dart 3.12 /
+      # Flutter 3.44）。升 Flutter 时要连 pubspec 一起改，所以这里也不该
+      # 自己飘。
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # 生成代码（drift / l10n）不进版本库的话必须先跑一次 build_runner。
+      # 本仓库把 `*.g.dart` 和 `app_localizations*.dart` 都提交了，所以
+      # 这一步只是确认「提交的生成物和源码一致」，不是必需的构建步骤。
+      - name: 生成物是否与源码一致
+        run: |
+          # build_runner 2.16.2 起 `--delete-conflicting-outputs` 已被移除（会告警）。
+          dart run build_runner build
+          flutter gen-l10n
+          if ! git diff --exit-code -- lib; then
+            echo "::error::lib/ 下的生成代码与源码不一致，请本地跑 build_runner + gen-l10n 后提交"
+            exit 1
+          fi
+
+      - run: flutter analyze
+
+      # `--reporter expanded` 让失败时能直接在日志里看到是哪个用例。
+      - run: flutter test --reporter expanded
+
+  build-android:
+    name: Android 调试包
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # 刻意**不保证**仓库里有 `google-services.json`：构建脚本会检测它
+      # 是否存在（见 `android/app/build.gradle.kts`），不存在就跳过 Google
+      # 服务插件并打一行提示。这条 job 恰好就在验证那个「没有 Firebase
+      # 配置也能编出来」的承诺 —— 它一旦坏掉，所有还没去 Firebase 建项目
+      # 的人都编不出调试包。
+      - run: flutter build apk --debug
+
+  build-macos:
+    name: macOS 构建冒烟
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # 桌面端是三个平台里唯一能在 CI 上真跑构建的（Windows/Linux 的
+      # 原生依赖差异大，本地验更实在）。它挡的是「Dart 分析过了、但
+      # 原生壳编不出来」这类问题 —— 比如某次依赖升级带进一个不兼容的
+      # CocoaPods 约束。
+
+      # `macos/Runner.xcodeproj` 的 target 配置里写着
+      # `CODE_SIGN_IDENTITY = "Apple Development"`（发布用的身份），而 CI
+      # runner 上没有对应证书，Xcode 会直接失败。这条 job 验的是「原生壳
+      # 能不能编出来」，不是签名，所以临时降级回 adhoc（`flutter create`
+      # 模板的原始状态）。改的只是工作区里的文件，仓库不受影响。
+      # `DEVELOPMENT_TEAM` 在仓库里是空串（各人自己填），不用动。
+      # 注意：`flutter build macos` **没有** `--no-codesign`（那是
+      # `flutter build ios` 才有的），所以只能用这个办法。
+      - name: 临时降级 macOS 签名（CI 上没有发布证书）
+        run: |
+          python3 - <<'PY'
+          p = 'macos/Runner.xcodeproj/project.pbxproj'
+          s = open(p, encoding='utf-8').read()
+          before = s
+          s = s.replace('CODE_SIGN_IDENTITY = "Apple Development";', 'CODE_SIGN_IDENTITY = "-";')
+          assert s != before, '没找到要降级的签名设置，pbxproj 结构变了？'
+          open(p, 'w', encoding='utf-8').write(s)
+          PY
+
+      - run: flutter build macos --debug
+
+  # 开源面守卫：`main` 上不许出现任何商业侧引用（商业代码只存在于私有
+  # overlay 包里，见 README/架构说明）。这条只在 main 上跑得有意义。
+  no-commercial-refs:
+    name: 开源面不含商业引用
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 扫描商业包引用
+        run: |
+          if grep -rnI --exclude-dir=.git -E 'cirro_mail_pro|package:cirro_mail_pro' . ; then
+            echo "::error::main 分支里出现了商业包 cirro_mail_pro 的引用"
+            exit 1
+          fi
