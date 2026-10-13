@@ -90,6 +90,15 @@ class AppExtensionRegistry {
         for (final ext in _extensions) ...ext.routes(),
       ];
 
+  /// 所有扩展往**邮件那一支**（壳里）加的路由，按注册顺序拼接。
+  ///
+  /// 与 [routes] 分开两条出口是有意的：两者渲染在**不同的 Navigator** 上
+  /// （见 [AppExtension.mailBranchRoutes]），核心的接线点也是两处。合成
+  /// 一条的话，调用方拿到的列表里混着两种形态，而形状差异看不出来。
+  List<RouteBase> mailBranchRoutes() => <RouteBase>[
+        for (final ext in _extensions) ...ext.mailBranchRoutes(),
+      ];
+
   /// 所有扩展往「关于」页加的块，按注册顺序拼接。
   List<Widget> aboutExtras(BuildContext context) => <Widget>[
         for (final ext in _extensions) ...ext.aboutExtras(context),

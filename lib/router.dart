@@ -466,6 +466,18 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
                   name: 'attachmentCache',
                   builder: (context, state) => const AttachmentCacheScreen(),
                 ),
+                // 扩展挂在**这一支里**的路由（`AppExtension.mailBranchRoutes`）。
+                //
+                // 为什么不并进末尾那处 `AppExtensionRegistry.routes()`：那里
+                // 挂的是**顶层**路由（与 `/compose` 同形，渲染在壳外面）。
+                // 从顶层页面 `push` 一个壳内地址，go_router 会在根 Navigator
+                // 上再挂一个同 pageKey 的状态壳，Navigator 的重复 pageKey
+                // 断言当场红屏（成因写在上面的 `Routes.outbox` 注释里，那边
+                // 整段就是为这件事把三个页面从顶层搬进这一支的）。
+                // 挂在这一支里的扩展页面与 `/mail/<节点>` 共用同一个
+                // Navigator，`push` 详情页是正常的压栈。
+                ...
+                    AppExtensionRegistry.instance.mailBranchRoutes(),
               ],
             ),
             // 1 —— 星标。

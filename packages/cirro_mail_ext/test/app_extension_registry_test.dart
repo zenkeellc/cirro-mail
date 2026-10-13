@@ -11,6 +11,7 @@ class _FakeExt extends AppExtension {
     this.id, {
     this.cards = 1,
     this.extraRoutes = 0,
+    this.branchRoutes = 0,
     this.onBoot,
     this.actions = 0,
     this.sections = 0,
@@ -24,6 +25,9 @@ class _FakeExt extends AppExtension {
 
   final int cards;
   final int extraRoutes;
+
+  /// 往**邮件那一支**（壳里）插几条路由。
+  final int branchRoutes;
   final Future<void> Function()? onBoot;
 
   /// 往顶栏插几颗按钮。
@@ -50,6 +54,15 @@ class _FakeExt extends AppExtension {
         for (var i = 0; i < extraRoutes; i++)
           GoRoute(
             path: '/$id/$i',
+            builder: (context, state) => const SizedBox.shrink(),
+          ),
+      ];
+
+  @override
+  List<RouteBase> mailBranchRoutes() => <RouteBase>[
+        for (var i = 0; i < branchRoutes; i++)
+          GoRoute(
+            path: '/$id-branch/$i',
             builder: (context, state) => const SizedBox.shrink(),
           ),
       ];
@@ -151,6 +164,7 @@ void main() {
       final context = tester.element(find.byType(SizedBox).first);
       expect(AppExtensionRegistry.instance.aboutExtras(context), isEmpty);
       expect(AppExtensionRegistry.instance.routes(), isEmpty);
+      expect(AppExtensionRegistry.instance.mailBranchRoutes(), isEmpty);
       expect(AppExtensionRegistry.instance.shellActions(context), isEmpty);
       expect(AppExtensionRegistry.instance.settingsSections(context), isEmpty);
       expect(AppExtensionRegistry.instance.mailStore, isNull);
@@ -183,6 +197,35 @@ void main() {
             .map((r) => r.path)
             .toList(),
         <String>['/a/0', '/b/0'],
+      );
+    });
+
+    /// 壳内路由是**另一条出口**，与 [routes] 分开铺平。
+    ///
+    /// 两条合成一条的话，调用方拿到的列表里混着「顶层」与「壳内」两种形态，
+    /// 而形态差异（渲染在哪个 Navigator 上）在列表里看不出来 —— 混错了的
+    /// 症状是点进核心页面当场红屏（见 `AppExtension.mailBranchRoutes`）。
+    testWidgets('mailBranchRoutes 是独立的一条出口，按扩展顺序铺平', (tester) async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a', extraRoutes: 1, branchRoutes: 1),
+        _FakeExt('b', branchRoutes: 2),
+      ]);
+      expect(
+        AppExtensionRegistry.instance
+            .routes()
+            .cast<GoRoute>()
+            .map((r) => r.path)
+            .toList(),
+        <String>['/a/0'],
+        reason: '顶层那条出口只该有 routes() 的货',
+      );
+      expect(
+        AppExtensionRegistry.instance
+            .mailBranchRoutes()
+            .cast<GoRoute>()
+            .map((r) => r.path)
+            .toList(),
+        <String>['/a-branch/0', '/b-branch/0', '/b-branch/1'],
       );
     });
 

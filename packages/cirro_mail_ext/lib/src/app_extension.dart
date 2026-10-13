@@ -19,6 +19,7 @@ import 'settings_section.dart';
 /// | 钩子 | 核心在哪用 |
 /// |---|---|
 /// | [routes] | `router.dart` 根部，核心路由**之后** |
+/// | [mailBranchRoutes] | `router.dart` 邮件那一支的末尾（壳**里面**） |
 /// | [aboutExtras] | `about_section.dart` 的「关于」页 |
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
@@ -43,7 +44,46 @@ abstract class AppExtension {
   /// **形态提醒**：这些路由是**顶层**的（与 `/compose` 同形），渲染出来没有
   /// 侧栏、没有底部导航；核心那几条一等入口都在 `StatefulShellRoute` 里面。
   /// 从扩展页面点进核心页面用 `context.go`，返回键回的是上一个**地址**。
+  ///
+  /// ## 想 `push` 进核心页面，就别挂在这里
+  ///
+  /// 顶层路由与壳里的页面**不在同一个 `Navigator`**（壳是根 Navigator 上的
+  /// 一页，壳内页面挂在它自己那个 Navigator 上）。所以从这里
+  /// `context.push('/mail/<节点>/<id>')` —— 往一个壳内地址压栈 —— 会让
+  /// go_router 在根 Navigator 上再挂一个**同 pageKey 的状态壳**
+  /// （`match.dart` 的 `RouteMatchList.push` 克隆的是传入的那一支），
+  /// Navigator 的重复 pageKey 断言当场把整屏打成红框。
+  ///
+  /// 要「压栈进核心页面、返回键回到自己这一页」的扩展页面，挂
+  /// [mailBranchRoutes]。
   List<RouteBase> routes() => const <RouteBase>[];
+
+  /// 追加进**邮件那一支**（壳里的 branch 0）的路由，排在核心路由之后。
+  ///
+  /// 与 [routes] 的两点不同，正是它存在的理由：
+  ///
+  /// 1. 它渲染在**壳里面** —— 侧栏 / 底部导航一直在（与 `/drafts`、
+  ///    `/outbox`、`/attachment-cache` 同形）。[routes] 挂在根部，是全屏的；
+  /// 2. 它与 `/mail/<节点>` 共用**同一个 `Navigator`**，所以从这里
+  ///    `context.push('/mail/<节点>/<id>')` 是正常的压栈：详情页有返回箭头、
+  ///    系统返回键可用、返回后这一页原样还在（见 [routes] 里那段红屏的成因）。
+  ///
+  /// 反过来，**代价也要照单收下**，它跟核心那三个同支页面是同一份：
+  ///
+  /// - 进过 `indexedStack` 就不会被回收（与 `/drafts` 一样，见
+  ///   `Routes.drafts` 的注释）。所以只该挂「开着不费什么」的页面，
+  ///   别挂常驻查询 / 定时器 / 大列表；
+  /// - 从别的分支（比如设置页）点过来时，底部导航会跟着跳到「邮件」那一项
+  ///   —— 这一支现在是前台那一支。核心那三个入口本来就从主屏菜单进，
+  ///   所以没有这个问题；扩展得自己想清楚「我算不算邮件这一支的」。
+  ///
+  /// `path` 是**根路径**（`/search` 这样带前导斜杠的绝对路径），与核心
+  /// branch 内那几条的写法一致；带动态段的子路由挂在自己下面即可，
+  /// 与普通的 `GoRoute` 没有区别。
+  ///
+  /// 挂进来的路由**不能抢占核心路径**（`/mail/...` / `/home` / `/drafts`
+  /// / `/outbox` / `/attachment-cache`）—— 与 [routes] 同一条规矩。
+  List<RouteBase> mailBranchRoutes() => const <RouteBase>[];
 
   /// 追加进「设置 → 关于」页的附加块（logo、授权标签、版本徽章……）。
   ///

@@ -394,6 +394,129 @@ void main() {
       expect(find.byType(ListTile), findsNWidgets(9));
     });
   });
+
+  /// 两条**路由出口**各自落在哪一层。
+  ///
+  /// 这一条与界面无关，但它是「从扩展页面点进核心邮件页会不会红屏」的地基：
+  ///
+  /// - `AppExtension.routes()` 挂在**根路由表的尾部**（壳之外，与 `/compose`
+  ///   同形）。从那种页面上往壳内地址压栈，go_router 会在根 Navigator 上再挂
+  ///   一个同 pageKey 的状态壳，Navigator 的重复 pageKey 断言当场把整屏打成
+  ///   红框（成因见 `router.dart` 里 `Routes.outbox` 那段注释）；
+  /// - `AppExtension.mailBranchRoutes()` 挂在**邮件那一支里**（壳内），
+  ///   与 `/mail/<节点>` 共用同一个 Navigator，压栈才是压栈。
+  ///
+  /// 两条出口各自落在哪一层，就是在界面上完全看不出来的那种事：接错了不会
+  /// 报错，只会在用户点开某封信时炸。所以这里把路由表翻出来直接看。
+  group('扩展路由挂在哪一层', () {
+    ProviderContainer container() {
+      final c = ProviderContainer(overrides: [
+        profilesProvider.overrideWith(
+          (ref) => Stream.value(const <Profile>[]),
+        ),
+      ]);
+      // **不要**自己 dispose router：`routerProvider` 已经 `ref.onDispose`
+      // 它了（见上面「三个旧地址都是重定向」那条的注释）。
+      addTearDown(c.dispose);
+      return c;
+    }
+
+    /// 深度优先找一条 `path` 相同的 `GoRoute`（会钻进子路由与壳）。
+    RouteBase? findPath(List<RouteBase> routes, String path) {
+      for (final route in routes) {
+        if (route is GoRoute) {
+          if (route.path == path) return route;
+          final hit = findPath(route.routes, path);
+          if (hit != null) return hit;
+        } else if (route is ShellRouteBase) {
+          final hit = findPath(route.routes, path);
+          if (hit != null) return hit;
+        }
+      }
+      return null;
+    }
+
+    test('壳内那条真的进分支，顶层那条留在壳外', () {
+      AppExtensionRegistry.instance
+          .registerAll(<AppExtension>[const _RouteExt()]);
+      final router = container().read(routerProvider);
+      final roots = router.configuration.routes;
+
+      final shell = roots.whereType<StatefulShellRoute>().single;
+      final mailBranch = shell.branches[0].routes;
+
+      expect(
+        findPath(mailBranch, _RouteExt.branchPath),
+        isNotNull,
+        reason: 'mailBranchRoutes() 没接进邮件那一支 —— 壳内的页面与 '
+            '/mail/<节点> 共用同一个 Navigator，压栈才成立',
+      );
+      expect(
+        findPath(<RouteBase>[
+          for (final r in roots)
+            if (r is! StatefulShellRoute) r,
+          for (final branch in shell.branches.skip(1)) ...branch.routes,
+        ], _RouteExt.branchPath),
+        isNull,
+        reason: '同一条路由不许在别处再挂一份 —— 根 Navigator 上多一个壳就是'
+            '那次红屏的成因',
+      );
+
+      expect(
+        findPath(roots, _RouteExt.topPath),
+        isNotNull,
+        reason: 'routes() 那一条要挂在根部（与 /compose 同形）',
+      );
+      for (final branch in shell.branches) {
+        expect(
+          findPath(branch.routes, _RouteExt.topPath),
+          isNull,
+          reason: '顶层那条不该混进分支里 —— 两条出口的形态不同，混了就是接错',
+        );
+      }
+
+      // 扩展排在核心之后：`/mail/:profileId`（聚合与实例共用这一条）本来就
+      // 在邮件那一支里，扩展不能抢在它前面（否则它可以把核心路径吃掉）。
+      final mail = mailBranch.indexWhere(
+        (r) => r is GoRoute && r.path == '${Routes.mail}/:profileId',
+      );
+      final ext = mailBranch.indexWhere(
+        (r) => r is GoRoute && r.path == _RouteExt.branchPath,
+      );
+      expect(mail, greaterThanOrEqualTo(0), reason: '核心的列表路由不见了');
+      expect(ext, greaterThan(mail), reason: '扩展要排在核心路由之后');
+    });
+  });
+}
+
+/// 两条**路由出口**各自落在哪一层（上面那组用例用它）。
+///
+/// 它**不返回任何页面**：那两条路由会不会被真的访问，是商业版自己的事；
+/// 这里只借用它把两条出口各占一个地址。
+class _RouteExt extends AppExtension {
+  const _RouteExt();
+
+  static const String topPath = '/test-routes/top';
+  static const String branchPath = '/test-routes/branch';
+
+  @override
+  String get id => 'test.routes';
+
+  @override
+  List<RouteBase> routes() => <RouteBase>[
+        GoRoute(
+          path: topPath,
+          builder: (context, state) => const SizedBox.shrink(),
+        ),
+      ];
+
+  @override
+  List<RouteBase> mailBranchRoutes() => <RouteBase>[
+        GoRoute(
+          path: branchPath,
+          builder: (context, state) => const SizedBox.shrink(),
+        ),
+      ];
 }
 
 /// 一个只往设置页加一栏的假扩展（文案硬编码，与商业版同一条路：扩展自带
