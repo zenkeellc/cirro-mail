@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,16 @@ import 'providers/core_providers.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 扩展注册。**公开版这里是空的** —— `main` 分支不注册任何扩展，商业版
+  // 在商业分支上把这一行换成 `registerAll(const <AppExtension>[CirroMailPro()])`。
+  //
+  // 放在最前面（早于下面的后台任务登记、早于 `runApp`）：注册本身是纯内存
+  // 写入，而 `bootstrapAll` 会在下面被调用 —— 顺序反了扩展就收不到启动钩子。
+  AppExtensionRegistry.instance.registerAll(const <AppExtension>[]);
+  // **不 await**：扩展初始化不该拖慢首帧（见 `AppExtension.onBootstrap`）。
+  AppExtensionRegistry.instance.bootstrapAll();
+
   // 后台任务的入口句柄要在进程一开始就登记好（平台侧要用它来唤醒后台
   // isolate），所以放在 `runApp` 之前，而不是等 UI 挂上。
   //

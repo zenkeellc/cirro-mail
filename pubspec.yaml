@@ -122,6 +122,14 @@ dependencies:
   package_info_plus: ^10.2.2
   cupertino_icons: ^1.0.8
 
+  # ---- 扩展接缝 ----
+  # 本仓库自己维护的扩展 API（`packages/cirro_mail_ext/`）。核心**只读**它
+  # 暴露的注册表，永远不依赖任何具体扩展。商业版/第三方模块实现这里的
+  # `AppExtension` 接口，通过**这个包**与核心对接 —— 见那个包的 library 注释
+  # （为什么必须是独立包名）。
+  cirro_mail_ext:
+    path: packages/cirro_mail_ext
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

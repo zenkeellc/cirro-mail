@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -548,6 +549,11 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
             ),
           ],
         ),
+
+        // 扩展路由。**公开版这里是空的**（`main` 分支不注册任何扩展）——
+        // 商业版/第三方模块在商业分支上把自己的路由挂进注册表，核心一行不用改。
+        // 放在核心路由**之后**：扩展不能抢占核心路径。
+        ...AppExtensionRegistry.instance.routes(),
       ],
       errorBuilder: (context, state) => _NotFoundScreen(uri: state.uri),
     );

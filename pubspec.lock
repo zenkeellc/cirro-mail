@@ -225,6 +225,13 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.0.4"
+  cirro_mail_ext:
+    dependency: "direct main"
+    description:
+      path: "packages/cirro_mail_ext"
+      relative: true
+    source: path
+    version: "0.1.0"
   cli_util:
     dependency: transitive
     description:

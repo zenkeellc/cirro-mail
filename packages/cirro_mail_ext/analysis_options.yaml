@@ -1,0 +1,9 @@
+# This file configures the analyzer for this package.
+#
+# 与根包同一个口味（`flutter_lints`）。`build/**` 是本包自己的构建产物目录
+# （`dart pub get` 会生成 `.dart_tool/`，`flutter build` 会生成 `build/`）。
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**

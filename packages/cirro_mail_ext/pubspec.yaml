@@ -1,0 +1,22 @@
+name: cirro_mail_ext
+description: "Cirro Mail 的扩展接缝：商业/第三方模块实现这里的接口，核心只读注册表。"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  # 与根包（`mail_app`）同一档：本包要引用 `RouteBase` / `Widget`，
+  # 因此 flutter 的下限跟着根包走。
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # `RouteBase` / `GoRouter` 的类型出现在公开签名里，必须是直接依赖 ——
+  # 只靠根包的传递依赖会让 `depend_on_referenced_packages` 报警。
+  go_router: ^18.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

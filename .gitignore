@@ -32,6 +32,11 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+# `/build/` 是**根锚定**的：`packages/` 下每个子包的构建产物要单独盖。
+# 不能写成 `packages/*/build/` —— 子包还会嵌套（将来的 pro 包等），
+# 而且这条规则对 `**/build/` 这种「任意深度」的情形是唯一稳妥的写法。
+# 全仓库没有任何被跟踪的 `build/` 路径，加这条不会误伤。
+**/build/
 
 # Symbolication related
 app.*.symbols
