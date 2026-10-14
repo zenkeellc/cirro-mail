@@ -34,10 +34,19 @@ import '../codecs/text_codec.dart';
 /// 复杂度，而它解决的是「列很多的大表」这个 20MB 预览上限之外的场景。
 /// 首行当表头也不猜 —— 猜错比不猜更让人困惑（见 [CsvCodec] 文件头）。
 class CsvViewerScreen extends StatefulWidget {
-  const CsvViewerScreen({super.key, required this.path, this.title});
+  const CsvViewerScreen({
+    super.key,
+    required this.path,
+    this.title,
+    this.embedded = false,
+  });
 
   final String path;
   final String? title;
+
+  /// 嵌在分栏右栏里（附件缓存页宽屏的右栏，见 `attachment_cache_screen.dart` 的 `_AttachmentPreview`），而不是 push 上来的整页。
+  /// 差别只有一处：不自己撑 `Scaffold` / `AppBar`。表格与页脚照旧。
+  final bool embedded;
 
   @override
   State<CsvViewerScreen> createState() => _CsvViewerScreenState();
@@ -99,6 +108,16 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     final l10n = AppLocalizations.of(context);
     final doc = _doc;
 
+    final body = switch ((_error, doc)) {
+      (final String reason, _) => _Message.forError(reason, l10n),
+      // 空文件：一句「（空文件）」比一张只有表头的空表格诚实。
+      (_, final CsvDocument d) when d.isEmpty =>
+        _Message(icon: Icons.table_chart_outlined, text: l10n.viewerEmpty),
+      (_, final CsvDocument d) => _table(d, _decoded!, l10n),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
+    if (widget.embedded) return body;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -108,14 +127,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: switch ((_error, doc)) {
-        (final String reason, _) => _Message.forError(reason, l10n),
-        // 空文件：一句「（空文件）」比一张只有表头的空表格诚实。
-        (_, final CsvDocument d) when d.isEmpty =>
-          _Message(icon: Icons.table_chart_outlined, text: l10n.viewerEmpty),
-        (_, final CsvDocument d) => _table(d, _decoded!, l10n),
-        _ => const Center(child: CircularProgressIndicator()),
-      },
+      body: body,
     );
   }
 

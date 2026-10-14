@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,7 +11,9 @@ import '../../providers/core_providers.dart';
 import '../../providers/profile_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../attachment/attachment_kind.dart'
-    show AttachmentKind, AttachmentMime, formatAttachmentSize, iconOf;
+    show formatAttachmentSize, iconOf;
+import '../attachment/attachment_preview.dart'
+    show buildAttachmentPreview, canPreview;
 import '../attachment/attachment_sheet.dart' show showAttachmentActions;
 import '../mail_list/mail_panes.dart' show PaneHeader;
 import '../sync/sync_status_panel.dart';
@@ -30,8 +30,9 @@ import '../sync/sync_status_panel.dart';
 /// ## 外壳与收件箱一致（spec §2.4）
 ///
 /// 顶部条宽屏走 [PaneHeader]、窄屏走 `AppBar`，右上角都是同步按钮。
-/// 宽屏进分栏：左栏是列表，右栏是选中那个附件的预览（图片直接显示，
-/// 其余给图标 + 文件名 + 大小 + 落盘路径），没选就是空态。
+/// 宽屏进分栏：左栏是列表，右栏是选中那个附件的预览 —— 能应用内预览的
+/// 类型就用详情页那套 viewer 在本栏里渲染，没有 viewer 的类型（压缩包、
+/// 老格式）给图标 + 文件名 + 说明 + 落盘路径，没选就是空态。
 class AttachmentCacheScreen extends ConsumerStatefulWidget {
   const AttachmentCacheScreen({super.key});
 
@@ -335,10 +336,20 @@ class _AttachmentRow extends ConsumerWidget {
 
 /// 宽屏右栏：一个附件的预览。
 ///
-/// 图片直接铺出来 —— 这一页存在的理由是「腾地方」，而「这张图到底还值不值得
-/// 留着」是没法从文件名判断的。其余类型（PDF / Word / zip）没有纯 Dart 的
-/// 渲染器（见 `attachment_sheet.dart` 里那条注释），给一行文件信息 +
-/// 一个打开按钮，交给系统应用。
+/// **右栏就是一条预览通道**：能应用内预览的类型（图片 / PDF / Word / Excel /
+/// PPT / CSV / 文本 / Markdown / 音频 / 视频）直接用邮件详情页那一套 viewer
+/// 在当前这一栏里渲染（`buildAttachmentPreview` 的 `embedded: true`）。这一页
+/// 存在的理由是「腾地方」，而「这个东西到底还值不值得留着」在大多数时候
+/// 没法从文件名判断 —— 早先只有图片能看，其余一律是一张图标卡，用户被逼着
+/// 先「用其他应用打开」才能决定删不删。
+///
+/// 没有 viewer 的类型（压缩包、`.doc` 这类老格式、未知二进制）仍然给
+/// [_FileCard]：图标 + 文件名 + 落盘路径，路径是这一页的另一半用途。
+/// 判据用的是 [canPreview] ——与附件面板里「预览」那一行的判据**同一个**，
+/// 所以不会出现「右栏说能看、面板里没有预览」或者反过来。
+///
+/// 底部那一条（文件名 + 大小 + 打开方式 + 删除）两种形态都有：图标卡也要
+/// 能打开和删除，能预览的更要。
 class _AttachmentPreview extends ConsumerWidget {
   const _AttachmentPreview({
     required this.attachment,
@@ -353,28 +364,34 @@ class _AttachmentPreview extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final path = attachment.localPath;
-    final isImage =
-        AttachmentMime.kindFor(attachment) == AttachmentKind.image;
+
+    // 判据用 [canPreview]（类型 / 体积 / 平台 / viewer 有没有，四道都和
+    // 附件面板里「预览」那一行**一模一样**）。**不能**只看
+    // `buildAttachmentPreview` 返不返回 null：那个只判「有没有这个 kind 的
+    // viewer」，不管体积与平台 —— 一份 50MB 的 docx 会在这一栏里被整份读进
+    // 内存解析，Linux 上的 PDF 会当场抛。
+    final viewer = path == null || path.isEmpty || !canPreview(attachment)
+        ? null
+        : buildAttachmentPreview(
+            attachment: attachment,
+            path: path,
+            title: attachment.displayName,
+            embedded: true,
+          );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Expanded(
-          child: path != null && path.isNotEmpty && isImage
-              ? InteractiveViewer(
-                  child: Center(
-                    child: Image.file(
-                      File(path),
-                      fit: BoxFit.contain,
-                      // 库里那行还在、磁盘上文件没了（用户从系统文件管理器里
-                      // 删过）—— 说清楚，别让用户看一块空白猜。
-                      errorBuilder: (context, error, stack) => _MissingFile(
-                        name: attachment.displayName,
-                      ),
-                    ),
-                  ),
-                )
-              : _FileCard(attachment: attachment),
+          // `key` 不是可选的：换一条附件时**类型往往不变**（两个 PDF、两个
+          // docx），没有 key 的话 `State` 会被复用，而几个 viewer 的
+          // `late final _controller` / `_load()` 都只在 `initState` 里跑一次
+          // —— 右栏会继续显示上一条的内容。`MailPanes` 给详情页挂 key 是
+          // 同一个理由。
+          child: KeyedSubtree(
+            key: ValueKey<String>('${attachment.profileId}:${attachment.attId}'),
+            child: viewer ?? _FileCard(attachment: attachment),
+          ),
         ),
         const Divider(height: 1),
         Padding(
@@ -422,7 +439,7 @@ class _AttachmentPreview extends ConsumerWidget {
   }
 }
 
-/// 非图片附件在右栏里的样子：图标 + 文件名 + 大小 + 落盘路径。
+/// 没有预览的附件在右栏里的样子：图标 + 文件名 + 说明 + 落盘路径。
 ///
 /// 路径要显示出来：这一页的另一半用途是「这些文件到底占在哪儿」，
 /// 用户要去系统里手动核对时，唯一能对上的就是这串路径。
@@ -463,29 +480,6 @@ class _FileCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// 图片文件的 `Image.file` 打不开时（磁盘上那份已经不在了）。
-class _MissingFile extends StatelessWidget {
-  const _MissingFile({required this.name});
-
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.broken_image_outlined,
-              size: 48, color: theme.colorScheme.outline),
-          const SizedBox(height: 8),
-          Text(name, style: theme.textTheme.bodySmall),
-        ],
       ),
     );
   }

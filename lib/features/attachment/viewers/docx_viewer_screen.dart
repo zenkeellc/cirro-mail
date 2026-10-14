@@ -20,10 +20,19 @@ import 'doc_blocks_view.dart';
 /// 「图片与版式未显示」告诉用户**整份文档**少了些什么。两处都要有：
 /// 只给占位，用户不知道是「这里没有图」还是「所有图都没画」。
 class DocxViewerScreen extends StatefulWidget {
-  const DocxViewerScreen({super.key, required this.path, this.title});
+  const DocxViewerScreen({
+    super.key,
+    required this.path,
+    this.title,
+    this.embedded = false,
+  });
 
   final String path;
   final String? title;
+
+  /// 嵌在分栏右栏里（附件缓存页宽屏的右栏，见 `attachment_cache_screen.dart` 的 `_AttachmentPreview`），而不是 push 上来的整页。
+  /// 差别只有一处：不自己撑 `Scaffold` / `AppBar`。正文与页脚照旧。
+  final bool embedded;
 
   @override
   State<DocxViewerScreen> createState() => _DocxViewerScreenState();
@@ -79,6 +88,20 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
     final l10n = AppLocalizations.of(context);
     final blocks = _blocks;
 
+    final body = switch ((_error, blocks)) {
+      (final String reason, _) => OfficeErrorView(reason: reason),
+      (_, final List<DocBlock> list) => Column(
+          children: <Widget>[
+            Expanded(child: DocBlocksView(blocks: list)),
+            OfficeFooter(
+              notes: <String>[l10n.viewerOfficePartial],
+            ),
+          ],
+        ),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
+    if (widget.embedded) return body;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -88,18 +111,7 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: switch ((_error, blocks)) {
-        (final String reason, _) => OfficeErrorView(reason: reason),
-        (_, final List<DocBlock> list) => Column(
-            children: <Widget>[
-              Expanded(child: DocBlocksView(blocks: list)),
-              OfficeFooter(
-                notes: <String>[l10n.viewerOfficePartial],
-              ),
-            ],
-          ),
-        _ => const Center(child: CircularProgressIndicator()),
-      },
+      body: body,
     );
   }
 }

@@ -57,44 +57,77 @@ bool canPreview(MailAttachment attachment, {TargetPlatform? platform}) {
   return AttachmentViewers.implemented(AttachmentMime.kindFor(attachment));
 }
 
+/// 按类型造出那个 viewer。**[embedded] 只决定它要不要自撑外壳**
+/// （`Scaffold` + `AppBar`）—— 内容、控件、错误提示一套都不少。
+///
+/// 返回 null 表示这个 kind 没有 viewer（与 [AttachmentViewers.implemented]
+/// 是同一份判断）。**刻意不是兜底分支**：将来加 kind 时这里忘了改，是
+/// `switch` 的编译错误，而不是一个跑进图片预览器里的 bug。
+Widget? buildAttachmentPreview({
+  required MailAttachment attachment,
+  required String path,
+  required String title,
+  bool embedded = false,
+}) {
+  final kind = AttachmentMime.kindFor(attachment);
+  return switch (kind) {
+    AttachmentKind.pdf =>
+      PdfViewerScreen(path: path, title: title, embedded: embedded),
+    AttachmentKind.image =>
+      LocalImageViewerScreen(path: path, title: title, embedded: embedded),
+    // 文本与 Markdown 共用一个 viewer：两者只是「要不要走 markdown 渲染」
+    // 的差别，为它再写一个页面等于把行渲染、截断提示、选中那一套复制两份。
+    AttachmentKind.text || AttachmentKind.markdown => TextViewerScreen(
+        path: path,
+        title: title,
+        kind: kind,
+        embedded: embedded,
+      ),
+    AttachmentKind.csv =>
+      CsvViewerScreen(path: path, title: title, embedded: embedded),
+    AttachmentKind.docx =>
+      DocxViewerScreen(path: path, title: title, embedded: embedded),
+    AttachmentKind.xlsx =>
+      XlsxViewerScreen(path: path, title: title, embedded: embedded),
+    AttachmentKind.pptx =>
+      PptxViewerScreen(path: path, title: title, embedded: embedded),
+    AttachmentKind.audio =>
+      AudioViewerScreen(path: path, title: title, embedded: embedded),
+    // 视频在 Windows / Linux 上走不到这里（那两平台的 `canPreview` 已判
+    // false，面板里没有「预览」这一行），见 `attachment_kind.dart`。
+    AttachmentKind.video =>
+      VideoViewerScreen(path: path, title: title, embedded: embedded),
+    // 这两个 kind 明确不提供预览（见 [AttachmentViewers.implemented]）。
+    AttachmentKind.archive || AttachmentKind.other => null,
+  };
+}
+
 /// 推进预览页。[path] 必须是**已经落盘的本地路径**（调用方先
 /// `ensureLocal`），本函数不打网络。
+///
+/// 这是**整页形态**。同一个 viewer 还有内嵌形态（附件缓存页宽屏的右栏），
+/// 走 [buildAttachmentPreview] 的 `embedded: true` —— 两条路共用上面那一个
+/// `switch`，免得出现「整页能预览、右栏说不能」。
 Future<void> openAttachmentPreview(
   NavigatorState navigator, {
   required String path,
   required String title,
   required MailAttachment attachment,
 }) {
-  final kind = AttachmentMime.kindFor(attachment);
-  final builder = switch (kind) {
-    AttachmentKind.pdf =>
-      (BuildContext _) => PdfViewerScreen(path: path, title: title),
-    AttachmentKind.image =>
-      (BuildContext _) => LocalImageViewerScreen(path: path, title: title),
-    // 文本与 Markdown 共用一个 viewer：两者只是「要不要走 markdown 渲染」
-    // 的差别，为它再写一个页面等于把行渲染、截断提示、选中那一套复制两份。
-    AttachmentKind.text || AttachmentKind.markdown => (BuildContext _) =>
-      TextViewerScreen(path: path, title: title, kind: kind),
-    AttachmentKind.csv =>
-      (BuildContext _) => CsvViewerScreen(path: path, title: title),
-    AttachmentKind.docx =>
-      (BuildContext _) => DocxViewerScreen(path: path, title: title),
-    AttachmentKind.xlsx =>
-      (BuildContext _) => XlsxViewerScreen(path: path, title: title),
-    AttachmentKind.pptx =>
-      (BuildContext _) => PptxViewerScreen(path: path, title: title),
-    AttachmentKind.audio =>
-      (BuildContext _) => AudioViewerScreen(path: path, title: title),
-    // 视频在 Windows / Linux 上走不到这里（那两平台的 `canPreview` 已判
-    // false，面板里没有「预览」这一行），见 `attachment_kind.dart`。
-    AttachmentKind.video =>
-      (BuildContext _) => VideoViewerScreen(path: path, title: title),
-    // 剩下这两个 kind 明确不提供预览（见 [AttachmentViewers.implemented]）。
-    // 走到这里说明清单一处说「没实现」、另一处说「实现」—— 与其推一个
-    // 空页面，不如把矛盾当场炸出来。
-    AttachmentKind.archive || AttachmentKind.other =>
-      throw StateError('附件预览：$kind 还没有 viewer（见 AttachmentViewers.implemented）'),
-  };
-
-  return navigator.push<void>(MaterialPageRoute<void>(builder: builder));
+  final viewer = buildAttachmentPreview(
+    attachment: attachment,
+    path: path,
+    title: title,
+  );
+  // 走到这里说明清单一处说「没实现」、另一处说「实现」—— 与其推一个
+  // 空页面，不如把矛盾当场炸出来。
+  if (viewer == null) {
+    throw StateError(
+      '附件预览：${AttachmentMime.kindFor(attachment)} 还没有 viewer'
+      '（见 AttachmentViewers.implemented）',
+    );
+  }
+  return navigator.push<void>(
+    MaterialPageRoute<void>(builder: (_) => viewer),
+  );
 }

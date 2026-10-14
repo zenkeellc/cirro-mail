@@ -27,10 +27,19 @@ import 'docx_viewer_screen.dart' show OfficeErrorView, OfficeFooter;
 /// 这不是放映器。列表滚动本身就是翻页，而缩略图需要先把每页渲染一遍
 /// 才有图可缩 —— 那是把整套版式渲染实现了才划算的事。
 class PptxViewerScreen extends StatefulWidget {
-  const PptxViewerScreen({super.key, required this.path, this.title});
+  const PptxViewerScreen({
+    super.key,
+    required this.path,
+    this.title,
+    this.embedded = false,
+  });
 
   final String path;
   final String? title;
+
+  /// 嵌在分栏右栏里（附件缓存页宽屏的右栏，见 `attachment_cache_screen.dart` 的 `_AttachmentPreview`），而不是 push 上来的整页。
+  /// 差别只有一处：不自己撑 `Scaffold` / `AppBar`。卡片与页脚照旧。
+  final bool embedded;
 
   @override
   State<PptxViewerScreen> createState() => _PptxViewerScreenState();
@@ -91,6 +100,13 @@ class _PptxViewerScreenState extends State<PptxViewerScreen> {
     final l10n = AppLocalizations.of(context);
     final presentation = _presentation;
 
+    final body = switch ((_error, presentation)) {
+      (final String reason, _) => OfficeErrorView(reason: reason),
+      (_, final Presentation deck) => _deck(deck, l10n),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
+    if (widget.embedded) return body;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -100,11 +116,7 @@ class _PptxViewerScreenState extends State<PptxViewerScreen> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: switch ((_error, presentation)) {
-        (final String reason, _) => OfficeErrorView(reason: reason),
-        (_, final Presentation deck) => _deck(deck, l10n),
-        _ => const Center(child: CircularProgressIndicator()),
-      },
+      body: body,
     );
   }
 

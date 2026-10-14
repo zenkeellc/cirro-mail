@@ -36,6 +36,7 @@ class AudioViewerScreen extends StatefulWidget {
     required this.path,
     this.title,
     this.playerFactory,
+    this.embedded = false,
   });
 
   final String path;
@@ -43,6 +44,10 @@ class AudioViewerScreen extends StatefulWidget {
 
   /// 测试注入用。为空时用 `audioplayers`。
   final AudioPlayback Function()? playerFactory;
+
+  /// 嵌在分栏右栏里（附件缓存页宽屏的右栏，见 `attachment_cache_screen.dart` 的 `_AttachmentPreview`），而不是 push 上来的整页。
+  /// 差别只有一处：不自己撑 `Scaffold` / `AppBar`。播放器与控件照旧。
+  final bool embedded;
 
   @override
   State<AudioViewerScreen> createState() => _AudioViewerScreenState();
@@ -184,6 +189,11 @@ class _AudioViewerScreenState extends State<AudioViewerScreen> {
     final l10n = AppLocalizations.of(context);
     final error = _error;
 
+    final body = error != null
+        ? _AudioErrorView(reason: error)
+        : _controls(l10n);
+    if (widget.embedded) return body;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -193,9 +203,7 @@ class _AudioViewerScreenState extends State<AudioViewerScreen> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: error != null
-          ? _AudioErrorView(reason: error)
-          : _controls(l10n),
+      body: body,
     );
   }
 

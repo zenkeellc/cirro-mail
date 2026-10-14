@@ -33,6 +33,7 @@ class TextViewerScreen extends StatefulWidget {
     required this.path,
     this.title,
     this.kind = AttachmentKind.text,
+    this.embedded = false,
   });
 
   final String path;
@@ -40,6 +41,13 @@ class TextViewerScreen extends StatefulWidget {
 
   /// 只用来判断要不要给 Markdown 的「排版 / 源码」开关。
   final AttachmentKind kind;
+
+  /// 嵌在分栏右栏里（附件缓存页宽屏的右栏，见 `attachment_cache_screen.dart` 的 `_AttachmentPreview`），而不是 push 上来的整页。
+  ///
+  /// 差别是两处，不是一处：不自己撑 `Scaffold` / `AppBar`；以及 Markdown
+  /// 那个「排版 / 源码」开关**挪到页脚去**（`_Footer` 的 `trailing`）——
+  /// 它是这一页唯一的动作，也是这一页唯一的按钮，没有头就无处安放。
+  final bool embedded;
 
   @override
   State<TextViewerScreen> createState() => _TextViewerScreenState();
@@ -107,6 +115,25 @@ class _TextViewerScreenState extends State<TextViewerScreen> {
     final l10n = AppLocalizations.of(context);
     final decoded = _decoded;
 
+    final toggle = _isMarkdown && _renderedHtml != null
+        ? TextButton.icon(
+            onPressed: () => setState(() => _showSource = !_showSource),
+            icon: Icon(
+              _showSource ? Icons.article_outlined : Icons.code,
+              size: 18,
+            ),
+            label: Text(_showSource ? l10n.viewerRendered : l10n.viewerSource),
+          )
+        : null;
+
+    final body = _error != null
+        ? _Message(icon: Icons.error_outline, text: l10n.viewerFileGone)
+        : decoded == null
+            ? const Center(child: CircularProgressIndicator())
+            : _content(decoded, l10n, toggle);
+
+    if (widget.embedded) return body;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -115,33 +142,28 @@ class _TextViewerScreenState extends State<TextViewerScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        actions: <Widget>[
-          if (_isMarkdown && _renderedHtml != null)
-            TextButton.icon(
-              onPressed: () => setState(() => _showSource = !_showSource),
-              icon: Icon(
-                _showSource ? Icons.article_outlined : Icons.code,
-                size: 18,
-              ),
-              label: Text(_showSource ? l10n.viewerRendered : l10n.viewerSource),
-            ),
-        ],
+        actions: <Widget>[?toggle],
       ),
-      body: _error != null
-          ? _Message(icon: Icons.error_outline, text: l10n.viewerFileGone)
-          : decoded == null
-              ? const Center(child: CircularProgressIndicator())
-              : _content(decoded, l10n),
+      body: body,
     );
   }
 
-  Widget _content(DecodedText decoded, AppLocalizations l10n) {
+  Widget _content(DecodedText decoded, AppLocalizations l10n, Widget? toggle) {
     final html = _renderedHtml;
     if (!_showSource && html != null) {
       // 复用正文渲染（`HtmlBodyView` 会再过一遍 `sanitizeEmailHtml`）。
-      return SingleChildScrollView(
+      final rendered = SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: HtmlBodyView(html: html, ossBase: '', shrinkWrap: true),
+      );
+      // 内嵌时下面还得挂那一条：开关就在那儿（整页形态下它在 AppBar 里，
+      // 这条不需要出现）。
+      if (!widget.embedded) return rendered;
+      return Column(
+        children: <Widget>[
+          Expanded(child: rendered),
+          _Footer(notes: const <String>[], trailing: toggle),
+        ],
       );
     }
 
@@ -165,6 +187,9 @@ class _TextViewerScreenState extends State<TextViewerScreen> {
             if (decoded.truncated)
               l10n.viewerTruncated(kTextPreviewMaxChars),
           ],
+          // 内嵌形态没有 `AppBar`，「排版 / 源码」只能落到这一条上。
+          // 整页形态下它仍然在 `AppBar.actions` 里，这里传 null。
+          trailing: widget.embedded ? toggle : null,
         ),
       ],
     );
@@ -224,24 +249,44 @@ class _Line extends StatelessWidget {
   }
 }
 
-/// 底部那一条说明。没有任何一条时不占位置。
+/// 底部那一条说明。说明与 [trailing] 都没有时不占位置。
+///
+/// [trailing] 是给内嵌形态用的：那里没有 `AppBar`，「排版 / 源码」这个动作
+/// 只能挂在这一条上。它自己在时，这一条即使一条说明都没有也要出现 ——
+/// 否则那个开关会跟着说明一起消失。
 class _Footer extends StatelessWidget {
-  const _Footer({required this.notes});
+  const _Footer({required this.notes, this.trailing});
 
   final List<String> notes;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
-    if (notes.isEmpty) return const SizedBox.shrink();
+    final trailing = this.trailing;
+    if (notes.isEmpty && trailing == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
       color: theme.colorScheme.surfaceContainerHighest,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Text(
-        notes.join(' · '),
-        style: theme.textTheme.labelSmall
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      padding: EdgeInsets.only(
+        top: 6,
+        bottom: 6,
+        left: 16,
+        // 右边贴着开关时不留 16：那个按钮自己带内边距。
+        right: trailing == null ? 16 : 4,
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              // 只有开关、没有说明时中间那一颗 `·` 是凭空多出来的。
+              notes.join(' · '),
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          ?trailing,
+        ],
       ),
     );
   }

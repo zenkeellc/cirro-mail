@@ -33,10 +33,19 @@ import '../../../l10n/app_localizations.dart';
 /// 拦住事件 —— `IconButton` / `Slider` 都是这样），否则点「暂停」会顺带
 /// 把控件一起收起来。
 class VideoViewerScreen extends StatefulWidget {
-  const VideoViewerScreen({super.key, required this.path, this.title});
+  const VideoViewerScreen({
+    super.key,
+    required this.path,
+    this.title,
+    this.embedded = false,
+  });
 
   final String path;
   final String? title;
+
+  /// 嵌在分栏右栏里（附件缓存页宽屏的右栏，见 `attachment_cache_screen.dart` 的 `_AttachmentPreview`），而不是 push 上来的整页。
+  /// 差别只有一处：不自己撑 `Scaffold` / `AppBar`。玩家与控件照旧。
+  final bool embedded;
 
   @override
   State<VideoViewerScreen> createState() => _VideoViewerScreenState();
@@ -157,6 +166,15 @@ class _VideoViewerScreenState extends State<VideoViewerScreen> {
     final l10n = AppLocalizations.of(context);
     final error = _error;
 
+    // 黑底是视频区的需要（`_VideoErrorView` 的提示也是浅色），整页与内嵌
+    // 都一样 —— 内嵌时那层 `Scaffold` 换成一个 `ColoredBox`。
+    final body = error != null
+        ? _VideoErrorView(reason: error)
+        : _player(l10n);
+    if (widget.embedded) {
+      return ColoredBox(color: Colors.black, child: body);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -167,9 +185,7 @@ class _VideoViewerScreenState extends State<VideoViewerScreen> {
         ),
       ),
       backgroundColor: Colors.black,
-      body: error != null
-          ? _VideoErrorView(reason: error)
-          : _player(l10n),
+      body: body,
     );
   }
 

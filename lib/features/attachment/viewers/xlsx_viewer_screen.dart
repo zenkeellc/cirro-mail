@@ -29,10 +29,19 @@ import 'docx_viewer_screen.dart' show OfficeErrorView, OfficeFooter;
 /// **不做**行号栏：横向滚动时它会跟着滚走，单独为它做一条双向联动的
 /// 滚动条不值当。行号的价值主要在「跟同事说第几行」，而预览里没人会引用它。
 class XlsxViewerScreen extends StatefulWidget {
-  const XlsxViewerScreen({super.key, required this.path, this.title});
+  const XlsxViewerScreen({
+    super.key,
+    required this.path,
+    this.title,
+    this.embedded = false,
+  });
 
   final String path;
   final String? title;
+
+  /// 嵌在分栏右栏里（附件缓存页宽屏的右栏，见 `attachment_cache_screen.dart` 的 `_AttachmentPreview`），而不是 push 上来的整页。
+  /// 差别只有一处：不自己撑 `Scaffold` / `AppBar`。表格与页脚照旧。
+  final bool embedded;
 
   @override
   State<XlsxViewerScreen> createState() => _XlsxViewerScreenState();
@@ -99,6 +108,13 @@ class _XlsxViewerScreenState extends State<XlsxViewerScreen> {
     final workbook = _workbook;
     final error = _error;
 
+    final body = switch ((error, workbook)) {
+      (final String reason, _) => OfficeErrorView(reason: reason),
+      (_, final Workbook book) => _body(book, l10n),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
+    if (widget.embedded) return body;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -108,11 +124,7 @@ class _XlsxViewerScreenState extends State<XlsxViewerScreen> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: switch ((error, workbook)) {
-        (final String reason, _) => OfficeErrorView(reason: reason),
-        (_, final Workbook book) => _body(book, l10n),
-        _ => const Center(child: CircularProgressIndicator()),
-      },
+      body: body,
     );
   }
 
