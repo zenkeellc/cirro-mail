@@ -1,8 +1,15 @@
 import '../../data/models/mail_row.dart';
 import 'compose_html.dart';
+import 'compose_text.dart';
 
-/// 打开写邮件页的三种由头。
-enum ComposeMode { blank, reply, forward }
+/// 打开写邮件页的几种由头。
+///
+/// [replyAll] 是 [reply] 的多收件人版本：主题 / 引用块 / 线程（`SendKind.reply`）
+/// 都与 [reply] 完全一致，差别只在预填的收件人集合（原发件人 + 原 To + 原 Cc，
+/// 去掉自己，见 [ComposeDraftFactory.replyAllRecipients]）。**服务端的
+/// `/email/send` 没有 cc/bcc 字段**，所以这里不引入「抄送」这种半真半假的分组
+/// —— 全部落在 `receiveEmail` 里，语义就是「这些人都会收到」。
+enum ComposeMode { blank, reply, replyAll, forward }
 
 /// 写邮件页的入参。
 ///
@@ -144,6 +151,20 @@ abstract final class ComposeDraftFactory {
           ),
         );
 
+      case ComposeMode.replyAll:
+        // 其余三样与 [ComposeMode.reply] 逐字一致（含线程），只有收件人不同。
+        // 不把 reply 那一支抽成公共函数：两处都只有几行，而分开写让
+        // 「只有收件人不一样」这件事一眼可见。
+        return ComposeDraft(
+          recipients: replyAllRecipients(mail),
+          subject: replySubject(mail.subject),
+          quoted: ComposeHtml.replyQuote(
+            mail,
+            ossBase: ossBase,
+            wroteLabel: wroteLabel,
+          ),
+        );
+
       case ComposeMode.forward:
         // Web 端 `openForward`：**主题原样**、**不带引用头**，正文就是原文。
         // 看起来「少了点什么」，但这正是 Web 端的形状 —— 两端口径一致
@@ -161,5 +182,43 @@ abstract final class ComposeDraftFactory {
     if (subject.isEmpty) return 'Re: ';
     const prefixes = <String>['Re:', 'Re：', '回复：', '回复:'];
     return prefixes.any(subject.startsWith) ? subject : 'Re: $subject';
+  }
+
+  /// 「全部回复」预填的收件人。
+  ///
+  /// 集合是：原发件人 + 原 To + 原 Cc，**去掉自己**（[MailRow.mailboxEmail]）
+  /// 与重复项。三条判据都不是可省的：
+  ///
+  /// - **Bcc 必须排除**。密送收件人之所以是密送，就是因为别人不该知道他们也在
+  ///   这一封里；把 `mail.bcc` 拼进来等于把原发件人的密送名单公开出去。
+  /// - **去掉自己**：不回给自己是回复全部的基本礼节，而且很多服务端会把
+  ///   「收件人里有自己」当成一次额外的投递（多一份未读，有时还会多算配额）。
+  /// - **去重忽略大小写**：原发件人常常也在 To 里（`a@x.com` 与 `A@x.com`
+  ///   是同一个邮箱），按原样拼会出现两个 chip，服务端收到两条一样的投递。
+  ///
+  /// 只认 [MailRow.mailboxEmail] 一个「自己」：一个用户在一个实例上可能有多个
+  /// 邮箱，而这一行的收件信息只知道「这封信投到了哪个邮箱」。用当前发件邮箱
+  /// 再兜一层在控制器里做（发件人这时才定得下来）。
+  static List<String> replyAllRecipients(MailRow mail) {
+    final own = mail.mailboxEmail.trim().toLowerCase();
+    final seen = <String>{};
+    final out = <String>[];
+
+    void add(String raw) {
+      final address = raw.trim();
+      if (!looksLikeEmail(address)) return;
+      final key = address.toLowerCase();
+      if (key == own || !seen.add(key)) return;
+      out.add(address);
+    }
+
+    add(mail.sendEmail);
+    for (final r in mail.recipients) {
+      add(r.address);
+    }
+    for (final r in mail.cc) {
+      add(r.address);
+    }
+    return out;
   }
 }

@@ -153,6 +153,21 @@ void main() {
     expect(find.byKey(const ValueKey('sender-chevron')), findsOneWidget);
   });
 
+  testWidgets('点「发件邮箱」label 也能开面板，再点一次收起', (tester) async {
+    // 三行表头里只有发件人这一行的「输入区」不是真输入框，用户会顺手点
+    // label。这里同时钉住「第二次点是收起」—— 若 label 不在面板的
+    // TapRegion 组里，第一次点击会先被 onTapOutside hide、再被 toggle show，
+    // 面板看起来永远关不掉。
+    await pumpCompose(tester);
+    await tester.tap(find.text('发件邮箱'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sender-sheet')), findsOneWidget);
+
+    await tester.tap(find.text('发件邮箱'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sender-sheet')), findsNothing);
+  });
+
   /// 打开面板（点触发行）。
   Future<void> openSheet(WidgetTester tester) async {
     await tester.tap(find.byKey(const ValueKey('sender-trigger')));

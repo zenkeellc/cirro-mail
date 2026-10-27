@@ -1901,7 +1901,7 @@ abstract class AppLocalizations {
   /// No description provided for @composeRecipientsHint.
   ///
   /// In en, this message translates to:
-  /// **'Type an address, then press Enter'**
+  /// **'Type a name or address, then press Enter'**
   String get composeRecipientsHint;
 
   /// No description provided for @composeBodyHint.
@@ -3493,6 +3493,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Name must be at most 30 characters'**
   String get mailboxNameTooLong;
+
+  /// No description provided for @replyAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Reply all'**
+  String get replyAll;
+
+  /// compose > recipient chips: shown as a toolbar hint while chips are multi-selected
+  ///
+  /// In en, this message translates to:
+  /// **'{count} recipients selected'**
+  String composeSelectedCount(int count);
+
+  /// No description provided for @composeCopyAddresses.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy addresses'**
+  String get composeCopyAddresses;
+
+  /// No description provided for @composeRemoveSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove selected recipients'**
+  String get composeRemoveSelected;
+
+  /// No description provided for @composeRecipientInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid email address'**
+  String get composeRecipientInvalid;
+
+  /// No description provided for @detailFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'From'**
+  String get detailFrom;
+
+  /// No description provided for @detailTo.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get detailTo;
+
+  /// No description provided for @detailCc.
+  ///
+  /// In en, this message translates to:
+  /// **'Cc'**
+  String get detailCc;
+
+  /// No description provided for @detailBcc.
+  ///
+  /// In en, this message translates to:
+  /// **'Bcc'**
+  String get detailBcc;
+
+  /// No description provided for @detailShowDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Show details'**
+  String get detailShowDetails;
+
+  /// No description provided for @detailHideDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide details'**
+  String get detailHideDetails;
+
+  /// No description provided for @copySenderAddress.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy sender address'**
+  String get copySenderAddress;
 }
 
 class _AppLocalizationsDelegate

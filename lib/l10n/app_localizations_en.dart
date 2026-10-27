@@ -1043,7 +1043,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composeSenderNoMatch => 'No matching mailbox';
 
   @override
-  String get composeRecipientsHint => 'Type an address, then press Enter';
+  String get composeRecipientsHint =>
+      'Type a name or address, then press Enter';
 
   @override
   String get composeBodyHint => 'Write your message…';
@@ -2006,4 +2007,42 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mailboxNameTooLong => 'Name must be at most 30 characters';
+
+  @override
+  String get replyAll => 'Reply all';
+
+  @override
+  String composeSelectedCount(int count) {
+    return '$count recipients selected';
+  }
+
+  @override
+  String get composeCopyAddresses => 'Copy addresses';
+
+  @override
+  String get composeRemoveSelected => 'Remove selected recipients';
+
+  @override
+  String get composeRecipientInvalid => 'Invalid email address';
+
+  @override
+  String get detailFrom => 'From';
+
+  @override
+  String get detailTo => 'To';
+
+  @override
+  String get detailCc => 'Cc';
+
+  @override
+  String get detailBcc => 'Bcc';
+
+  @override
+  String get detailShowDetails => 'Show details';
+
+  @override
+  String get detailHideDetails => 'Hide details';
+
+  @override
+  String get copySenderAddress => 'Copy sender address';
 }

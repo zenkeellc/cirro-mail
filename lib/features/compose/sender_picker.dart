@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import '../../l10n/app_localizations.dart';
+import 'compose_field_row.dart';
 import 'compose_sender.dart';
 
 /// 发件人那一行。
@@ -87,107 +88,120 @@ class _SenderFieldState extends State<SenderField> {
     // 因为「读了不用」删掉它 —— 副作用才是它的用处。
     if (!(ModalRoute.of(context)?.isCurrent ?? true)) _close();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            // 与 `RecipientField` 的 label 同一处对齐（输入框里的字比 label
-            // 低 10px）。
-            padding: const EdgeInsets.only(top: 10),
-            child: Text(l10n.composeFrom),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: current == null
-                // 没有可用邮箱 = 所有实例都没拿到邮箱列表、账号被禁、或站点
-                // 关了发信。发送按钮同时也会是灰的（`sendDisabledReason`），
-                // 这里说清原因。
-                //
-                // 红字文案仍按「候选空不空」分两种：候选整个空 = 真的一台都
-                // 没有发信能力；候选非空却选不出人 = 这个实例的发件地址拿不到
-                // （`composeSenderUnavailable`）。
-                ? Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: Text(
-                      widget.groups.isEmpty
-                          ? l10n.composeNoMailbox
-                          : l10n.composeSenderUnavailable,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: theme.colorScheme.error),
-                    ),
-                  )
-                : CompositedTransformTarget(
-                    link: _link,
-                    child: OverlayPortal(
-                      controller: _controller,
-                      overlayChildBuilder: (context) =>
-                          CompositedTransformFollower(
-                        link: _link,
-                        // 触发行还没画过时不画面板（默认会把它摆在原点）。
-                        showWhenUnlinked: false,
-                        targetAnchor: Alignment.bottomLeft,
-                        followerAnchor: Alignment.topLeft,
-                        offset: const Offset(0, 4),
-                        child: Align(
-                          alignment: Alignment.topLeft,
-                          // 面板**自己**带着尺寸上限（`SenderSheet` 里的那句
-                          // `ConstrainedBox`）：follower 的 child 是按 overlay
-                          // 那层的约束布局的，宽高夹在这里等于夹在「谁来量」
-                          // 之前，`Material` 的圆角与阴影仍会照最小尺寸收缩，
-                          // 但不该在两层各写一遍同一个数 —— 尺寸是面板自己的
-                          // 事，锚点这一侧只管「贴在哪」。
-                          child: TextFieldTapRegion(
-                            child: TapRegion(
-                              groupId: _groupId,
-                              onTapOutside: (_) => _controller.hide(),
-                              child: CallbackShortcuts(
-                                bindings: <ShortcutActivator, VoidCallback>{
-                                  const SingleActivator(
-                                    LogicalKeyboardKey.escape,
-                                  ): _controller.hide,
-                                },
-                                child: SenderSheet(
-                                  groups: widget.groups,
-                                  selected: current,
-                                  onPick: _pick,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      // **不套 `Focus(autofocus: true)`**（`mailbox_filter_button
-                      // .dart` 有那层）：这里的焦点必须落进面板里的搜索框，而它
-                      // 自己就是 `autofocus: true`。外面再来一层抢首帧焦点，
-                      // 键盘就落不到输入框上，Esc / ↑↓ 全部失灵。
+    // 一行 = 固定宽度的 label 列 + 内容，尺寸全部来自 `ComposeFieldRow`
+    // （label 64 + gap 8 + 上下 6）。
+    //
+    // 改造前这三行各写各的 `Padding + Text + SizedBox(12)`，label 宽度跟着
+    // 字数变（「发件邮箱」四个字 vs 「主题」两个字），于是输入区的左边界三行
+    // 差 28px —— 单看一行不觉得，叠在一起就是「没排过版」。
+    // 整行都算「面板这一组」的 TapRegion：不包这一层的话，点 label 会先被
+    // 面板的 `onTapOutside` 判成「点了外面」→ hide，紧接着行的 onTap 又
+    // toggle 回来，面板看着像关不掉。与触发器、面板共用同一个 [groupId] 后，
+    // 「行内点击」不再算 outside，toggle 的语义才与触发器一致。
+    return TapRegion(
+      groupId: _groupId,
+      child: ComposeFieldRow(
+      label: l10n.composeFrom,
+      // 点 label / 行内空白也能开面板：三行表头里只有这一行的「输入区」不是
+      // 一个真输入框，用户的第一反应就是去点「发件邮箱」那几个字。面板开着
+      // 时再点 = 收起 —— 与触发器共用同一个 toggle，不另造一条状态路径。
+      //
+      // 单候选时给 null：那时触发器本身都不套 InkWell（只有一个邮箱可发，
+      // 「展开」没有意义），点 label 弹出只有一个选项的面板更没意义。
+      onTap: _candidateCount <= 1 ? null : () => _controller.toggle(),
+      child: current == null
+          // 没有可用邮箱 = 所有实例都没拿到邮箱列表、账号被禁、或站点
+          // 关了发信。发送按钮同时也会是灰的（`sendDisabledReason`），
+          // 这里说清原因。
+          //
+          // 红字文案仍按「候选空不空」分两种：候选整个空 = 真的一台都
+          // 没有发信能力；候选非空却选不出人 = 这个实例的发件地址拿不到
+          // （`composeSenderUnavailable`）。
+          ? Padding(
+              // 这一行只有一句红字、没有 30 高的输入框，用 (30-20)/2 的上
+              // 留白让它与 label 的中线齐平 —— 否则三行里只有这一行的 label
+              // 会看着偏高（`ComposeFieldRow` 的 label 是按内容**首行**中线
+              // 算的，它不知道这一行的内容没有自己的行高）。
+              padding: const EdgeInsets.only(top: 5),
+              child: Text(
+                widget.groups.isEmpty
+                    ? l10n.composeNoMailbox
+                    : l10n.composeSenderUnavailable,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            )
+          : CompositedTransformTarget(
+              link: _link,
+              child: OverlayPortal(
+                controller: _controller,
+                overlayChildBuilder: (context) => CompositedTransformFollower(
+                  link: _link,
+                  // 触发行还没画过时不画面板（默认会把它摆在原点）。
+                  showWhenUnlinked: false,
+                  targetAnchor: Alignment.bottomLeft,
+                  followerAnchor: Alignment.topLeft,
+                  offset: const Offset(0, 4),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    // 面板**自己**带着尺寸上限（`SenderSheet` 里的那句
+                    // `ConstrainedBox`）：follower 的 child 是按 overlay
+                    // 那层的约束布局的，宽高夹在这里等于夹在「谁来量」
+                    // 之前，`Material` 的圆角与阴影仍会照最小尺寸收缩，
+                    // 但不该在两层各写一遍同一个数 —— 尺寸是面板自己的
+                    // 事，锚点这一侧只管「贴在哪」。
+                    child: TextFieldTapRegion(
                       child: TapRegion(
                         groupId: _groupId,
-                        child: _Trigger(
-                          option: current,
-                          // 只有一个**候选邮箱**时不给「展开」这条能力（见类注释）。
-                          //
-                          // 数的是**扁平后的邮箱总数**，不是组数：一台实例挂两个
-                          // 邮箱（`me@a.example` / `fin@a.example`）时组数是 1，
-                          // 可面板里明明有两行要选。按组数判会让这台实例的第二个
-                          // 邮箱永远选不到 —— 而改造前的 `DropdownButton` 数的
-                          // 是扁平后的候选，是能选的。
-                          onTap: _candidateCount <= 1
-                              ? null
-                              : () => _controller.toggle(),
+                        onTapOutside: (_) => _controller.hide(),
+                        child: CallbackShortcuts(
+                          bindings: <ShortcutActivator, VoidCallback>{
+                            const SingleActivator(
+                              LogicalKeyboardKey.escape,
+                            ): _controller.hide,
+                          },
+                          child: SenderSheet(
+                            groups: widget.groups,
+                            selected: current,
+                            onPick: _pick,
+                          ),
                         ),
                       ),
                     ),
                   ),
-          ),
-        ],
+                ),
+                // **不套 `Focus(autofocus: true)`**（`mailbox_filter_button
+                // .dart` 有那层）：这里的焦点必须落进面板里的搜索框，而它
+                // 自己就是 `autofocus: true`。外面再来一层抢首帧焦点，
+                // 键盘就落不到输入框上，Esc / ↑↓ 全部失灵。
+                child: TapRegion(
+                  groupId: _groupId,
+                  child: _Trigger(
+                    option: current,
+                    // 只有一个**候选邮箱**时不给「展开」这条能力（见类注释）。
+                    //
+                    // 数的是**扁平后的邮箱总数**，不是组数：一台实例挂两个
+                    // 邮箱（`me@a.example` / `fin@a.example`）时组数是 1，
+                    // 可面板里明明有两行要选。按组数判会让这台实例的第二个
+                    // 邮箱永远选不到 —— 而改造前的 `DropdownButton` 数的
+                    // 是扁平后的候选，是能选的。
+                    onTap: _candidateCount <= 1
+                        ? null
+                        : () => _controller.toggle(),
+                  ),
+                ),
+              ),
+            ),
       ),
     );
   }
 }
 
 /// 触发行本体：主行 + 实例名小字 +（可选）下拉箭头。
+///
+/// 主行**钉在 [kComposeFieldLineHeight]（30）**，与主题框、收件人框的第一行
+/// 同高：`ComposeFieldRow` 的 label 是按「内容首行中线」算上留白的，主行高度
+/// 若不是这个数，三行里只有发件人这一行的 label 会偏高或偏低。
 class _Trigger extends StatelessWidget {
   const _Trigger({required this.option, this.onTap});
 
@@ -199,39 +213,45 @@ class _Trigger extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
+    final row = Column(
+      // 这一行的**内容左边界**（label 列右侧那 88px 处）。测试拿它量三行
+      // 对不对得齐，比按文字节点量稳：文字会随字数换行、还可以省略号。
+      key: const ValueKey('compose-sender-trigger'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(
+          height: kComposeFieldLineHeight,
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
                   option.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium,
                 ),
-                Text(
-                  option.profileName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: theme.colorScheme.outline),
+              ),
+              if (onTap != null)
+                Icon(
+                  Icons.arrow_drop_down,
+                  key: const ValueKey('sender-chevron'),
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-              ],
-            ),
+            ],
           ),
-          if (onTap != null)
-            Icon(
-              Icons.arrow_drop_down,
-              key: const ValueKey('sender-chevron'),
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-        ],
-      ),
+        ),
+        // 实例名小字压在 30 的主行**下面**，不再用 `Padding(vertical: 8)` 把
+        // 两行一起往下推：行间的呼吸交给 `ComposeFieldRow` 统一的内边距，
+        // 主行就能准确地从内容区顶部起算（label 的对齐依据是它）。
+        Text(
+          option.profileName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelSmall
+              ?.copyWith(color: theme.colorScheme.outline),
+        ),
+      ],
     );
 
     if (onTap == null) return row;
