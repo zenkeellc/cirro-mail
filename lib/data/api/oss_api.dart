@@ -23,7 +23,7 @@ class OssApi {
 
   /// 把 [url] 下载到 [savePath]。
   ///
-  /// 返回实际写入的字节数。抛 [AttachmentNotAvailableException] 表示
+  /// 返回**真实流过的字节数**。抛 [AttachmentNotAvailableException] 表示
   /// 服务端说「这个 key 没有对象」，[NetworkException] 表示真的没连上。
   Future<int> downloadTo({
     required String url,
@@ -62,11 +62,28 @@ class OssApi {
       );
     }
 
-    // Content-Length 可能被压缩/分块，拿不到就按 0（调用方只用于显示）。
-    final contentLength = body.contentLength;
+    // `Content-Length` 只能当**预期**用，不能当结果。
+    //
+    // dio 的 `ResponseBody.contentLength` 是「响应头里有这个头就解析，没有就 -1」
+    // （`dio/lib/src/adapter.dart`）。而 Cloudflare 对文本类响应（`text/markdown`、
+    // `text/plain`、`text/csv` …）会**自动 gzip**，响应随之变成
+    // `Transfer-Encoding: chunked`，`Content-Length` 整个消失 —— 于是这里拿到
+    // 的是 -1。把它当「写入了多少字节」返回，调用方会认为一个已经完整落盘的
+    // 附件是空的（`attachment_repository.dart` 的 `written <= 0` 那道保险），
+    // 删掉文件并报「附件不可用」。表现就是：**只有最后一个/某个文本附件**
+    // 预览时「下载中…」然后「附件不可用」，而 PDF、图片（不可压缩）都好好的。
+    //
+    // 所以这里数**真实流过的字节**，`content-length` 只作为给调用方的预期值，
+    // 拿不到就报 0（表示「不知道」，不是「空文件」）。
+    var received = 0;
+    final counted = body.stream.map((chunk) {
+      received += chunk.length;
+      return chunk;
+    });
 
-    await writeTo(body.stream, contentLength);
-    return contentLength;
+    final declared = body.contentLength;
+    await writeTo(counted, declared > 0 ? declared : 0);
+    return received;
   }
 
   /// 建 [CancelToken] 的便捷方法，让 UI 层不用直接依赖 dio。
