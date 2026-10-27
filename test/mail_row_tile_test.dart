@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mail_app/data/models/enums.dart';
 import 'package:mail_app/data/models/mail_row.dart';
 import 'package:mail_app/data/models/profile.dart';
 import 'package:mail_app/features/mail_list/mail_row_tile.dart';
@@ -100,6 +101,77 @@ void main() {
       reason: '选中行要有整行底色（竖条只说明「是这一行」）',
     );
     expect(surfaceColor(tester), isNot(plain));
+  });
+
+  /// 未读行整行铺一层极淡的主题色，已读行保持透明。
+  ///
+  /// 旧方案只靠字重（w600/w700）区分未读：一列几十行里扫视时，字重差在
+  /// 「不看具体文字」的余光里几乎读不出来，而底色是一整块，能直接回答
+  /// 「这一片里有几封没读」。这里同时钉住它是**浅**的：未读色的密度必须
+  /// 低于选中色（两者同色相，一档之差在列表里认不出来）。
+  testWidgets('未读收件行有浅主题底色，已读行没有', (tester) async {
+    final unreadRow = MailRow(
+      emailId: 5,
+      profileId: profile.id,
+      name: '发件人',
+      subject: '主题',
+      type: MailType.receive,
+      // `unread` 的语义与字段名相反：0 = 未读、1 = 已读。
+      unread: UnreadState.unread,
+      createTime: DateTime(2026, 1, 2, 3, 4),
+    );
+
+    await pump(tester, selected: false, band: false, mail: unreadRow);
+    final unreadTint = surfaceColor(tester);
+    expect(unreadTint, isNotNull, reason: '未读行要有整行底色');
+
+    // 选中态：同一个色相、更重的一档。
+    await pump(tester, selected: true, band: false, mail: unreadRow);
+    final selectedTint = surfaceColor(tester)!;
+    expect(selectedTint.a, greaterThan(unreadTint!.a),
+        reason: '「正开着」必须比「没读」重，否则两种状态看起来一样');
+
+    await pump(tester, selected: false, band: false);
+    expect(surfaceColor(tester), isNull, reason: '已读行不铺底色');
+  });
+
+  /// 选中与未读撞在同一行时**不做混合**：整行底色只取选中那一支。叠加会
+  /// 混出第三种颜色，而「这一行正开着」必须比「这一行没读」更硬。未读在
+  /// 选中行上仍有字重与信封两个出口，信息不丢。
+  testWidgets('选中底色压过未读底色', (tester) async {
+    final unreadRow = MailRow(
+      emailId: 6,
+      profileId: profile.id,
+      name: '发件人',
+      subject: '主题',
+      type: MailType.receive,
+      unread: UnreadState.unread,
+      createTime: DateTime(2026, 1, 2, 3, 4),
+    );
+
+    await pump(tester, selected: false, band: false, mail: unreadRow);
+    final unreadTint = surfaceColor(tester);
+
+    await pump(tester, selected: true, band: false, mail: unreadRow);
+    expect(surfaceColor(tester), isNot(unreadTint));
+  });
+
+  /// 发件方向没有未读语义（服务端只在收信时写 `unread`），`unread == 0`
+  /// 不能给发件行上底色 —— 否则发件箱里每一行都会是「未读」。
+  testWidgets('发件行不因 unread=0 铺底色', (tester) async {
+    final sentRow = MailRow(
+      emailId: 7,
+      profileId: profile.id,
+      sendEmail: 'me@x.com',
+      toEmail: 'you@example.net',
+      subject: '主题',
+      type: MailType.send,
+      unread: UnreadState.unread,
+      createTime: DateTime(2026, 1, 2, 3, 4),
+    );
+
+    await pump(tester, selected: false, band: false, mail: sentRow);
+    expect(surfaceColor(tester), isNull);
   });
 
   /// 聚合视图里实例色带与选中竖条是**同一个位置**（最左 3px）。
