@@ -182,10 +182,12 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
 
   /// 帧后触发总数探测（只探**展开着的**这一台）。
   ///
-  /// `initState` / `didUpdateWidget` 而不是 `build`：本仓库踩过两次
-  /// 「build 期间改 provider」的断言（`mail_list_screen.dart` 两处注释）。
-  /// 探测本身会写库，写库会让 `watchSyncStatesOfProfile` 重发、又重建这棵
-  /// 树 —— 在 build 里做就是「重建时改状态」，那是同一个坑的另一种形状。
+  /// 触发点只有三个：`initState`、`didUpdateWidget`、以及 build 里那个
+  /// `ref.listen` 的回调（`false → true` 那一跳），三处都只是**排一个帧后
+  /// 回调**，不在 build 里动 provider。本仓库踩过两次「build 期间改
+  /// provider」的断言（`mail_list_screen.dart` 两处注释）：探测本身会写库，
+  /// 写库会让 `watchSyncStatesOfProfile` 重发、又重建这棵树 —— 在 build 里
+  /// 做就是「重建时改状态」，那是同一个坑的另一种形状。
   ///
   /// 展开态在这一刻**重新读一次**（不是拿 build 里那个局部变量）：回调跑在
   /// 帧后，而这一帧里用户可能刚点了箭头。探测内部另有 TTL 与在飞去重，
