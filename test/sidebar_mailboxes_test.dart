@@ -26,9 +26,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///    没有邮箱列表，这一组会退化成一行「全部邮箱」（`accountId == 0`）。
 ///    它与它下面那些真实地址必须**一眼**不同 —— 缩进最左那一格正是扫视时
 ///    先落到的地方。
-/// 2. **两种行里的标签起点一致**：实例行与它下面的邮箱行上下相邻，而
-///    图标尺寸（16）与间隔（8）是写死在这一行的实现里的 —— 改错一个数就是
-///    两套缩进，而「没对齐」这件事在窄侧栏里不容易立刻看出来。
+/// 2. **实例行与邮箱行分得开**：层级先靠缩进说 —— 实例行（组头）的标签
+///    比它下面的邮箱行靠左 18，而组内各行（邮箱 / 合并项）彼此对齐。
+///    以前这两种行从同一个 x 开始，只靠字重区分，扫视时几乎分不出来。
 /// 3. **实例行可点、箭头只切展开**：点实例名要落到 `/mail/<实例>`，点右边
 ///    那颗箭头**不能**顺带导航（`IconButton` 在手势竞技场里赢过外层那个
 ///    `HitTestBehavior.opaque` 的 `GestureDetector`，但这是「碰巧」还是
@@ -86,6 +86,7 @@ void main() {
     int? Function(String profileId, int accountId)? mailboxTotalOf,
     int Function(String profileId)? instanceUnreadOf,
     int? Function(String profileId)? instanceTotalOf,
+    MailboxTotalsProbe? probe,
   }) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       if (collapsed.isNotEmpty)
@@ -156,7 +157,7 @@ void main() {
         // 这一组里没有真 runtime，真探测会立刻在 `registry.peek` 那一句
         // 返回 null —— 但那条路仍会建一遍 `EmailRepository`（拖进 registry、
         // 能力仓库）。换成空实现，把「展开这一行」与「探测」彻底隔开。
-        mailboxTotalsProbeProvider.overrideWithValue(_NoopProbe()),
+        mailboxTotalsProbeProvider.overrideWithValue(probe ?? _NoopProbe()),
         // 点一行会 `setActiveProfile` —— 真身要拉起整个调度器（时钟、平台
         // 通道），而这里要验的是**地址**。
         syncControllerProvider.overrideWith(_FakeSyncController.new),
@@ -330,6 +331,35 @@ void main() {
       expect(find.byIcon(Icons.expand_more), findsOneWidget);
     });
 
+    /// 从「收起」拨到「展开」时要补探一次总数。
+    ///
+    /// 挂载时这一台是收起的，`_scheduleProbe` 那一帧直接 return；而展开是
+    /// provider 状态，不改变任何 widget 入参，`didUpdateWidget` 不会触发。
+    /// 不补的话，这一台各邮箱的浅色总数要等下次重启 / 树重建才出现
+    /// （旧实现靠 `forced` 翻转「碰巧」能探，那条路随 `forced` 一起删了）。
+    testWidgets('从收起拨到展开时补探一次总数', (tester) async {
+      final probe = _RecordingProbe();
+      await pump(
+        tester,
+        boxes: const <MailboxAccount>[box],
+        initial: '/starred',
+        collapsed: <String>{'p1'},
+        probe: probe,
+      );
+
+      // 挂载时是收起的：不探。
+      expect(probe.ensureCalls, isEmpty);
+
+      await tester.tap(find.byTooltip('展开或收起这个实例的邮箱'));
+      await tester.pumpAndSettle();
+
+      expect(probe.ensureCalls, hasLength(1));
+      expect(
+        probe.ensureCalls.single.boxes,
+        const <MailboxFilter>[MailboxFilter(profileId: 'p1', accountId: 1)],
+      );
+    });
+
     /// 一括关掉时**所有**实例的子行都收起，包括地址正落着的那一台 ——
     /// 「收件箱」那颗箭头管的是整个目录，不是除当前实例以外的那些。
     testWidgets('一括关掉 + 落在这台上：整组收起（收起优先于地址）', (tester) async {
@@ -423,7 +453,7 @@ void main() {
     });
 
     /// 实例行也走同一套：名字后面是这台实例的合计，最右是它的未读徽章。
-    testWidgets('实例行：合计跟在实例名后，未读在最右', (tester) async {
+    testWidgets('实例行：合计紧跟实例名，未站在行最右（箭头让位）', (tester) async {
       await pump(
         tester,
         boxes: const <MailboxAccount>[box],
@@ -432,8 +462,22 @@ void main() {
         instanceTotalOf: (profileId) => 20,
       );
 
-      expect(find.text('20'), findsOneWidget);
+      final name = find.text('a@x.com');
+      final total = find.text('20');
+      final badge = find.byType(SidebarUnreadBadge);
+      expect(name, findsOneWidget);
+      expect(total, findsOneWidget);
+      expect(badge, findsOneWidget);
       expect(find.text('5'), findsOneWidget);
+
+      final gap = tester.getTopLeft(total).dx - tester.getTopRight(name).dx;
+      expect(gap, greaterThanOrEqualTo(0));
+      expect(gap, lessThan(20), reason: '合计应当紧跟在实例名后面，而不是被推到行尾');
+
+      // 实例行最右是展开箭头（箭头必须可点、还承担「这里能展开」的提示），
+      // 徽章钉在箭头左边 —— 与邮箱行「贴最右」的差别正是这个箭头让出来的。
+      final caret = tester.getTopLeft(find.byType(IconButton));
+      expect(caret.dx, greaterThanOrEqualTo(tester.getTopRight(badge).dx));
     });
   });
 }
@@ -446,6 +490,26 @@ class _FakeSyncController extends SyncController {
 
   @override
   void setActiveProfile(String? profileId) {}
+}
+
+/// 只记下「被 ensure 了几次、带了哪些邮箱」的探测器。
+///
+/// 用途只有 S1 那条：从收起 → 展开时侧栏要补探一次总数（否则这一台各邮箱
+/// 的浅色总数在本次会话里一直是空的）。探测策略本身不在这里验。
+class _RecordingProbe implements MailboxTotalsProbe {
+  final List<({String profileId, List<MailboxFilter> boxes})> ensureCalls =
+      <({String profileId, List<MailboxFilter> boxes})>[];
+
+  @override
+  Ref get ref => throw UnimplementedError('这一组用例不碰探测器的内部');
+
+  @override
+  Future<void> ensure({
+    required Profile profile,
+    required List<MailboxFilter> boxes,
+  }) async {
+    ensureCalls.add((profileId: profile.id, boxes: boxes));
+  }
 }
 
 /// 什么都不做的探测器：这一组用例验的是「行长什么样、点了去哪儿」，

@@ -378,10 +378,6 @@
   "@toggleInstanceMailboxList": {
     "description": "sidebar: disclosure arrow on a profile row (per-instance, unlike toggleMailboxList which is the whole group)"
   },
-  "mailboxCountUnknown": "—",
-  "@mailboxCountUnknown": {
-    "description": "sidebar: placeholder for a mailbox total that has not been probed yet"
-  },
   "mailboxCountsLabel": "共 {total} 封，其中 {unread} 封未读",
   "@mailboxCountsLabel": {
     "description": "sidebar: screen-reader label for the 未读/总数 pair (the visible text is symbols only)",

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/core/theme/app_theme.dart';
 import 'package:mail_app/features/shell/nav_sidebar.dart';
+import 'package:mail_app/l10n/app_localizations.dart';
 
 /// 一级导航项右侧那个数字的两种形态。
 ///
@@ -17,6 +18,9 @@ void main() {
   }) async {
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.light(),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: const Locale('zh'),
       home: Scaffold(
         body: NavSidebarItem(
           icon: Icons.mark_email_unread_outlined,
@@ -45,6 +49,18 @@ void main() {
     );
     final decoration = container.decoration! as BoxDecoration;
     expect(decoration.color, AppTheme.light().colorScheme.error);
+  });
+
+  testWidgets('countBadge：读屏拿到的是「未读 N」而不是一个孤立的数字', (tester) async {
+    final handle = tester.ensureSemantics();
+    await pump(tester, count: 3, countBadge: true);
+
+    // 红色是**视觉**语义；裸着一个「3」读屏只会念出一个数字。整行是一个
+    // 可点的语义节点（标签会与「未读邮件」合并成多行），所以断言「包含」。
+    final node = tester.getSemantics(find.byType(SidebarUnreadBadge));
+    expect(node.label, contains('未读 3'));
+
+    handle.dispose();
   });
 
   testWidgets('不传 countBadge：还是原来那颗灰色数字', (tester) async {
