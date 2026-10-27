@@ -46,8 +46,9 @@ import '../suggest/suggestion.dart';
 /// ## 为什么菜单里这几项，而不是把顶栏那颗 ⋯ 菜单搬过来
 ///
 /// 用户说「刚选了一段字，顺手做点什么」。所以放的是**与这一封有关**的
-/// 回复 / 转发 / 删除，而不是「标为已读 / 星标」那一类 —— 后者不依赖选区，
-/// 顶栏那两颗按钮和 ⋯ 菜单里已经有了，右键里再来一遍只会让菜单变长。
+/// 回复 / 全部回复 / 转发 / 删除，而不是「标为已读 / 星标」那一类 ——
+/// 后者不依赖选区，顶栏那两颗按钮和 ⋯ 菜单里已经有了，右键里再来一遍只会
+/// 让菜单变长。
 ///
 /// **与列表页的右键是两回事，有意不复用**：列表页走
 /// `mail_list_view.dart:159-167` → `MailRowMenu.show`（行操作），而且那一层
@@ -55,7 +56,7 @@ import '../suggest/suggestion.dart';
 ///
 /// ## 每一项都指向既有的执行处，一条新路径都不造
 ///
-/// - 回复 / 转发：与详情页顶栏那颗按钮**同一个函数** ——
+/// - 回复 / 全部回复 / 转发：与详情页顶栏那几颗按钮**同一个函数** ——
 ///   `openMailCompose`（`compose_launcher.dart`），而不是自己拼地址；
 /// - 删除：`MailActionRunner.execute`（`suggest/mail_action_runner.dart:44`），
 ///   那是 spec 定下的「本规格新加动作的唯一执行处」。它管着三件在这一层重新
@@ -85,7 +86,7 @@ Widget mailDetailContextMenu(
     buttonItems: <ContextMenuButtonItem>[
       // 框架给的：`复制`（只有存在非折叠选区时才在）与 `全选`。
       ...state.contextMenuButtonItems,
-      // 下面这三项的 `onPressed` 里都会先收掉菜单。
+      // 下面这四项目的 `onPressed` 里都会先收掉菜单。
       //
       // ## 收菜单要用 `state.hideToolbar()`，**不是 `Navigator.pop()`**
       //
@@ -107,6 +108,24 @@ Widget mailDetailContextMenu(
           openMailCompose(
             actionContext,
             mode: ComposeMode.reply,
+            profileId: row.profileId,
+            emailId: row.emailId,
+          );
+        },
+      ),
+      // 「全部回复」紧跟在「回复」之后：两者是同一件事的两个范围，用户刚选完
+      // 一段原文接着点它时，手与视线都还在「回复」那一行 —— 排到「转发」后面
+      // 等于每次都要多扫一行才找得到。
+      //
+      // 收件人由 [ComposeDraftFactory.replyAllRecipients] 预填（去掉自己、
+      // 排除密送、去重），这里只负责把模式传下去。
+      ContextMenuButtonItem(
+        label: l10n.replyAll,
+        onPressed: () {
+          state.hideToolbar();
+          openMailCompose(
+            actionContext,
+            mode: ComposeMode.replyAll,
             profileId: row.profileId,
             emailId: row.emailId,
           );
