@@ -199,6 +199,24 @@ void main() {
     expect(find.text('全部邮箱'), findsOneWidget);
   });
 
+  /// 邮箱行那一串地址里，**用户名加粗、`@域名` 常规**。
+  ///
+  /// 这条规则只在样式上可见（截图里 12px 的两档字重差点看不出来），所以
+  /// 直接钉 span 的边界：`box` 单独一段挂 w700，`@example.net` 不挂样式、
+  /// 继承外层那档 w400。切错位置（比如把 `@` 也切进用户名）时这条立刻红。
+  testWidgets('邮箱行的用户名加粗，@域名常规', (tester) async {
+    await pump(tester, boxes: const <MailboxAccount>[box]);
+
+    final label = tester.widget<Text>(find.text('box@example.net'));
+    expect(label.style?.fontWeight, FontWeight.w400);
+
+    final spans =
+        (label.textSpan! as TextSpan).children!.cast<TextSpan>().toList();
+    expect(spans.map((s) => s.text), <String>['box', '@example.net']);
+    expect(spans.first.style?.fontWeight, FontWeight.w700);
+    expect(spans.last.style, isNull);
+  });
+
   testWidgets('实例行用的又是另一种图标', (tester) async {
     await pump(tester, boxes: const <MailboxAccount>[box]);
 

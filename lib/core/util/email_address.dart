@@ -76,3 +76,16 @@ bool isEmailAddress(String value) => _emailPattern.hasMatch(value);
 final RegExp _emailPattern = RegExp(
   r"^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+@([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$",
 );
+
+/// 一段文字里**完整地址**的形状：与 [_emailPattern] 同一套字符集，但
+/// **不锚定**边界，且本地部分的首字符不能是 `.` / `-`。
+///
+/// 为什么要「不锚定」：列表里一格写的不一定只是一个地址 —— 发件行把收件人
+/// 拼成 `a@x.com、b@y.com`，收件人显示名又写成 `张三 <a@x.com>`。要把里面
+/// 每个地址的**本地部分**单独挑出来（见 `EmailAddressText`：本地部分加粗、
+/// `@域名` 保持常规），就得在正文里逐个扫。
+///
+/// 首字符那条限制是为了 `…a@x.com` 这种写法里的标点不被算进用户名。
+final RegExp emailAddressInTextPattern = RegExp(
+  r"[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-][a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}",
+);

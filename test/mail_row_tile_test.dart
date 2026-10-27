@@ -40,6 +40,7 @@ void main() {
     required bool band,
     bool selectionMode = false,
     VoidCallback? onCheckboxToggle,
+    MailRow? mail,
   }) async {
     await tester.pumpWidget(ProviderScope(
       // 不写 `<Override>[]`：`Override` 在 riverpod 3 里没有对外导出
@@ -58,7 +59,7 @@ void main() {
           body: SizedBox(
             width: 400,
             child: MailRowTile(
-              row: row,
+              row: mail ?? row,
               showInstanceBand: band,
               selected: selected,
               selectionMode: selectionMode,
@@ -147,5 +148,42 @@ void main() {
     await pump(tester, selected: false, band: false, selectionMode: true);
 
     expect(find.byKey(const ValueKey<String>('selectionCheckbox')), findsNothing);
+  });
+
+  /// 发件人没有显示名时，这一格退回**原始地址** —— 那时要把用户名加重：
+  /// 一列地址里域名几乎恒定，扫视时先认出来的是「谁」。带显示名的行不受
+  /// 影响（没有地址就没有加粗的片段），这条一起钉住，免得哪天把名字也切了。
+  testWidgets('发件人地址：用户名加粗，@域名常规；显示名不受影响', (tester) async {
+    final addressRow = MailRow(
+      emailId: 4,
+      profileId: profile.id,
+      sendEmail: 'box@example.net',
+      name: '',
+      subject: '主题',
+      text: '正文摘要',
+      type: 0,
+      // 注意 `unread` 是 0 未读 / 1 已读（与字段名的直觉相反，见 AGENTS 红线）。
+      unread: 1,
+      createTime: DateTime(2026, 1, 2, 3, 4),
+    );
+
+    await pump(tester, selected: false, band: false, mail: addressRow);
+
+    final address = tester.widget<Text>(find.text('box@example.net'));
+    final addressSpans =
+        (address.textSpan! as TextSpan).children!.cast<TextSpan>().toList();
+    expect(addressSpans.map((s) => s.text), <String>['box', '@example.net']);
+    // 已读那行：基础字重 w500，用户名再重一档（未读是 w600 / w700）。
+    expect(address.style?.fontWeight, FontWeight.w500);
+    expect(addressSpans.first.style?.fontWeight, FontWeight.w600);
+    expect(addressSpans.last.style, isNull);
+
+    await pump(tester, selected: false, band: false);
+
+    final named = tester.widget<Text>(find.text('发件人'));
+    final namedSpans =
+        (named.textSpan! as TextSpan).children!.cast<TextSpan>().toList();
+    expect(namedSpans.map((s) => s.text), <String>['发件人']);
+    expect(namedSpans.single.style, isNull);
   });
 }

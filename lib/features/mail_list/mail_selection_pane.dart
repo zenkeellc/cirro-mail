@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/util/time_utils.dart';
+import '../../core/widgets/email_address_text.dart';
 import '../../data/models/mail_row.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/mail_providers.dart';
@@ -366,7 +367,7 @@ class _SelectedPreview extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(
+                      EmailAddressText(
                         sender,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

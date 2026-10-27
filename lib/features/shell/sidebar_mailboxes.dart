@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/instance_colors.dart';
+import '../../core/widgets/email_address_text.dart';
 import '../../data/models/mailbox_account.dart';
 import '../../data/models/profile.dart';
 import '../../l10n/app_localizations.dart';
@@ -433,7 +434,7 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
     final labelArea = Row(
       children: <Widget>[
         Flexible(
-          child: Text(
+          child: EmailAddressText(
             widget.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -442,6 +443,10 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
               fontWeight:
                   selected || emphasized ? FontWeight.w700 : FontWeight.w400,
             ),
+            // 组内邮箱行的常规字重是 w400（组头才 w700），本地部分单独提到
+            // w700：行与行之间的层级仍靠缩进/颜色/图标（见类注释），字重只在
+            // 这一行**内部**做落差 —— 地址的「谁」重，`@域名` 轻。
+            localWeight: FontWeight.w700,
           ),
         ),
         if (totalText != null)
