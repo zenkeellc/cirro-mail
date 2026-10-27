@@ -19,9 +19,11 @@ import 'profile_repository.dart';
 ///    [UrlUtils.resolveKey] / [`MailAttachment.url`] 得到。
 /// 2. **落盘前先嗅探**。`/api/oss/*` 找不到对象时是 **HTTP 200 +
 ///    `{"code":500,…}`**（约束 10）。嗅探在 [OssApi] 里做（content-type 是
-///    `application/json` 就抛），这里再加一道保险：写入的字节数为 0 或
-///    `Content-Length` 与信封长度一致时也拦下来。宁可报「附件不可用」，
-///    也不能把几十字节的 JSON 当 PDF 存起来 —— 用户点开时会以为是文件坏了。
+///    `application/json` 就抛），这里再加一道保险：真实流过的字节数为 0 时
+///    也拦下来。宁可报「附件不可用」，也不能把几十字节的 JSON 当 PDF 存起来
+///    —— 用户点开时会以为是文件坏了。**判据是「数出来的字节」，不是
+///    `Content-Length`**：后者在 chunked 响应里不存在（gzip 的文本附件），
+///    拿它判断会把已经下好的文件当成空的删掉。
 /// 3. **下载完才写库**。先写 `localPath` 再下载的话，中途失败会留下一个
 ///    指向半截文件的记录，缓存管理页显示「已下载」但打开是坏的。
 /// 4. **重名不覆盖**。落点由 [AttachmentCache.targetFor] 决定（同名加序号）。
@@ -120,6 +122,10 @@ class AttachmentRepository {
 
     // 保险二：写出来是 0 字节，或者服务端已经说了「没有对象」但 content-type
     // 没被识别出来 —— 两种都不该留下文件。
+    //
+    // `written` 是**真实流过的字节数**（`OssApi.downloadTo` 数的），不是
+    // `Content-Length`：后者在 chunked 响应里根本不存在（Cloudflare 会把
+    // 文本类附件 gzip 掉），拿它判断会把下好的文件当成空的删掉。
     if (written <= 0 || !await target.exists() || await target.length() == 0) {
       await _cleanup(target);
       throw const AttachmentNotAvailableException(detail: '下载内容为空');

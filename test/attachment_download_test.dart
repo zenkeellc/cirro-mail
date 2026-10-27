@@ -119,6 +119,29 @@ void main() {
     await harness.expectNothingOnDisk(att);
   });
 
+  test('响应是 chunked（没有 Content-Length）→ 仍然落盘 + 记库', () async {
+    // 真实现场：Cloudflare 对 `text/*`（README.md、代码、csv…）会自动 gzip，
+    // 于是响应变成 `Transfer-Encoding: chunked`，**Content-Length 整个消失**。
+    // 没有这个头时 dio 的 `ResponseBody.contentLength` 是 -1，而下载层曾经
+    // 直接把它当「写入了多少字节」返回：一个已经完整落盘的附件被自己判成
+    // 「下载内容为空」，紧接着被清理掉 —— 用户看到「下载中…」然后「附件不可用」。
+    // 只有文本类附件（可压缩的）会踩到，所以看起来像是「某个附件坏了」。
+    final bytes = utf8.encode('# README\n\n这是一份 markdown 附件，用来测预览。\n');
+    harness.respondBytes(bytes, withContentLength: false);
+    final att = await harness.seedAttachment(
+      attId: 15,
+      filename: 'README.md',
+      key: 'attachments/readme.md',
+      size: bytes.length,
+    );
+
+    final path = await harness.repo.download(att, profileId: harness.profileId);
+
+    expect(await File(path).readAsBytes(), bytes, reason: '解压后的字节要完整写盘');
+    final stored = await harness.repo.downloaded();
+    expect(stored.single.localPath, path, reason: '库里要记成「已下载」');
+  });
+
   test('库里记着「已下载」但文件被系统清了 → 重下，而不是让用户点到空气', () async {
     final bytes = List<int>.generate(512, (i) => i % 256);
     harness.respondBytes(bytes);
@@ -313,9 +336,11 @@ class _Harness {
     return att;
   }
 
-  void respondBytes(List<int> bytes) => adapter.respond(
+  void respondBytes(List<int> bytes, {bool withContentLength = true}) =>
+      adapter.respond(
         bytes,
         contentType: 'application/octet-stream',
+        withContentLength: withContentLength,
       );
 
   void respondJson(Map<String, Object?> data) => adapter.respond(
@@ -347,12 +372,20 @@ class _FakeAdapter implements HttpClientAdapter {
   List<int>? _bytes;
   String _contentType = 'application/octet-stream';
 
+  /// 响应带不带 `Content-Length`。false 模拟 chunked（gzip 的文本响应）。
+  bool _withContentLength = true;
+
   /// 已收到的请求 URL（断言「不该发请求」时用）。
   final List<String> requested = <String>[];
 
-  void respond(List<int> bytes, {required String contentType}) {
+  void respond(
+    List<int> bytes, {
+    required String contentType,
+    bool withContentLength = true,
+  }) {
     _bytes = bytes;
     _contentType = contentType;
+    _withContentLength = withContentLength;
   }
 
   void respondNothing() => _bytes = null;
@@ -373,7 +406,9 @@ class _FakeAdapter implements HttpClientAdapter {
       200, // HTTP 状态恒为 200。
       headers: <String, List<String>>{
         Headers.contentTypeHeader: <String>[_contentType],
-        Headers.contentLengthHeader: <String>['${bytes.length}'],
+        // chunked 响应就是**没有**这一行；只有它不是 chunked 时才带上。
+        if (_withContentLength)
+          Headers.contentLengthHeader: <String>['${bytes.length}'],
       },
     );
   }

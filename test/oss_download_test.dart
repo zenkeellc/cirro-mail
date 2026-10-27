@@ -52,6 +52,43 @@ void main() {
     expect(await target.readAsBytes(), payload);
   });
 
+  test('chunked / gzip（没有 Content-Length）→ 返回真实字节数，不是 -1', () async {
+    // Cloudflare 对 `text/*`（markdown、plain、csv…）会自动 gzip，响应随之
+    // 变成 chunked、`Content-Length` 消失。dio 的 `ResponseBody.contentLength`
+    // 这时是 **-1**；把它当「写入了多少字节」返回，调用方会以为一个已经
+    // 完整落盘的文件是空的，于是删掉它并报「附件不可用」。
+    final payload = utf8.encode('# README\n\n附件预览测试\n');
+    final api = OssApi(
+      _dioWith(
+        _body(
+          payload,
+          contentType: 'text/markdown; charset=utf-8',
+          withContentLength: false,
+        ),
+      ),
+    );
+
+    final target = File('${temp.path}/README.md');
+    var written = 0;
+    final result = await api.downloadTo(
+      url: 'https://mail.example.com/api/oss/attachments/readme.md',
+      savePath: target.path,
+      writeTo: (stream, expected) async {
+        expect(expected, 0, reason: '没有长度头时不该编造一个预期值');
+        final sink = target.openWrite();
+        await for (final chunk in stream) {
+          sink.add(chunk);
+          written += chunk.length;
+        }
+        await sink.close();
+      },
+    );
+
+    expect(result, payload.length, reason: '返回值必须是真实写入的字节数');
+    expect(written, payload.length);
+    expect(await target.readAsBytes(), payload);
+  });
+
   test('对象不存在（HTTP 200 + JSON 信封）→ 抛 AttachmentNotAvailable，不写盘', () async {
     final api = OssApi(
       _dioWith(
@@ -159,13 +196,20 @@ ResponseBody _jsonResponse(Map<String, Object?> data) {
 ResponseBody _bytesResponse(List<int> data) =>
     _body(data, contentType: 'application/octet-stream');
 
-ResponseBody _body(List<int> data, {required String contentType}) => ResponseBody(
+ResponseBody _body(
+  List<int> data, {
+  required String contentType,
+  bool withContentLength = true,
+}) =>
+    ResponseBody(
       Stream<Uint8List>.fromIterable(<Uint8List>[Uint8List.fromList(data)]),
       200, // 关键：HTTP 状态**恒为 200**，包括「对象不存在」那条路径。
       headers: <String, List<String>>{
         Headers.contentTypeHeader: <String>[contentType],
         // dio 的 `contentLength` 只认这个头，不看构造参数。
-        Headers.contentLengthHeader: <String>['${data.length}'],
+        // chunked 响应没有这一行 —— 那时它返回 -1。
+        if (withContentLength)
+          Headers.contentLengthHeader: <String>['${data.length}'],
       },
     );
 
