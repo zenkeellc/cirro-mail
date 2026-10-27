@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/error/app_exception.dart';
 import '../../../core/theme/instance_colors.dart';
 import '../../../core/util/email_address.dart';
+import '../../../core/widgets/email_address_text.dart';
 import '../../../data/models/instance_capabilities.dart';
 import '../../../data/models/mailbox_account.dart';
 import '../../../data/models/profile.dart';
@@ -246,7 +247,10 @@ class _MailboxTile extends ConsumerWidget {
       title: Row(
         children: <Widget>[
           Flexible(
-            child: Text(
+            // 列表里认的是「谁」：本地部分加粗，`@域名` 常规（见
+            // [EmailAddressText]）。这个标题原来整串同样重，一列地址扫下去
+            // 全是域名在占位。
+            child: EmailAddressText(
               account.email,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

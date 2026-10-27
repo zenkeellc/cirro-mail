@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/instance_colors.dart';
 import '../../core/util/time_utils.dart';
+import '../../core/widgets/email_address_text.dart';
 import '../../data/models/enums.dart';
 import '../../data/models/mail_row.dart';
 import '../../l10n/app_localizations.dart';
@@ -176,7 +177,18 @@ class MailRowTile extends ConsumerWidget {
                                     ),
                                   ),
                                 Expanded(
-                                  child: Text(
+                                  // 发件人这一格有两种内容：显示名，或者退回
+                                  // 原始地址（`MailRow.displaySender`）。地址
+                                  // 那种情况下本地部分再重一档、`@域名` 留在
+                                  // 基础字重上 —— 一列域名里要认出「谁」只看
+                                  // 前半截。显示名不受影响（没有地址就没有
+                                  // 加粗的片段）。
+                                  //
+                                  // `localWeight` 跟着未读走（没读的那一行
+                                  // 再重 100）：未读/已读在发件人这一格上的
+                                  // 落差原来靠整串 w600/w500，现在压在本地
+                                  // 部分上，域名保持基础字重。
+                                  child: EmailAddressText(
                                     sender.isEmpty ? l10n.unknown : sender,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -185,6 +197,9 @@ class MailRowTile extends ConsumerWidget {
                                           ? FontWeight.w600
                                           : FontWeight.w500,
                                     ),
+                                    localWeight: unread
+                                        ? FontWeight.w700
+                                        : FontWeight.w600,
                                   ),
                                 ),
                                 if (row.isStarred)

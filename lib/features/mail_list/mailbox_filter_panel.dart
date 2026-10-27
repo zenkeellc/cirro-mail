@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/email_address_text.dart';
 import '../../data/models/mailbox_account.dart';
 import '../../data/models/profile.dart';
 import '../../l10n/app_localizations.dart';
@@ -183,7 +184,7 @@ class _MailboxFilterPanelState extends ConsumerState<MailboxFilterPanel> {
                   : MailboxTriState.none,
               onTap: () => notifier.toggle(box),
             ),
-            title: Text(
+            title: EmailAddressText(
               mailboxLabelOf(box, byProfile, allMailboxesLabel: l10n.allMailboxes),
             ),
             trailing: MailboxUnreadLabel(box: box),
