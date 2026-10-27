@@ -116,7 +116,6 @@ void main() {
       expect(
         instanceMailboxesExpanded(
           master: true,
-          forced: false,
           collapsed: <String>{},
           profileId: 'p1',
         ),
@@ -128,7 +127,6 @@ void main() {
       expect(
         instanceMailboxesExpanded(
           master: false,
-          forced: false,
           collapsed: <String>{},
           profileId: 'p1',
         ),
@@ -140,7 +138,6 @@ void main() {
     test('单独收起的那台是收起的，别的台不受影响', () {
       bool at(String id) => instanceMailboxesExpanded(
             master: true,
-            forced: false,
             collapsed: <String>{'p1'},
             profileId: id,
           );
@@ -148,27 +145,26 @@ void main() {
       expect(at('p2'), isTrue);
     });
 
-    /// `forced` **优先于** `collapsed`：地址正落在这台实例上时，那一行本身
-    /// 必须是看得见的，否则「高亮的那一行」这个说法就不成立。这条与
-    /// 原来那句 `expanded = global || pinned != null` 是同一条理由。
-    test('地址落在这台上时，单独收起也不算数', () {
+    /// **收起记录就是唯一事实**：这里曾经还有一个 `forced`（地址正落在这台
+    /// 实例上），它优先于 `collapsed`，于是用户点实例行 / 「收件箱」的箭头
+    /// 永远收不起来 —— 那正是这次要修的。纯函数层面钉住：只要收起了就是
+    /// 收起，没有别的输入能把它撑开。
+    test('收起之后没有任何输入能把它重新撑开', () {
       expect(
         instanceMailboxesExpanded(
           master: true,
-          forced: true,
           collapsed: <String>{'p1'},
           profileId: 'p1',
         ),
-        isTrue,
+        isFalse,
       );
       expect(
         instanceMailboxesExpanded(
           master: false,
-          forced: true,
           collapsed: <String>{'p1'},
           profileId: 'p1',
         ),
-        isTrue,
+        isFalse,
       );
     });
   });

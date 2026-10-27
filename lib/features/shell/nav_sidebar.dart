@@ -132,6 +132,7 @@ class NavSidebarItem extends StatefulWidget {
     required this.onTap,
     this.count = 0,
     this.alwaysShowCount = false,
+    this.countBadge = false,
     this.trailing,
   });
 
@@ -148,6 +149,13 @@ class NavSidebarItem extends StatefulWidget {
 
   /// 角标为 0 时也画出来。
   final bool alwaysShowCount;
+
+  /// 数字画成**红色徽章**而不是灰色的数字（「未读邮件」那一项）。
+  ///
+  /// 默认 false：`count` 在两处说的不是一回事 —— 收件箱/草稿箱那几项是
+  /// 「有这么几封」，而「未读邮件」那一项的数字**就是那一项的内容**，红色
+  /// 徽章与邮箱行最右那颗同款，一眼认得出是未读。
+  final bool countBadge;
 
   /// 数字右边再多一样东西。收件箱那一项用它放展开箭头（▼/▲）—— 那一项
   /// 本身就是邮箱下级菜单的组头，箭头是「这里还能展开」的唯一提示。
@@ -215,10 +223,12 @@ class _NavSidebarItemState extends State<NavSidebarItem> {
                 if (showCount)
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
-                    child: SidebarCountPill(
-                      text: formatSidebarCount(widget.count),
-                      color: foreground,
-                    ),
+                    child: widget.countBadge
+                        ? SidebarUnreadBadge(count: widget.count)
+                        : SidebarCountPill(
+                            text: formatSidebarCount(widget.count),
+                            color: foreground,
+                          ),
                   ),
                 if (widget.trailing != null) widget.trailing!,
               ],
@@ -230,17 +240,21 @@ class _NavSidebarItemState extends State<NavSidebarItem> {
   }
 }
 
-/// 侧栏右侧那个小数字。
+/// 侧栏右侧那个灰色小数字。
 ///
-/// 收**已经排版好的文案**而不是 `int`：侧栏这几格现在装的不都是「一个数」
-/// —— 邮箱行与实例行装的是「未读 / 总数」整段（`3/12`）。收 `int` 的话
-/// 那几格得自己 `Text`，而它们必须与一级项那颗数字**长得一模一样**（同一套
-/// `labelSmall` + `w600` + 颜色），两份实现立刻会走散。
+/// 收**已经排版好的文案**而不是 `int`：一级项里装的不都是「一个数」——
+/// 发件箱是待发条数、收件箱/草稿箱是「有这么几封」，将来也可能塞一段
+/// `3/12` 进去。收 `int` 的话那几格得自己 `Text`，而它们必须长得一模一样
+/// （同一套 `labelSmall` + `w600` + 颜色），两份实现立刻会走散。
 /// 单纯一个数的调用方用 [formatSidebarCount] 打折（`99+` 那套也共用它）。
+///
+/// **未读不用它**：那是 [SidebarUnreadBadge]（红底白字），红色在整个 App 里
+/// 专指未读，这里保持灰的。
 ///
 /// 0 也画（见 [NavSidebarItem.alwaysShowCount]）—— 抑制由调用方决定。
 ///
-/// 公开（原来叫 `_CountPill`）是因为**邮箱下级菜单也要它**。
+/// 公开着（而不是 `_CountPill`）是因为它是侧栏数字的规范样式：新的一级
+/// 导航形态应当复用它，而不是再画一份。
 class SidebarCountPill extends StatelessWidget {
   const SidebarCountPill({super.key, required this.text, required this.color});
 
@@ -255,6 +269,48 @@ class SidebarCountPill extends StatelessWidget {
             color: color,
             fontWeight: FontWeight.w600,
           ),
+    );
+  }
+}
+
+/// 侧栏里表示**未读**的那颗红色徽章。
+///
+/// 与 [SidebarCountPill] 是两种东西，不共用一个 widget：那个是「灰色的一串
+/// 数字」（总数 / 发件箱待发），而这个是「红色底 + 白字」的角标 —— 未读在
+/// 整个 App 里都用红色（底部导航的 `Badge`、主屏网格的 `BadgedIcon`），
+/// 侧栏里不跟上的话同一个数字会在这里是灰的、在别处是红的。
+///
+/// 0 不画（由调用方决定要不要调用；这里再兜一道 `count <= 0`）。文案与
+/// [SidebarCountPill] 共用 [formatSidebarCount]，`99+` 的折法只有一处。
+class SidebarUnreadBadge extends StatelessWidget {
+  const SidebarUnreadBadge({super.key, required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      // 一位数时也要是个圆角小方块，不然它会窄成一条竖线。
+      constraints: const BoxConstraints(minWidth: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: scheme.error,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Text(
+        formatSidebarCount(count),
+        maxLines: 1,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: scheme.onError,
+              fontWeight: FontWeight.w700,
+              // 行高收紧：徽章的高度由内边距 + 字号决定，默认行高会把它撑成
+              // 一个高过行内文字的小色块。
+              height: 1.2,
+            ),
+      ),
     );
   }
 }

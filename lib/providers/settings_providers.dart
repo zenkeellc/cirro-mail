@@ -193,21 +193,19 @@ final NotifierProvider<SidebarInstanceExpansionController, Set<String>>
 /// 一台实例的邮箱列表此刻该不该展开。
 ///
 /// - [master]：一括开关（[sidebarMailboxesExpandedProvider]）；
-/// - [collapsed]：单独收起的那些（[sidebarInstanceExpansionProvider]）；
-/// - [forced]：地址正落在这台实例上（实例级列表 / 它的某个邮箱 / 它们的详情）。
-///   与原来那句 `expanded = global || pinned != null` 是同一条理由 ——
-///   从通知深链回到某个邮箱时，那一行本身必须是看得见的，否则高亮无从谈起。
+/// - [collapsed]：单独收起的那些（[sidebarInstanceExpansionProvider]）。
 ///
-/// **行为比改动前更窄**：原来 `master=false` 且钉住某个邮箱时，整棵子树
-/// （所有实例）都会展开，因为 `expanded` 是整棵树的开关。现在只展开被落中的
-/// 那一台 —— 这更贴合上面那条理由的本意（「那一行看不见」说的就是这一台）。
+/// **只有这两样**，没有第三个「地址落在这台上」的强制项 —— 曾经有（`forced`，
+/// 理由是从通知深链回来时高亮的那一行得看得见），代价是**用户点过的那一下不算
+/// 数**：停在某个邮箱上时 `forced` 恒真，实例行与「收件箱」两颗箭头拨到「收起」
+/// 都没有任何反应。现在收起记录就是唯一事实：用户点的箭头永远生效；
+/// 深链回来时如果那一行被收起过，它就在收起状态里 —— 那是用户自己拨的。
 bool instanceMailboxesExpanded({
   required bool master,
-  required bool forced,
   required Set<String> collapsed,
   required String profileId,
 }) =>
-    forced || (master && !collapsed.contains(profileId));
+    master && !collapsed.contains(profileId);
 
 /// 点「发送」之后等多久才真的发出去（默认 1 分钟，见
 /// [AppDefaults.sendDelayDefault]）。
