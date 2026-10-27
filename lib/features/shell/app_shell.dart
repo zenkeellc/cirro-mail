@@ -153,16 +153,16 @@ class AppShell extends ConsumerWidget {
 
     // 收件箱那一项下面的邮箱下级菜单展不展开。
     //
-    // 两个来源取**或**：用户的偏好，以及「当前地址正钉在某个邮箱上 / 正停在
-    // 某台实例的实例级列表上」—— 后者必须展开，否则用户从别处（通知深链、
-    // 上次退出时留下的地址、侧栏的实例行）回到某个邮箱的收件箱，侧栏里
-    // **那一行本身看不见**，高亮也就无从谈起。
+    // **只认用户拨过的那一下**（`sidebarMailboxesExpandedProvider`）。原来这里
+    // 还「或」上了「地址正钉在某个邮箱上 / 正停在某台实例的实例级列表上」，
+    // 理由是从通知深链回来时那一行本身得看得见；代价是停在任何邮件页面上时
+    // 这组永远展开，那颗箭头拨到「收起」**看起来完全没反应**（树还在，每台
+    // 实例又被 `forced` 撑开着）。现在收起就是收起，重新展开与深链回来时按
+    // 偏好与每台实例各自的收起记录算 —— 见 `instanceMailboxesExpanded`。
     final pinned = pinnedMailboxOf(uri);
     // 实例级落点（`/mail/<实例>`，不带 `account`）—— 侧栏的实例行点下去就是它。
     final instanceNode = instanceNodeOf(uri);
-    final expanded = ref.watch(sidebarMailboxesExpandedProvider) ||
-        pinned != null ||
-        instanceNode != null;
+    final expanded = ref.watch(sidebarMailboxesExpandedProvider);
 
     int? countOf(HomeEntry entry) => switch (entry.id) {
           'unread' => unread,
@@ -192,6 +192,11 @@ class AppShell extends ConsumerWidget {
           count: countOf(entry) ?? 0,
           // 发件箱 0 也显示（spec §2.4）：它的用途是「让你知道还有这么个地方」。
           alwaysShowCount: entry.id == 'outbox',
+          // 「未读邮件」那一项的未读数用**红色徽章**（与邮箱行最右那颗同款）：
+          // 它是整个侧栏里唯一一个「数字本身就是入口语义」的——点进去就是
+          // 那几封未读。其余入口（收件箱 / 发件箱 / 草稿箱）保持原来的灰色数字，
+          // 那里未读取的是同一份数，再红一次只会让红色失去「专指未读」的含义。
+          countBadge: entry.id == 'unread',
           // 收件箱那一项本身是下级菜单的组头：箭头是「这里还能展开」的唯一
           // 提示。一台实例都没登录时不给箭头 —— 展也展不出东西。
           //

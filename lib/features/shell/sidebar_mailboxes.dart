@@ -98,10 +98,6 @@ class SidebarMailboxTree extends ConsumerWidget {
             uri: uri,
             push: push,
             masterExpanded: masterExpanded,
-            // forced：地址正落在这台实例上（实例级列表，或它的某个邮箱，
-            // 或它们的详情页）。两条判据取或 —— 一条认「就在这台实例上」，
-            // 一条认「钉在它的某个邮箱上」。
-            forced: node == profile.id || pinned?.profileId == profile.id,
             selected: node == profile.id || pinned?.profileId == profile.id,
             boxes: boxesOfProfile(
               profile.id,
@@ -130,7 +126,6 @@ class _ProfileGroup extends ConsumerStatefulWidget {
     required this.uri,
     required this.push,
     required this.masterExpanded,
-    required this.forced,
     required this.selected,
     required this.boxes,
     required this.byProfile,
@@ -140,9 +135,6 @@ class _ProfileGroup extends ConsumerStatefulWidget {
   final Uri uri;
   final bool push;
   final bool masterExpanded;
-
-  /// 地址落在这一台上（见 [instanceMailboxesExpanded]）。
-  final bool forced;
 
   /// 实例行与它下面的子行要不要高亮。
   final bool selected;
@@ -167,7 +159,7 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
     // 只在这几样**真的**变了时才重新触发：
     // - 实例换了（同一个 State 被复用到另一台上，理论上不该发生，但真发生时
     //   不重探就是「这一台的数字一直是上一台的」）；
-    // - 整组的开关变了，或者地址落点变了（两者都会改变「这一台展不展开」）；
+    // - 整组的开关变了（它决定这一台展不展开）；
     // - 邮箱列表本身变了（权限补齐、新建邮箱之后多出来一行）。
     //
     // 不这么做的话，drift 每次因写入而重建整棵树都会重跑一遍 ensure ——
@@ -175,7 +167,6 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
     // 是要读库的，白白多一遍。
     if (oldWidget.profile.id != widget.profile.id ||
         oldWidget.masterExpanded != widget.masterExpanded ||
-        oldWidget.forced != widget.forced ||
         !_sameBoxes(oldWidget.boxes, widget.boxes)) {
       _scheduleProbe();
     }
@@ -205,11 +196,8 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // 收起时不探：那些数字没人看得见，而探测是有代价的真请求。
-      // `widget.forced` 与 `instanceMailboxesExpanded` 是同一条判据的
-      // 两个来路，这里直接读展开态（而不是只看 forced）。
       if (!instanceMailboxesExpanded(
         master: widget.masterExpanded,
-        forced: widget.forced,
         collapsed: ref.read(sidebarInstanceExpansionProvider),
         profileId: profile.id,
       )) {
@@ -225,7 +213,6 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
     final profile = widget.profile;
     final expanded = instanceMailboxesExpanded(
       master: widget.masterExpanded,
-      forced: widget.forced,
       collapsed: ref.watch(sidebarInstanceExpansionProvider),
       profileId: profile.id,
     );
@@ -234,48 +221,28 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SidebarMailboxRow(
-          // 实例名原来只是一行灰字（点不动）—— 现在与子行同一套控件，
-          // 于是缩进 / 高度 / 圆角全都自动对齐，几何不会走两个样。
-          emphasized: true,
-          icon: Icons.dns_outlined,
-          color: InstanceColors.of(profile.colorIndex),
-          label: profile.displayName,
+        _InstanceSidebarRow(
+          profile: profile,
           selected: widget.selected,
+          expanded: expanded,
           onTap: () => _openInstance(context, ref, profile),
-          counts: SidebarInstanceCounts(profileId: profile.id),
-          trailing: IconButton(
-            // `IconButton` 而不是 `GestureDetector`：它天然在手势竞技场里
-            // 赢过外层那个 `HitTestBehavior.opaque` 的 `GestureDetector`
-            // （`NavSidebarItem.trailing` 就是这么做的），点箭头不会顺带
-            // 触发导航。
-            tooltip: l10n.toggleInstanceMailboxList,
-            onPressed: () => ref
-                .read(sidebarInstanceExpansionProvider.notifier)
-                .toggle(profile.id),
-            iconSize: 18,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-            icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
-          ),
+          onToggle: () => ref
+              .read(sidebarInstanceExpansionProvider.notifier)
+              .toggle(profile.id),
         ),
         if (expanded)
           for (final box in widget.boxes)
-            SidebarMailboxRow(
+            _MailboxSidebarRow(
+              box: box,
+              colorIndex: profile.colorIndex,
               label: mailboxLabelOf(
                 box,
                 widget.byProfile,
                 allMailboxesLabel: l10n.allMailboxes,
               ),
-              icon: box.accountId == kAllMailboxes
-                  ? Icons.all_inbox
-                  : Icons.mail_outline,
-              color: InstanceColors.of(profile.colorIndex),
               selected: pinned ==
                   (profileId: box.profileId, accountId: box.accountId),
               onTap: () => _open(context, ref, box, pinned),
-              counts: SidebarMailboxCounts(box: box),
             ),
       ],
     );
@@ -334,20 +301,22 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
   }
 }
 
-/// 下级菜单里的一行：图标（实例色）+ 标签 +（右侧）数量 +（可选）箭头。
+/// 下级菜单里的一行：图标（实例色）+ 标签 + 浅色总数 + 红色未读徽章 +（可选）箭头。
 ///
-/// 高 32、比一级项（40）矮一档：层级靠「更窄的行 + 缩进 + 图标」表达，
-/// 高度也一样矮下去才看得出它是二级。
+/// **实例行与邮箱行共用这一个控件**（[emphasized] 区分），几何差别全在下面
+/// 这几处常量里：实例行更浅的缩进（16 vs 36）、高一点（36 vs 30）、图标大
+/// 一号（18 vs 16）。两条线各写一份的代价是这些数要抄第二遍，而
+/// `sidebar_mailboxes_test.dart` 里那几条用例钉的正是这些几何。
 ///
-/// **原来这里是实例色圆点，现在换成邮箱图标**：圆点与末位的未读数、以及
-/// 一级项那些图标放在一起，只是一颗说不出是什么的点；换成图标之后这一行
-/// 与「收件箱 / 已发送」是同一套视觉语言。实例色没丢 —— 它是图标的颜色。
+/// 两种行的视觉分工（原来只有字重一项，用户反馈「实例名与它下面的邮箱太像」）：
+/// - 实例行 = **组头**：标签用正文色 + `w700`，图标 18；
+/// - 邮箱行 = **组内的一项**：标签退到 `onSurfaceVariant` + `w400`，图标 16，
+///   并且比实例行多缩进 20（标签起点差 18）—— 层级先靠缩进和颜色说，
+///   字重只是第三重。
 ///
-/// **实例行也用它**（[emphasized] = true）。另写一个「实例行」的兄弟类看着
-/// 更直白，代价是 `_iconSize` / `_iconGap` / 左缩进 24 / 内边距 10 / 高度 32 /
-/// `AnimatedContainer` 时长这一整套常量要抄第二遍 —— 而
-/// `sidebar_mailboxes_test.dart` 里那条几何用例钉的正是「两种行的标签从同一个
-/// x 开始」。抄一遍的那一刻，那条用例就只在抄写时对了。
+/// **原来行首是实例色圆点，现在是图标**：圆点与末位的未读数、以及一级项那些
+/// 图标放在一起，只是一颗说不出是什么的点；换成图标之后这一行与「收件箱 /
+/// 已发送」是同一套视觉语言。实例色没丢 —— 它是图标的颜色。
 class SidebarMailboxRow extends StatefulWidget {
   const SidebarMailboxRow({
     super.key,
@@ -356,15 +325,15 @@ class SidebarMailboxRow extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.icon = Icons.alternate_email,
-    this.counts,
+    this.total,
+    this.unread = 0,
     this.trailing,
     this.emphasized = false,
   });
 
   final String label;
 
-  /// 实例色标（`InstanceColors.of(profile.colorIndex)`）—— 现在染在图标的
-  /// 颜色上，不再是单独一颗圆点。
+  /// 实例色标（`InstanceColors.of(profile.colorIndex)`）—— 染在图标的颜色上。
   final Color color;
 
   /// 地址高亮跟着**当前钉住的那个邮箱**走（`pinnedMailboxOf`），不是跟着
@@ -374,29 +343,27 @@ class SidebarMailboxRow extends StatefulWidget {
   final VoidCallback onTap;
 
   /// 行首的图标。合并项（[kAllMailboxes]）传 `Icons.all_inbox` 之类的
-  /// 「一组邮箱」的图标 —— 它与一个具体邮箱不是一回事（见 [build]）。
+  /// 「一组邮箱」的图标 —— 它与一个具体邮箱不是一回事。
   final IconData icon;
 
-  /// 右侧那一格（未读 / 总数那一对，或实例行的合计）。合并项
-  /// （`accountId == kAllMailboxes`）传 `null` —— 「这个邮箱的计数」对合并项
-  /// 没有意义；实例行的合计则另有一条口径（见 `SidebarMailboxTree`）。
+  /// 名字后面紧跟的**浅色总数**（服务端说这口邮箱里有多少封）。
   ///
-  /// 原来叫 `unread`：那一格现在装的不只是未读（`3/12` 是两件事），
-  /// 名字留着会让调用方以为它是个数。
-  final Widget? counts;
+  /// `null` 有且只有一种含义：**不知道**（还没探过），或者这一行是合并项
+  /// （「全部邮箱」没有「这一口邮箱的总数」可言）。两种情况都整段不画。
+  /// 不会出现「知道但是 0」—— 0 与未知在文案上一样是噪声，见
+  /// [formatMailboxTotal]。
+  final int? total;
 
-  /// [counts] 之后再放一样东西。实例行用它放展开箭头。
-  ///
-  /// 与 [counts] 分开传而不是挤进同一格：实例行**两样都有**（合计 + 箭头），
-  /// 塞在一个槽里就得让调用方自己拼一行 `Row`。`NavSidebarItem.trailing`
-  /// 是同一种设计。
+  /// 行最右边那颗**红色徽章**里的未读数。0 不画（红色只留给「有未读」）。
+  final int unread;
+
+  /// 徽章之后再放一样东西。实例行用它放展开箭头。
   final Widget? trailing;
 
-  /// 实例行（分组标题）那一行：字重与字色都重一档。
+  /// 实例行（分组标题）那一行：更靠左、更高、图标更大、字更重、颜色更实。
   ///
-  /// 这是它与子行之间**唯一的**视觉差别 —— 缩进、高度、圆角全部共用，
-  /// 所以「这一行是标题」只能靠字重说（子行里也有选中/未选中的字重变化，
-  /// 但那是 `w600/w400`，这里是 `w600` 打底）。
+  /// 这是它与子行之间的视觉分工，见类注释。**不要**把它降级成「只是字重
+  /// 不同」——那正是这次要修的那个「两种行太像」。
   final bool emphasized;
 
   @override
@@ -408,26 +375,83 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
 
   /// 行首图标与标签之间那道间隔。
   ///
-  /// 图标是 16 宽、圆点时是 8：写死 `SizedBox(width: 10)` 的话，「全部邮箱」
-  /// 这一行（`all_inbox`）会比它下面那些邮箱行多缩进 8px —— 同一个组里
-  /// 两种缩进，看着像没对齐。
-  static const double _iconSize = 16;
+  /// 图标是 16 / 18 宽：写死一个数的话，「全部邮箱」这一行（`all_inbox`）会
+  /// 比它下面那些邮箱行多缩进几 px —— 同一个组里两种缩进，看着像没对齐。
   static const double _iconGap = 8;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
     final selected = widget.selected;
+    final emphasized = widget.emphasized;
     final background = selected
         ? scheme.secondaryContainer
         : (_hovered
             ? scheme.onSurfaceVariant.withValues(alpha: 0.08)
             : Colors.transparent);
-    final foreground = selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant;
+    // 组头用正文色（onSurface），组内项退到 onSurfaceVariant：两种行的
+    // 「实 / 虚」差别在扫视时比字重更早被看见。
+    final foreground = selected
+        ? scheme.onSecondaryContainer
+        : (emphasized ? scheme.onSurface : scheme.onSurfaceVariant);
+    final totalText = formatMailboxTotal(widget.total);
+    final unread = widget.unread;
+    final iconSize = emphasized ? 18.0 : 16.0;
+
+    final labelArea = Row(
+      children: <Widget>[
+        Flexible(
+          child: Text(
+            widget.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: foreground,
+              fontWeight:
+                  selected || emphasized ? FontWeight.w700 : FontWeight.w400,
+            ),
+          ),
+        ),
+        if (totalText != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: Text(
+              totalText,
+              maxLines: 1,
+              // 浅色：比标签再淡一档，扫视时先看到名字与红色徽章，总数
+              // 是第二眼的信息。选中状态下同样按前景色淡化（而不是写死
+              // onSurfaceVariant），否则选中行里那截数字会与底色糊在一起。
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: foreground.withValues(alpha: 0.55),
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+      ],
+    );
+
+    // 读屏：`3` 与 `12` 两颗数字挨着念是念不出「这是未读、那是总数」的。
+    // 合并成一句（`mailboxCountsLabel` / `unreadCount`），并把可视的那几个
+    // `Text` 从语义树里摘掉。箭头（[trailing]）在语义区之外，不受影响。
+    final countsLabel = _countsSemantics(l10n, unread);
+    final labelSemantics = countsLabel == null
+        ? labelArea
+        : Semantics(
+            label: '${widget.label}, $countsLabel',
+            excludeSemantics: true,
+            child: labelArea,
+          );
 
     return Padding(
-      // 左边多缩进 16（一级项是 8）：二级靠缩进与一级拉开层次。
-      padding: const EdgeInsets.fromLTRB(24, 1, 8, 1),
+      // 组头比组内项少缩进 20（标签起点差 18：图标也小一号）。实例行标签的
+      // x 与一级项（`NavSidebarItem`）的标签对齐（都是 52），邮箱行再往里
+      // 退一层（70）—— 这是层级的主要来源，不能像原来那样两种行从同一个
+      // x 开始。
+      padding: emphasized
+          ? const EdgeInsets.fromLTRB(16, 1, 8, 1)
+          : const EdgeInsets.fromLTRB(36, 0, 8, 0),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovered = true),
@@ -437,7 +461,7 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            height: 32,
+            height: emphasized ? 36 : 30,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
               color: background,
@@ -445,32 +469,29 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
             ),
             child: Row(
               children: <Widget>[
-                // 图标用**实例色**（选中时改用前景色）：圆点原来的那份
-                // 「一眼认出来自哪台实例」的信息全在这一格上。
+                // 图标用**实例色**（选中时改用前景色）：「一眼认出来自哪台
+                // 实例」的信息在这一格上。
                 SizedBox(
-                  width: _iconSize,
-                  height: _iconSize,
+                  width: iconSize,
+                  height: iconSize,
                   child: Icon(
                     widget.icon,
-                    size: _iconSize,
+                    size: iconSize,
                     color: selected ? foreground : widget.color,
                   ),
                 ),
                 const SizedBox(width: _iconGap),
-                Expanded(
-                  child: Text(
-                    widget.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: foreground,
-                          fontWeight: selected || widget.emphasized
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        ),
+                Expanded(child: labelSemantics),
+                // 红色徽章钉在最右（[trailing] 之前）：未读数是这一行唯一
+                // 需要「跳出来」的信息，让它永远落在同一列上。
+                if (unread > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    // 上面那句合并语义已经把它念过一遍了。
+                    child: ExcludeSemantics(
+                      child: SidebarUnreadBadge(count: unread),
+                    ),
                   ),
-                ),
-                if (widget.counts != null) widget.counts!,
                 if (widget.trailing != null) widget.trailing!,
               ],
             ),
@@ -479,102 +500,108 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
       ),
     );
   }
+
+  /// 这一行右侧数字的读屏文案。`null` = 这一行没有数字可说。
+  String? _countsSemantics(AppLocalizations l10n, int unread) {
+    final total = widget.total;
+    if (total == null) {
+      return unread > 0 ? l10n.unreadCount(unread) : null;
+    }
+    // 可视层在这一格什么都不画（总数 0 + 未读 0）时也别让读屏念一句
+    // 「共 0 封，其中 0 封未读」—— 几十个空邮箱会变成一串 0。
+    if (total <= 0 && unread <= 0) return null;
+    return l10n.mailboxCountsLabel(unread, total);
+  }
 }
 
-/// 下级菜单一行右侧那一格：**未读 / 总数**（`3/12`）。
+/// 实例行：**一台实例的合计**（总数走名字后面那截浅色文字，未读走最右徽章）。
 ///
-/// 复用一级项那颗 [SidebarCountPill]，于是两条线上的数字长得一模一样 ——
-/// 另写一份的话，同一个未读数在侧栏上下两处会不一样大。
+/// 与 [_MailboxSidebarRow] 分成两个类而不是一个带开关的：两者读的是**不同
+/// 口径**的两对数（分子：`watchUnreadByProfile` 走实例分组聚合、
+/// `watchUnreadByMailbox` 走逐邮箱分组；分母：`all:type:0` 那一行、某个邮箱
+/// 那一行）。共用一个 widget 就得在里面按 `accountId` 分叉，而「合并项」
+/// 这个早退规则完全不适用实例行 —— 那个分叉迟早会把两套口径混起来。
 ///
-/// **两处不显示**：
-/// - 合并项（`accountId == kAllMailboxes`）——「这个实例的全部邮箱」没有
-///   「这一个邮箱的未读数」可言（与 `MailboxUnreadLabel` 的早退一致）；
-/// - 整格都为空 —— 未读 0 且总数未知/为 0。`SidebarCountPill` 自己**不做
-///   抑制**（发件箱那个「0 也要显示」的例外由调用方用 `alwaysShowCount`
-///   表达，见 `NavSidebarItem`），所以这里的门必须自己把住：几十个邮箱每个
-///   都挂一个灰色的 `0` 会满屏噪声。
-///
-/// 文案（五个分支）在 [formatMailboxCounts]，纯函数、单独可测。
-///
-/// 读屏那一层要说人话：`3/12` 这种纯符号是读不出来的（`Semantics` 用
-/// `mailboxCountsLabel`；总数未知时退回现成的 `unreadCount`）。
-class SidebarMailboxCounts extends ConsumerWidget {
-  const SidebarMailboxCounts({super.key, required this.box});
+/// 拆成独立的 `ConsumerWidget` 还有一个理由：数字变了只重建这一行，
+/// 不牵动 [_ProfileGroup] 那棵子树（那是 `didUpdateWidget` 里总数探测的宿主）。
+class _InstanceSidebarRow extends ConsumerWidget {
+  const _InstanceSidebarRow({
+    required this.profile,
+    required this.selected,
+    required this.expanded,
+    required this.onTap,
+    required this.onToggle,
+  });
 
-  final MailboxFilter box;
+  final Profile profile;
+  final bool selected;
+  final bool expanded;
+  final VoidCallback onTap;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (box.accountId == kAllMailboxes) return const SizedBox.shrink();
-
-    final unread = ref.watch(
-      mailboxUnreadProvider(
-        (profileId: box.profileId, accountId: box.accountId),
-      ),
-    );
-    final total = ref.watch(
-      mailboxTotalProvider(
-        (profileId: box.profileId, accountId: box.accountId),
-      ),
-    );
     final l10n = AppLocalizations.of(context);
-    final text = formatMailboxCounts(
-      unread: unread,
-      total: total,
-      unknown: l10n.mailboxCountUnknown,
-    );
-    if (text == null) return const SizedBox.shrink();
-
-    return Semantics(
-      label: total == null
-          ? l10n.unreadCount(unread)
-          : l10n.mailboxCountsLabel(unread, total),
-      // 里面的 `Text` 已经是符号了，别让读屏把它再念一遍（`3/12` 会被读成
-      // 「三斜杠十二」）。`excludeSemantics` 让上面那句 label 成为唯一来路。
-      excludeSemantics: true,
-      child: SidebarCountPill(
-        text: text,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+    return SidebarMailboxRow(
+      emphasized: true,
+      icon: Icons.dns_outlined,
+      color: InstanceColors.of(profile.colorIndex),
+      label: profile.displayName,
+      selected: selected,
+      onTap: onTap,
+      total: ref.watch(instanceTotalProvider(profile.id)),
+      unread: ref.watch(profileUnreadProvider(profile.id)),
+      trailing: IconButton(
+        // `IconButton` 而不是 `GestureDetector`：它天然在手势竞技场里
+        // 赢过外层那个 `HitTestBehavior.opaque` 的 `GestureDetector`
+        // （`NavSidebarItem.trailing` 就是这么做的），点箭头不会顺带
+        // 触发导航。
+        tooltip: l10n.toggleInstanceMailboxList,
+        onPressed: onToggle,
+        iconSize: 18,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+        icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
       ),
     );
   }
 }
 
-/// 实例行右侧那一格：**这一台实例的合计**（未读 / 总数）。
+/// 邮箱行：**某一个邮箱**的未读与总数。
 ///
-/// 与 [SidebarMailboxCounts] 分成两个类而不是一个带开关的：
-/// 两者读的是**不同口径**的两对数（分子：`watchUnreadByProfile` 走实例分组
-/// 聚合、`watchUnreadByMailbox` 走逐邮箱分组；分母：`all:type:0` 那一行、
-/// 某个邮箱那一行）。共用一个 widget 就得在里面按 `accountId` 分叉，而
-/// 「合并项」这个早退规则完全不适用实例行 —— 那个分叉迟早会把两套口径混起来。
-///
-/// 合计**不显示 `0`**（未读 0 且总数为 0 时整格为空），与子行同一套抑制。
-class SidebarInstanceCounts extends ConsumerWidget {
-  const SidebarInstanceCounts({super.key, required this.profileId});
+/// **合并项**（`accountId == kAllMailboxes`，缺 `account:query` 权限时那一行
+/// 「全部邮箱」）两侧都不画：那个「邮箱」的计数没有意义 —— 实例行已经把这
+/// 台实例的合计说了一遍（与 `MailboxUnreadLabel` 的早退一致）。
+class _MailboxSidebarRow extends ConsumerWidget {
+  const _MailboxSidebarRow({
+    required this.box,
+    required this.colorIndex,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
-  final String profileId;
+  final MailboxFilter box;
+  final int colorIndex;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final unread = ref.watch(profileUnreadProvider(profileId));
-    final total = ref.watch(instanceTotalProvider(profileId));
-    final l10n = AppLocalizations.of(context);
-    final text = formatMailboxCounts(
-      unread: unread,
+    final merged = box.accountId == kAllMailboxes;
+    final key = (profileId: box.profileId, accountId: box.accountId);
+    final unread = merged ? 0 : ref.watch(mailboxUnreadProvider(key));
+    final total = merged ? null : ref.watch(mailboxTotalProvider(key));
+    return SidebarMailboxRow(
+      label: label,
+      icon: merged ? Icons.all_inbox : Icons.mail_outline,
+      color: InstanceColors.of(colorIndex),
+      selected: selected,
+      onTap: onTap,
       total: total,
-      unknown: l10n.mailboxCountUnknown,
-    );
-    if (text == null) return const SizedBox.shrink();
-
-    return Semantics(
-      label: total == null
-          ? l10n.unreadCount(unread)
-          : l10n.mailboxCountsLabel(unread, total),
-      excludeSemantics: true,
-      child: SidebarCountPill(
-        text: text,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
+      unread: unread,
     );
   }
 }

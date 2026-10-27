@@ -9,6 +9,7 @@ import 'package:mail_app/core/storage/token_store.dart';
 import 'package:mail_app/data/models/mailbox_account.dart';
 import 'package:mail_app/data/models/profile.dart';
 import 'package:mail_app/features/mail_list/mailbox_filter.dart';
+import 'package:mail_app/features/shell/nav_sidebar.dart';
 import 'package:mail_app/features/shell/sidebar_mailboxes.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
 import 'package:mail_app/providers/core_providers.dart';
@@ -81,6 +82,10 @@ void main() {
     bool push = false,
     Set<String> collapsed = const <String>{},
     bool masterExpanded = true,
+    int Function(String profileId, int accountId)? mailboxUnreadOf,
+    int? Function(String profileId, int accountId)? mailboxTotalOf,
+    int Function(String profileId)? instanceUnreadOf,
+    int? Function(String profileId)? instanceTotalOf,
   }) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       if (collapsed.isNotEmpty)
@@ -124,18 +129,23 @@ void main() {
         allMailboxesByProfileProvider.overrideWithValue(
           boxesByProfile ?? <String, List<MailboxAccount>>{'p1': boxes},
         ),
-        // 未读数走库查询，这里一律 0（= 那一格不渲染）：断言只关心图标、
-        // 几何与落点。
-        mailboxUnreadProvider.overrideWith((ref, key) => 0),
-        // 实例行的分子（`profileUnreadProvider`）与两处总数同理：它们是
-        // **drift 流**，而内存库的 `watch()` 在 widget 树拆掉之后还留着一个
-        // drift 自己的定时器，`flutter_test` 会判「树都拆了还有 Timer 没结束」。
-        // 「未读 / 总数」的文案另有 `mailbox_counts_test` 逐分支钉，
-        // 这一组要验的是行本身。
-        unreadByProfileProvider
-            .overrideWith((ref) => Stream.value(const <String, int>{})),
-        profileMailboxTotalsProvider.overrideWith(
-          (ref, profileId) => Stream.value(const <String, MailboxTotal>{}),
+        // 未读与总数：默认 0 / 未知（= 右侧什么都不画），断言只关心图标、
+        // 几何与落点；需要数字的用例用下面那几个回调精确给。
+        //
+        // 直接覆写这四个 family 而不是它们底下的 drift 流：内存库的
+        // `watch()` 在 widget 树拆掉之后还留着一个 drift 自己的定时器，
+        // `flutter_test` 会判「树都拆了还有 Timer 没结束」。
+        mailboxUnreadProvider.overrideWith(
+          (ref, key) => mailboxUnreadOf?.call(key.profileId, key.accountId) ?? 0,
+        ),
+        mailboxTotalProvider.overrideWith(
+          (ref, key) => mailboxTotalOf?.call(key.profileId, key.accountId),
+        ),
+        profileUnreadProvider.overrideWith(
+          (ref, profileId) => instanceUnreadOf?.call(profileId) ?? 0,
+        ),
+        instanceTotalProvider.overrideWith(
+          (ref, profileId) => instanceTotalOf?.call(profileId),
         ),
         // 实例行展开时会触发总数探测，而它第一件事就是问联网状态 ——
         // 真身 `onlineProvider` 要过 `connectivity_plus` 的平台通道，测试里
@@ -196,16 +206,23 @@ void main() {
     expect(find.text('a@x.com'), findsOneWidget);
   });
 
-  /// 三种行在同一组里上下相邻，标签必须从同一个 x 开始。
-  testWidgets('实例行 / 合并项 / 具体邮箱的标签左边距相同', (tester) async {
+  /// 层级的主要来源是缩进：实例行（组头）的标签比它下面的邮箱行靠左 18。
+  ///
+  /// 18 = 行左内边距差 20 减去图标小一号省下的 2。原来这两种行从同一个 x
+  /// 开始，只靠字重区分 —— 侧栏里一行行扫下去几乎分不出「这是台实例」还是
+  /// 「这是它下面的一口邮箱」。现在钉住这个差值，改行内边距时它会立刻红。
+  testWidgets('实例行比邮箱行更靠左；邮箱行内部对齐', (tester) async {
     await pump(tester, boxes: const <MailboxAccount>[box]);
     final mailboxLeft = tester.getTopLeft(find.text('box@example.net')).dx;
     final instanceLeft = tester.getTopLeft(find.text('a@x.com')).dx;
 
+    expect(instanceLeft, lessThan(mailboxLeft));
+    expect(mailboxLeft - instanceLeft, 18);
+
+    // 合并项也是「组内的一项」，与具体邮箱同一个 x。
     await pump(tester, boxes: const <MailboxAccount>[]);
 
     expect(tester.getTopLeft(find.text('全部邮箱')).dx, mailboxLeft);
-    expect(instanceLeft, mailboxLeft);
   });
 
   group('点实例行', () {
@@ -287,23 +304,35 @@ void main() {
       expect(find.text('box@example.net'), findsNothing);
     });
 
-    /// `forced`：地址正落在这台实例上时，那一行本身必须是看得见的 ——
-    /// 否则从通知深链回到某个邮箱，侧栏里高亮的那一行根本不存在。
-    testWidgets('地址落在这台上时，单独收起也不算数', (tester) async {
+    /// 曾经这里钉的是「地址落在这台上时，单独收起也不算数」——`forced`
+    /// 优先于收起记录，用户点实例箭头**看起来无效**。现在收起记录是唯一
+    /// 事实：停在这台实例上点收起，子行真的会消失。
+    testWidgets('地址落在这台上时，单独收起仍然生效', (tester) async {
       await pump(
         tester,
         boxes: const <MailboxAccount>[box],
         collapsed: <String>{'p1'},
       );
 
-      expect(find.text('box@example.net'), findsOneWidget);
+      expect(find.text('a@x.com'), findsOneWidget);
+      expect(find.text('box@example.net'), findsNothing);
     });
 
-    /// `forced` 只救**被落中的那一台**。这是与改动前相比一次**可见的行为
-    /// 变化**：原来 `master` 是整棵树的开关，`master=false` 且钉住某个邮箱
-    /// 时所有实例的子行都会展开。现在只有被落中那一台展开 —— 更贴合那条
-    /// 理由的本意（「那一行看不见」说的就是这一台）。
-    testWidgets('一括关掉 + 落在这台上：只展开这一台，别的台仍收起', (tester) async {
+    /// 直接在这台实例上点箭头（地址就停在它上面）—— 这次真的收起。
+    testWidgets('停在这台实例上时点箭头，子行消失', (tester) async {
+      await pump(tester, boxes: const <MailboxAccount>[box]);
+      expect(find.text('box@example.net'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('展开或收起这个实例的邮箱'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('box@example.net'), findsNothing);
+      expect(find.byIcon(Icons.expand_more), findsOneWidget);
+    });
+
+    /// 一括关掉时**所有**实例的子行都收起，包括地址正落着的那一台 ——
+    /// 「收件箱」那颗箭头管的是整个目录，不是除当前实例以外的那些。
+    testWidgets('一括关掉 + 落在这台上：整组收起（收起优先于地址）', (tester) async {
       await pump(
         tester,
         boxes: const <MailboxAccount>[box],
@@ -316,7 +345,9 @@ void main() {
         masterExpanded: false,
       );
 
-      expect(find.text('box@example.net'), findsOneWidget);
+      expect(find.text('a@x.com'), findsOneWidget);
+      expect(find.text('b@y.com'), findsOneWidget);
+      expect(find.text('box@example.net'), findsNothing);
       expect(find.text('box@y.com'), findsNothing);
     });
 
@@ -333,6 +364,76 @@ void main() {
 
       expect(find.text('a@x.com'), findsOneWidget);
       expect(find.text('box@example.net'), findsNothing);
+    });
+  });
+
+  group('数量与未读徽章', () {
+    /// 名字后面紧跟浅色总数，最右边是一颗红色徽章 —— 两样都在，各说一件事。
+    testWidgets('总数紧跟邮箱名，未读在最右那颗红色徽章里', (tester) async {
+      await pump(
+        tester,
+        boxes: const <MailboxAccount>[box],
+        initial: '/starred',
+        mailboxUnreadOf: (profileId, accountId) => 3,
+        mailboxTotalOf: (profileId, accountId) => 12,
+      );
+
+      final label = find.text('box@example.net');
+      final total = find.text('12');
+      final badge = find.byType(SidebarUnreadBadge);
+      expect(label, findsOneWidget);
+      expect(total, findsOneWidget);
+      expect(badge, findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+
+      // 「紧随」：总数紧贴在名字右边（6px 的间距 + 前后文），而不是被
+      // 推到行的另一头。
+      final gap = tester.getTopLeft(total).dx - tester.getTopRight(label).dx;
+      expect(gap, greaterThanOrEqualTo(0));
+      expect(gap, lessThan(20));
+
+      // 徽章钉最右：它在总右边，且在行内靠右那一端。
+      expect(
+        tester.getTopLeft(badge).dx,
+        greaterThan(tester.getTopRight(total).dx),
+      );
+
+      // 红色来自主题的 error（不是写死的 Colors.red），否则深色主题下对比度
+      // 会不对。
+      final badgeContainer = tester.widget<Container>(
+        find
+            .descendant(of: badge, matching: find.byType(Container))
+            .first,
+      );
+      final decoration = badgeContainer.decoration! as BoxDecoration;
+      final scheme = Theme.of(tester.element(badge)).colorScheme;
+      expect(decoration.color, scheme.error);
+    });
+
+    testWidgets('未读 0 时那颗徽章不出现（只留总数）', (tester) async {
+      await pump(
+        tester,
+        boxes: const <MailboxAccount>[box],
+        initial: '/starred',
+        mailboxTotalOf: (profileId, accountId) => 7,
+      );
+
+      expect(find.text('7'), findsOneWidget);
+      expect(find.byType(SidebarUnreadBadge), findsNothing);
+    });
+
+    /// 实例行也走同一套：名字后面是这台实例的合计，最右是它的未读徽章。
+    testWidgets('实例行：合计跟在实例名后，未读在最右', (tester) async {
+      await pump(
+        tester,
+        boxes: const <MailboxAccount>[box],
+        initial: '/starred',
+        instanceUnreadOf: (profileId) => 5,
+        instanceTotalOf: (profileId) => 20,
+      );
+
+      expect(find.text('20'), findsOneWidget);
+      expect(find.text('5'), findsOneWidget);
     });
   });
 }
