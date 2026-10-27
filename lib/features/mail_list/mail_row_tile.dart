@@ -13,10 +13,16 @@ import 'sender_avatar.dart';
 
 /// 列表里的一行邮件。聚合、收件箱、已发送、星标四处共用。
 ///
-/// 五个刻意的取舍：
+/// 六个刻意的取舍：
 /// - **左侧色带只在聚合视图显示**：单实例列表里每行都同色，全是噪声。
 /// - **发件方向的未读用另一种样式**：`unread` 字段对 `type=1` 的行没有意义
 ///   （服务端只在收信时写它），照搬会显示出一堆假的未读。
+/// - **未读行整行铺一层极淡的主题色**：只用字重（w600/w700）区分，在
+///   「不看具体文字」的扫视里几乎读不出来；一整块底色能直接回答「这片
+///   有几封没读」。它和选中底色是同一个色相、只差密度，所以选中那一档
+///   跟着抬高了（见 [selected]）—— 否则「正开着」和「没读」看起来一样。
+///   同一行的两种底色不做叠加：选中优先，未读在选中行上仍有字重与信封
+///   两个出口。
 /// - **`emailId` 不能当 key**：聚合视图里不同实例会重号，必须用
 ///   `profileId + emailId`（见 `MailRef`）。
 /// - **选中竖条与实例色带共用最左那 3px**（见下面 [selected] 的注释）：
@@ -47,7 +53,11 @@ class MailRowTile extends ConsumerWidget {
   ///
   /// 两个提示，**强弱分工**：整行底色（淡）回答「这一片是选中区」，
   /// 最左那条 3px 竖条回答「具体是这一行」—— 只靠底色在几十行里认不出来，
-  /// 因为相邻的未读/星标行本来就带各种浅色块。
+  /// 因为相邻的未读/星标行本来就带各种浅色块（未读行现在真的铺了一层，
+  /// 见 [MailRowTile] 的类注释）。
+  ///
+  /// 底色从 0.35 抬到 0.55，是给未读色（0.30）让出层次：两者同色相，
+  /// 一档之差在列表里认不出来。
   ///
   /// 竖条**压过实例色带**（两者都要最左那一格）：同时画的话这一行会比
   /// 别的行宽 3px，整列的标题跟着往右挪一点 —— 选中/取消选中时列表会抖一下。
@@ -85,6 +95,19 @@ class MailRowTile extends ConsumerWidget {
       color: theme.colorScheme.onSurface,
     );
 
+    // 未读行的整行底色：主题容器的极淡一档（「较浅的主题色」）。
+    //
+    // 与选中底色**同一个色相**（`primaryContainer`），只靠透明度分强弱，
+    // 所以两个数值是一对：未读 0.30 / 选中 0.55。选中原来是 0.35 —— 未读
+    // 一旦也用这个色相，0.35 跟它只差一点密度，一列里就分不出「正开着」
+    // 和「没读」，于是选中抬高了一档。
+    //
+    // 深色主题反而少给一点：同样的透明度叠在深色 surface 上，色块与背景的
+    // 落差更大，0.30 会显得过重。
+    final unreadSurface = theme.colorScheme.primaryContainer.withValues(
+      alpha: theme.brightness == Brightness.dark ? 0.22 : 0.30,
+    );
+
     final sender = row.isSend
         ? (row.recipients.isEmpty
             ? row.toEmail
@@ -95,12 +118,16 @@ class MailRowTile extends ConsumerWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Container(
-        // 只给测试用的锚点：整行底色（选中态）在这一层，从外面找不到
+        // 只给测试用的锚点：整行底色（选中态 / 未读态）在这一层，从外面找不到
         // 第二个同形状的 `Container`。命名规则与上面那条竖条的 key 一致。
         key: const ValueKey<String>('rowSurface'),
+        // 选中优先于未读：两种底色叠加会混出第三种颜色，而「这一行正开着」
+        // 必须比「这一行没读」更硬。未读在选中行上仍有字重与信封两个出口。
         color: selected
-            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
-            : null,
+            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.55)
+            : unread
+                ? unreadSurface
+                : null,
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
