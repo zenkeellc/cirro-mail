@@ -851,9 +851,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Show or hide this instance\'s mailboxes';
 
   @override
-  String get mailboxCountUnknown => '—';
-
-  @override
   String mailboxCountsLabel(int unread, int total) {
     return '$total messages, $unread unread';
   }

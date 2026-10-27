@@ -801,9 +801,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toggleInstanceMailboxList => '展开或收起这个实例的邮箱';
 
   @override
-  String get mailboxCountUnknown => '—';
-
-  @override
   String mailboxCountsLabel(int unread, int total) {
     return '共 $total 封，其中 $unread 封未读';
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/breakpoints.dart';
+import '../../l10n/app_localizations.dart';
 import 'sidebar_counts.dart';
 
 /// 宽屏左侧的一级导航栏。
@@ -224,7 +225,14 @@ class _NavSidebarItemState extends State<NavSidebarItem> {
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: widget.countBadge
-                        ? SidebarUnreadBadge(count: widget.count)
+                        // 红色是**视觉**语义，读屏拿不到。裸着一个「3」会被
+                        // 念成孤零零的一个数字 —— 补一句「3 封未读」。
+                        ? Semantics(
+                            label: AppLocalizations.of(context)
+                                .unreadCount(widget.count),
+                            excludeSemantics: true,
+                            child: SidebarUnreadBadge(count: widget.count),
+                          )
                         : SidebarCountPill(
                             text: formatSidebarCount(widget.count),
                             color: foreground,

@@ -218,6 +218,29 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
     );
     final pinned = pinnedMailboxOf(widget.uri);
 
+    // 用户把这一台从「收起」拨到「展开」时**补探一次**总数。
+    //
+    // 为什么需要：挂载时它如果是收起的（prefs 里留着
+    // `cm_sidebar_collapsed_instances`），`_scheduleProbe` 那一帧会直接
+    // return；而展开态是 provider 状态、不改变任何 widget 入参，所以
+    // `didUpdateWidget` 也不会被触发。不补的话，这一台各邮箱的浅色总数
+    // 要等下一次重启 / 树重建才出现（未读徽章走本地库，不受影响）。
+    //
+    // 旧实现在这条路上是「碰巧」能探的：地址落到这台实例时 `forced` 翻转
+    // 会触发 `didUpdateWidget` —— 那条路径随 `forced` 一起删掉了。
+    ref.listen<bool>(
+      sidebarInstanceExpansionProvider.select(
+        (collapsed) => instanceMailboxesExpanded(
+          master: widget.masterExpanded,
+          collapsed: collapsed,
+          profileId: profile.id,
+        ),
+      ),
+      (previous, next) {
+        if (next && previous != true) _scheduleProbe();
+      },
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -386,11 +409,6 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
     final l10n = AppLocalizations.of(context);
     final selected = widget.selected;
     final emphasized = widget.emphasized;
-    final background = selected
-        ? scheme.secondaryContainer
-        : (_hovered
-            ? scheme.onSurfaceVariant.withValues(alpha: 0.08)
-            : Colors.transparent);
     // 组头用正文色（onSurface），组内项退到 onSurfaceVariant：两种行的
     // 「实 / 虚」差别在扫视时比字重更早被看见。
     final foreground = selected
@@ -399,6 +417,16 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
     final totalText = formatMailboxTotal(widget.total);
     final unread = widget.unread;
     final iconSize = emphasized ? 18.0 : 16.0;
+    // 选中态：**组头的底色比组内项淡一档**。钉住某个邮箱时两行会同时选中
+    // （实例行亮是因为「你看的这一封属于这台」），如果两块一样深、字重也
+    // 一样，层级就只剩缩进在说 —— 这正是本次要修的那个「两种行太像」。
+    final background = selected
+        ? (emphasized
+            ? scheme.secondaryContainer.withValues(alpha: 0.55)
+            : scheme.secondaryContainer)
+        : (_hovered
+            ? scheme.onSurfaceVariant.withValues(alpha: 0.08)
+            : Colors.transparent);
 
     final labelArea = Row(
       children: <Widget>[

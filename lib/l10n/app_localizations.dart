@@ -1580,12 +1580,6 @@ abstract class AppLocalizations {
   /// **'Show or hide this instance\'s mailboxes'**
   String get toggleInstanceMailboxList;
 
-  /// sidebar: placeholder for a mailbox total that has not been probed yet
-  ///
-  /// In en, this message translates to:
-  /// **'—'**
-  String get mailboxCountUnknown;
-
   /// sidebar: screen-reader label for the unread/total pair (the visible text is symbols only)
   ///
   /// In en, this message translates to:
