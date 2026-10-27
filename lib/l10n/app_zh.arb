@@ -564,7 +564,7 @@
   "composeFrom": "发件邮箱",
   "composeSenderSearch": "搜索发件邮箱",
   "composeSenderNoMatch": "没有匹配的邮箱",
-  "composeRecipientsHint": "输入邮箱地址后回车",
+  "composeRecipientsHint": "输入姓名或邮箱地址，回车确认",
   "composeBodyHint": "写点什么…",
   "composeAttach": "添加附件",
   "composeImageTooLarge": "图片太大了（上限 5 MB）",
@@ -1412,5 +1412,25 @@
   "mailboxNameTooLong": "名字最多 30 个字符",
   "@mailboxNameTooLong": {
     "description": "settings > mailboxes: rename dialog; mirrors the server usernameLengthLimit of 30"
-  }
+  },
+  "replyAll": "全部回复",
+  "composeSelectedCount": "已选 {count} 个收件人",
+  "@composeSelectedCount": {
+    "description": "compose > recipient chips: shown as a toolbar hint while chips are multi-selected",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composeCopyAddresses": "复制地址",
+  "composeRemoveSelected": "移除所选收件人",
+  "composeRecipientInvalid": "地址格式不正确",
+  "detailFrom": "发件人",
+  "detailTo": "收件人",
+  "detailCc": "抄送",
+  "detailBcc": "密送",
+  "detailShowDetails": "显示详情",
+  "detailHideDetails": "收起详情",
+  "copySenderAddress": "复制发件人地址"
 }

@@ -982,7 +982,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composeSenderNoMatch => '没有匹配的邮箱';
 
   @override
-  String get composeRecipientsHint => '输入邮箱地址后回车';
+  String get composeRecipientsHint => '输入姓名或邮箱地址，回车确认';
 
   @override
   String get composeBodyHint => '写点什么…';
@@ -1892,4 +1892,42 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mailboxNameTooLong => '名字最多 30 个字符';
+
+  @override
+  String get replyAll => '全部回复';
+
+  @override
+  String composeSelectedCount(int count) {
+    return '已选 $count 个收件人';
+  }
+
+  @override
+  String get composeCopyAddresses => '复制地址';
+
+  @override
+  String get composeRemoveSelected => '移除所选收件人';
+
+  @override
+  String get composeRecipientInvalid => '地址格式不正确';
+
+  @override
+  String get detailFrom => '发件人';
+
+  @override
+  String get detailTo => '收件人';
+
+  @override
+  String get detailCc => '抄送';
+
+  @override
+  String get detailBcc => '密送';
+
+  @override
+  String get detailShowDetails => '显示详情';
+
+  @override
+  String get detailHideDetails => '收起详情';
+
+  @override
+  String get copySenderAddress => '复制发件人地址';
 }

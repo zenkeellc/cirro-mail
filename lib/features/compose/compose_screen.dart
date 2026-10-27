@@ -23,6 +23,7 @@ import 'package:flutter_quill/internal.dart' as qi;
 import 'package:flutter_quill/quill_delta.dart' as qd;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/breakpoints.dart';
 import '../../features/ai/ai_prompts.dart';
 import '../../features/ai/ai_run.dart';
 import '../../features/ai/ai_service.dart';
@@ -46,6 +47,7 @@ import 'attachment_chips.dart';
 import 'compose_attachments.dart';
 import 'compose_controller.dart';
 import 'compose_draft.dart';
+import 'compose_field_row.dart';
 import 'compose_html.dart';
 import 'compose_quote.dart';
 import 'compose_sender.dart';
@@ -119,6 +121,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   late final q.QuillController _quill;
 
   final FocusNode _bodyFocus = FocusNode();
+
+  /// 主题框的焦点。**只有一件事需要它**：点主题那一行的空白处（label、行尾）
+  /// 也能把光标请进输入框 —— 表头三行都长得像「一行字 + 一点留白」，用户不会
+  /// 精确点到那 1px 的文字起点。
+  ///
+  /// 不能复用 `_bodyFocus` / 靠 `TextField` 自己的节点：`ComposeFieldRow` 的
+  /// `onTap` 是行级手势，拿不到那个内部节点，只能自己持有再传给 `TextField`。
+  final FocusNode _subjectFocus = FocusNode();
 
   /// 正文回写的防抖。
   ///
@@ -264,6 +274,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     _quill.removeListener(_onBodyChanged);
     _quill.dispose();
     _bodyFocus.dispose();
+    _subjectFocus.dispose();
     _subject.dispose();
     super.dispose();
   }
@@ -402,6 +413,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     WritingSnippets snippets,
   ) {
     final theme = Theme.of(context);
+    // 窄屏（< 600）：与导航那一套断点同一个判据（`Breakpoints.compactOf`），
+    // 而不是自己再定一个数 —— 手机上写信页是全屏 push 的，判据只该有一处。
+    final compact = Breakpoints.compactOf(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(_title(l10n, state)),
@@ -437,19 +451,37 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               icon: const Icon(Icons.bolt),
               onPressed: state.canSendNow ? () => _sendNow(context) : null,
             ),
+          // 发送主按钮。窄屏只留图标：标题 + 关闭 +（丢弃）+（润色）+
+          // 立即发送 + 一颗带字的按钮，在 360–420 这一档手机上会把 AppBar 挤到
+          // 溢出（`RenderFlex overflowed` 那道黄黑条纹比少两个字难看得多）。
+          // tooltip 仍然保留 —— 悬停 / 长按照样读得到「发送」。
           Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: FilledButton.icon(
-              onPressed: state.canSendNow ? () => _send(context) : null,
-              icon: const Icon(Icons.send, size: 18),
-              label: Text(l10n.send),
-            ),
+            child: compact
+                ? IconButton(
+                    key: const ValueKey('compose-send'),
+                    tooltip: l10n.send,
+                    icon: const Icon(Icons.send, size: 18),
+                    onPressed: state.canSendNow ? () => _send(context) : null,
+                  )
+                : FilledButton.icon(
+                    key: const ValueKey('compose-send'),
+                    onPressed: state.canSendNow ? () => _send(context) : null,
+                    icon: const Icon(Icons.send, size: 18),
+                    label: Text(l10n.send),
+                  ),
           ),
         ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          // 表头三行（发件人 / 收件人 / 主题）。三行的左右内边距、label 列宽、
+          // 内容左边界都由 `ComposeFieldRow` 给出，这里只排「哪一行放什么」。
+          //
+          // **收件人那一行不再由这里包 label**：chips 会换行，label 该对着
+          // 「内容的第一行」而不是「整块内容的顶边」，这件事只有
+          // `RecipientField` 自己知道（它内部也用同一个 `ComposeFieldRow`）。
           SenderField(
             sender: state.sender,
             groups: state.senderGroups,
@@ -458,72 +490,72 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           const Divider(height: 1),
           RecipientField(controller: _c),
           const Divider(height: 1),
-          // 主题。与上面的发件人/收件人两行**同构**（左侧一个 label）：
-          // 裸一个 hint 的话，那一行看着像正文的开始，用户得先读一遍
-          // 「主题」两个字才知道它不是。
+          // 主题：无 border 的单行输入，占满内容列（与收件人框同一条左边界）。
           //
-          // 有了 label 就不再留 hint —— 两个都写「主题」的话，空着的时候
-          // 那一行会显示成「主题　主题」。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Padding(
-                  // 与 `RecipientField` 的 label 同一处对齐：输入框里的字
-                  // 比 label 低 10px（`contentPadding` 的 14 减 4）。
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Text(l10n.composeSubject),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _subject,
-                    onChanged: _c.setSubject,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.fromLTRB(0, 14, 0, 14),
-                    ),
-                  ),
-                ),
-                // ③ 起标题：就嵌在主题这一行的右端。
-                //
-                // 以前它是 AppBar 上的一颗图标、点开一个候选面板让用户挑一行。
-                // 那一步是多余的 —— 用户点「起标题」要的就是**一个**标题，而
-                // 挑哪一行需要的判断力比直接改主题栏里的字还大。现在点一下
-                // 直接填进去，不喜欢就再点一次（已有主题会作为参考传给模型，
-                // 于是第二次多半是在上一版基础上改，而不是另起一个）。
-                //
-                // 没配 AI 时**整颗不出现**：留一个点了没反应的图标比没有更糟。
-                if (aiUsable && settings.subjectSuggestEnabled)
-                  Padding(
-                    // 与上面 label 的 `top: 10` 同一个基准 —— TextField 的字
-                    // 比行顶低 14px（`contentPadding`），图标 20px 高，居中的
-                    // 偏移就是 (14 + 20 - 20) / 2 - ... 取 10 与 label 齐平。
-                    padding: const EdgeInsets.only(top: 10),
-                    child: _subjectSuggesting
-                        ? const Padding(
-                            padding: EdgeInsets.all(2),
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : IconButton(
-                            key: const ValueKey('compose-subject-ai'),
-                            tooltip: l10n.aiSubjectSuggest,
-                            icon: const Icon(Icons.auto_fix_high_outlined,
-                                size: 20),
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            // 生成中转圈 —— 连点两下就是两次调用、两笔账。
-                            onPressed: state.busy ? null : _suggestSubject,
-                          ),
-                  ),
-              ],
+          // 有了 label 就不再留 hint —— 两个都写「主题」的话，空着的时候那一行
+          // 会显示成「主题　主题」。
+          //
+          // `textInputAction: next` + `onSubmitted`：主题是表头最后一行，
+          // 「下一项」只可能是正文；回车 / 输入法的 next 都直接落进正文
+          // （`_bodyFocus`），不用伸手去点正文区。
+          ComposeFieldRow(
+            key: const ValueKey('compose-subject-row'),
+            label: l10n.composeSubject,
+            // 点 label 或行内留白也能把光标请进输入框（理由见 `_subjectFocus`）。
+            onTap: () => _subjectFocus.requestFocus(),
+            // ③ 起标题：嵌在主题这一行的右端（`trailing` 会把它与内容首行的
+            // 中线对齐）。
+            //
+            // 以前它是 AppBar 上的一颗图标、点开一个候选面板让用户挑一行。
+            // 那一步是多余的 —— 用户点「起标题」要的就是**一个**标题，而
+            // 挑哪一行需要的判断力比直接改主题栏里的字还大。现在点一下
+            // 直接填进去，不喜欢就再点一次（已有主题会作为参考传给模型，
+            // 于是第二次多半是在上一版基础上改，而不是另起一个）。
+            //
+            // 没配 AI 时**整颗不出现**：留一个点了没反应的图标比没有更糟。
+            trailing: aiUsable && settings.subjectSuggestEnabled
+                ? (_subjectSuggesting
+                    ? const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        key: const ValueKey('compose-subject-ai'),
+                        tooltip: l10n.aiSubjectSuggest,
+                        icon: const Icon(Icons.auto_fix_high_outlined, size: 20),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        // 生成中转圈 —— 连点两下就是两次调用、两笔账。
+                        onPressed: state.busy ? null : _suggestSubject,
+                      ))
+                : null,
+            // `child` 放最后：仓库的 lint（`sort_child_properties_last`）要求
+            // 这样，也读得顺 —— 先把这一行的「头」（label / 事件 / 行尾控件）
+            // 说完，再给中间那块内容。
+            child: TextField(
+              key: const ValueKey('compose-subject'),
+              controller: _subject,
+              focusNode: _subjectFocus,
+              onChanged: _c.setSubject,
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _bodyFocus.requestFocus(),
+              // 用 label 同一个字号（bodyMedium）：`ComposeFieldRow` 的 label
+              // 上留白是按**内容首行**高度算的，主题文字若用默认的 bodyLarge
+              // （16sp），这一行就比另外两行高 4px，label 又偏了。
+              style: theme.textTheme.bodyMedium,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                // 上下各 5：(20 的正文行高) + 10 = 30 = 表头首行高度
+                // （`kComposeFieldLineHeight`），也是 AI 起标题那颗图标与
+                // label 的共同对齐基准。
+                contentPadding: EdgeInsets.fromLTRB(0, 5, 0, 5),
+              ),
             ),
           ),
           const Divider(height: 1),
@@ -667,6 +699,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   String _title(AppLocalizations l10n, ComposeState state) => switch (state.args.mode) {
         ComposeMode.reply => l10n.reply,
+        ComposeMode.replyAll => l10n.replyAll,
         ComposeMode.forward => l10n.forward,
         ComposeMode.blank => l10n.compose,
       };
@@ -1331,7 +1364,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   /// 普通写邮件（`blank`）与 `mail == null` 则由 `_incomingBody` 那一道拦下。
   /// 别再把它「简化」掉：模式这半条是 spec §6.3 点名的三种情形之一。
   bool get _canSuggestReply =>
-      widget.args.mode == ComposeMode.reply && _incomingBody != null;
+      (widget.args.mode == ComposeMode.reply ||
+          widget.args.mode == ComposeMode.replyAll) &&
+      _incomingBody != null;
 
   /// 回复模式下**来信的纯文本正文**（没有就是 null）。
   ///

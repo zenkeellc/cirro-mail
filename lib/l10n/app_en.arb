@@ -564,7 +564,7 @@
   "composeFrom": "From",
   "composeSenderSearch": "Search sender",
   "composeSenderNoMatch": "No matching mailbox",
-  "composeRecipientsHint": "Type an address, then press Enter",
+  "composeRecipientsHint": "Type a name or address, then press Enter",
   "composeBodyHint": "Write your message…",
   "composeAttach": "Attach files",
   "composeImageTooLarge": "Image is too large (5 MB max)",
@@ -1449,5 +1449,25 @@
   "mailboxNameTooLong": "Name must be at most 30 characters",
   "@mailboxNameTooLong": {
     "description": "settings > mailboxes: rename dialog; mirrors the server usernameLengthLimit of 30"
-  }
+  },
+  "replyAll": "Reply all",
+  "composeSelectedCount": "{count} recipients selected",
+  "@composeSelectedCount": {
+    "description": "compose > recipient chips: shown as a toolbar hint while chips are multi-selected",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composeCopyAddresses": "Copy addresses",
+  "composeRemoveSelected": "Remove selected recipients",
+  "composeRecipientInvalid": "Invalid email address",
+  "detailFrom": "From",
+  "detailTo": "To",
+  "detailCc": "Cc",
+  "detailBcc": "Bcc",
+  "detailShowDetails": "Show details",
+  "detailHideDetails": "Hide details",
+  "copySenderAddress": "Copy sender address"
 }

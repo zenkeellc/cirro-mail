@@ -301,7 +301,7 @@ class ComposeController extends Notifier<ComposeState> {
   /// `sendProfileId` 会退回入口实例，看着像是「还在入口实例上」，可这时
   /// `state.sender` 是空的，带 `emailId` 就是拿一个还没确认的身份去挂线程。
   bool get _useReplyThread =>
-      args.mode == ComposeMode.reply &&
+      (args.mode == ComposeMode.reply || args.mode == ComposeMode.replyAll) &&
       _entryProfileId.isNotEmpty &&
       state.sender != null &&
       state.sendProfileId == _entryProfileId;
@@ -327,21 +327,42 @@ class ComposeController extends Notifier<ComposeState> {
     // 草稿与配额都要读库/打网络，推迟到帧后 —— `build()` 里不能 await。
     scheduleMicrotask(() => unawaited(_restoreDraft()));
     scheduleMicrotask(() => unawaited(refreshQuota()));
+    // 先预取一遍「不带 query」的最近联系人：用户点进收件人框时（还没敲字）
+    // 下拉里就该有东西可点。只在第一次 `setRecipientInput` 时查的话，
+    // 空输入框永远不会弹建议 —— 那正是「自动提示」最该出现的时刻。
+    scheduleMicrotask(() => unawaited(_refreshSuggestions('')));
+
+    // 发件人先定下来：`replyAll` 的预填收件人要用它再滤一遍「自己」。
+    final sender = _initialSender(_entryGroup(groups));
 
     return ComposeState(
       args: args,
       l10n: l10n,
       profileId: profileId,
       profileName: profile?.displayName ?? '',
-      sender: _initialSender(_entryGroup(groups)),
+      sender: sender,
       senderGroups: groups,
-      recipients: draft.recipients,
+      // 「全部回复」的收件人预填按**这一封投递到的邮箱**去掉了自己；这里按
+      // **实际发件邮箱**再滤一次：用户可能在同一个实例里换个邮箱回这封信，
+      // 那个地址在原 Cc 里 —— 不滤就会给自己发一份。
+      recipients: args.mode == ComposeMode.replyAll
+          ? _withoutAddress(draft.recipients, sender?.email)
+          : draft.recipients,
       subject: draft.subject,
       // 回复 / 转发时正文的初值就是引用块（spec §3.6：它对用户可见可编辑）。
       // 普通写信时 `draft.quoted` 是空串 —— 页面会用 `DocumentCodec.empty()`
       // 兜底，因为空串不是合法的 Delta（`Document.fromJson` 建不出来）。
       body: draft.quoted,
     );
+  }
+
+  /// 从 [recipients] 里去掉 [address]（忽略大小写）。地址为空时原样返回。
+  static List<String> _withoutAddress(List<String> recipients, String? address) {
+    final own = (address ?? '').trim().toLowerCase();
+    if (own.isEmpty) return recipients;
+    final kept =
+        recipients.where((e) => e.toLowerCase() != own).toList(growable: false);
+    return kept.length == recipients.length ? recipients : kept;
   }
 
   /// 默认发件人。
@@ -601,14 +622,60 @@ class ComposeController extends Notifier<ComposeState> {
     );
   }
 
+  /// 一次追加多个收件人（建议条多选、粘贴拆分）。去重规则同 [addRecipient]。
+  ///
+  /// 一个都没加进去时**不写 state**：那会白白通知一遍整棵树重建
+  /// （收件人一多，`build` 里那几个 `Wrap` 不便宜）。
+  void addRecipients(Iterable<String> addresses) {
+    final next = <String>[...state.recipients];
+    final seen = next.map((e) => e.toLowerCase()).toSet();
+    var changed = false;
+    for (final raw in addresses) {
+      final address = raw.trim();
+      if (address.isEmpty) continue;
+      if (!seen.add(address.toLowerCase())) continue;
+      next.add(address);
+      changed = true;
+    }
+    if (!changed) return;
+    state = state.copyWith(recipients: next, dirty: true);
+  }
+
+  /// 一次移除多个收件人（chip 多选后的删除 / 剪切）。
+  ///
+  /// 判据忽略大小写：chip 上是原样地址，而用户选中的那几个是从 state 里拿的，
+  /// 两边大小写未必一致（比如从历史里补全进来的 `A@x.com`）。
+  void removeRecipients(Iterable<String> addresses) {
+    final drop = addresses
+        .map((e) => e.trim().toLowerCase())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+    if (drop.isEmpty) return;
+    final next = state.recipients
+        .where((e) => !drop.contains(e.toLowerCase()))
+        .toList(growable: false);
+    if (next.length == state.recipients.length) return;
+    state = state.copyWith(recipients: next, dirty: true);
+  }
+
+  /// 补全查询的**代号**。每次发起自增，回来时对不上就丢弃。
+  ///
+  /// 为什么必须有：`suggestRecipients` 是一次异步 DB 查询，而打字是**每个
+  /// 字符一次** `setRecipientInput`。用户连敲三下时三个查询同时在飞，谁先
+  /// 回来不确定 —— 慢的那一个（旧 query 的结果）后到，就会把「zhang」的
+  /// 建议盖成「z」的结果：界面上高亮着一条与输入框无关的地址，回车一按就
+  /// 收下错的人。本地 SQLite 快得看不出来，但慢设备 / 大量历史时是真的。
+  int _suggestEpoch = 0;
+
   Future<void> _refreshSuggestions(String query) async {
     if (_sendProfileId.isEmpty) return;
+    final epoch = ++_suggestEpoch;
     try {
       final rows = await ref
           .read(databaseProvider)
           .localDao
           .suggestRecipients(_sendProfileId, query: query.trim(), limit: 8);
-      if (!ref.mounted) return;
+      if (!ref.mounted || epoch != _suggestEpoch) return;
       state = state.copyWith(
         recipientSuggestions: rows
             .map((r) => (address: r.address, name: r.name))
@@ -1031,7 +1098,9 @@ class ComposeController extends Notifier<ComposeState> {
       content: content,
       sendKind: switch (args.mode) {
         ComposeMode.blank => SendKind.normal,
-        ComposeMode.reply => SendKind.reply,
+        // 「全部回复」在服务端眼里就是一次 reply：`sendType` 决定线程头
+        // （`In-Reply-To` / `References`），而收件人多几个不影响这件事。
+        ComposeMode.reply || ComposeMode.replyAll => SendKind.reply,
         ComposeMode.forward => SendKind.forward,
       },
       // 服务端只在 `sendType == 'reply'` 时拿它取 messageId（`selectById`），
