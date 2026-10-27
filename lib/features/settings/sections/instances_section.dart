@@ -143,8 +143,12 @@ class _InstanceTile extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 TextButton(
-                  onPressed: () =>
-                      context.go('${app_router.Routes.login}/${profile.id}'),
+                  // 带上 `?next=settings`：登录页是顶层路由（壳之外、全屏），
+                  // 退出时靠这个参数知道该回设置页而不是聚合列表
+                  // （见 `LoginScreen._leave`）。登录成功后的落点也是它。
+                  onPressed: () => context.go(
+                    '${app_router.Routes.login}/${profile.id}?next=settings',
+                  ),
                   child: Text(l10n.login),
                 ),
                 _menu(context, ref, l10n, caps, theme, isActive),
@@ -211,7 +215,8 @@ class _InstanceTile extends ConsumerWidget {
 
       case 'relogin':
         if (!context.mounted) return;
-        context.go('${app_router.Routes.login}/${profile.id}');
+        // 同上面那颗「登录」：从设置页进来的，退出与登录成功都回设置页。
+        context.go('${app_router.Routes.login}/${profile.id}?next=settings');
 
       case 'rename':
         final name = await _promptText(
