@@ -5,13 +5,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/theme/avatar_colors.dart';
+import '../../core/theme/breakpoints.dart';
 import '../../core/theme/instance_colors.dart';
 import '../../core/util/diag_log.dart';
 import '../../core/util/time_utils.dart';
+import '../../core/widgets/email_address_text.dart';
 import '../../data/models/enums.dart';
 import '../../data/models/mail_attachment.dart';
 import '../../data/models/mail_ref.dart';
 import '../../data/models/mail_row.dart';
+import '../../data/models/recipient.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/mail_providers.dart';
@@ -226,7 +230,10 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
     final ac = InstanceColors.of(profile?.colorIndex ?? 0);
     // 已发送方向没有「回复自己」这回事（Web 端也只给收件方向的邮件回复入口）。
     final isSendFolder = row.type == MailType.send;
-    final actions = _actions(row, isSendFolder, _syncingThisMail());
+    final syncing = _syncingThisMail();
+    // 内嵌形态（宽屏右栏）**不折叠**：右栏最窄也有 `readerMinWidth`（420），
+    // 六颗图标放得下 —— 折叠是窄屏整页才需要的（见 [_actions] 的 `collapse`）。
+    final actions = _actions(row, isSendFolder, syncing);
 
     if (widget.embedded) {
       return Column(
@@ -254,7 +261,12 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 16),
         ),
-        actions: actions,
+        // 窄屏（< 600）把「全部回复 / 转发 / AI 建议」收进 ⋯：六颗 48dp 的
+        // 按钮 + 返回箭头 + 标题在 500 宽里摆不下，硬摆的结果是标题被挤成
+        // 一条省略号、按钮互相压。宽屏照旧直出图标。
+        actions: Breakpoints.compactOf(context)
+            ? _actions(row, isSendFolder, syncing, collapse: true)
+            : actions,
       ),
       // 整页形态同样不封顶（需求二说的是「占满全部宽度」）。这条路径在
       // 宽屏上只可能出现在**拖窄到刚够单栏**的那一刻（>= 1024 时路由会把
@@ -317,8 +329,41 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   /// （服务端 500、附件太大超时），那时转圈消失、页面上没有任何东西告诉用户
   /// 还能重试 —— 后台自动补要等到下一轮排期。点一下就是立刻再来一次。
   /// 这一趟正在跑（[_syncing]）时点它没有意义，那时不可点。
-  List<Widget> _actions(MailRow row, bool isSendFolder, bool syncing) {
+  ///
+  /// [collapse] 为真时（窄屏整页，`Breakpoints.compactOf`）只把
+  /// **回复 / 星标 / ⋯** 三样留在顶栏，「全部回复 / 转发 / AI 建议」收进 ⋯
+  /// 菜单：500 宽下六颗 48dp 的按钮加标题已经摆不开，硬摆时标题被压成一条
+  /// 省略号、按钮互相压。**收进菜单的三项仍然是同一批动作**（菜单里的
+  /// `onSelected` 走 [_onMenu]，最终调用的还是 [_compose] / `SuggestFlow.open`），
+  /// 不是另写一套。
+  ///
+  /// 内嵌形态（宽屏右栏）**不折叠**：那一栏最窄也有 `readerMinWidth`（420），
+  /// 放得下六颗。
+  List<Widget> _actions(
+    MailRow row,
+    bool isSendFolder,
+    bool syncing, {
+    bool collapse = false,
+  }) {
     final l10n = AppLocalizations.of(context);
+    // 收件方向才有「回复 / 全部回复 / 转发」这三件事：自己的已发送件
+    // 「回复自己」没有意义（Web 端也只给收件方向这些入口）。
+    final canReply = !isSendFolder;
+    // spec §8.2：AI 建议的位置在**转发之后、星标之前** —— 回复/转发是
+    // 「读完就做的事」，星标/⋯是「标记」，AI 建议是「我拿不准该怎么办，
+    // 你帮我想想」。它紧挨着回复/转发（两者有重叠：AI 大概率也会建议答复）。
+    //
+    // 条件读的是 `ref.watch` —— 这里在 `build` 里，watch 合法；设置页里
+    // 打开开关之后这一颗会自己出现，不需要重建页面。
+    final canSuggest =
+        SuggestFlow.visible(row, ref.watch(aiSettingsProvider).value);
+    // 星标：实例根本没有 `/star/list`（老版本/别的分支）时不要给一个
+    // 点了必然报错的按钮。探测结果是 `unknown`（还没探到）时按可用算 ——
+    // 宁可多显示一个按钮，也不要在一个正常的实例上把它藏起来。
+    final canStar =
+        ref.watch(capabilitiesProvider(widget.profileId)).value?.starEnabled ??
+            true;
+
     return <Widget>[
       if (syncing)
         // 32×32 而不是贴着图标的大小：`PaneHeader` 那一行的高度被
@@ -346,33 +391,30 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
             ),
           ),
         ),
-      // 「回复 / 转发」用带文字的按钮而不是塞进溢出菜单：读一封来信之后
-      // 接下来最可能做的一件事就是回它，藏进菜单等于多一次点击。
-      // 收件方向的邮件才有这两个动作 —— 自己的已发送件「回复自己」没有意义
-      // （Web 端也是这样做的）。
-      if (!isSendFolder) ...<Widget>[
+      // 「回复」**任何宽度都留在顶栏**：读一封来信之后接下来最可能做的一件事
+      // 就是回它，藏进菜单等于多一次点击。下面三颗才随宽度决定要不要折叠。
+      if (canReply)
         IconButton(
-          tooltip: AppLocalizations.of(context).reply,
+          tooltip: l10n.reply,
           icon: const Icon(Icons.reply),
           onPressed: () => _compose(ComposeMode.reply, row),
         ),
+      if (!collapse && canReply) ...<Widget>[
         IconButton(
-          tooltip: AppLocalizations.of(context).forward,
+          tooltip: l10n.replyAll,
+          icon: const Icon(Icons.reply_all),
+          onPressed: () => _compose(ComposeMode.replyAll, row),
+        ),
+        IconButton(
+          tooltip: l10n.forward,
           icon: const Icon(Icons.forward),
           onPressed: () => _compose(ComposeMode.forward, row),
         ),
       ],
-      // spec §8.2：位置在**转发之后、星标之前** —— 回复/转发是「读完就做的
-      // 事」，星标/⋯是「标记」，AI 建议是「我拿不准该怎么办，你帮我想想」。
-      // 它排在动作组的最前，紧挨着回复/转发（两者有重叠：AI 大概率也会建议答复）。
-      //
-      // **不能塞进下面那个 `PopupMenuButton`**：那里面两项（标已读 / 删除）
-      // 是无条件画出来的固定项，而 AI 建议有三个条件（spec §8.3）。
-      // 塞进去就得写 `PopupMenuItem(enabled: false)` 之类的花招。
-      //
-      // 条件读的是 `ref.watch` —— 这里在 `build` 里，watch 合法；设置页里
-      // 打开开关之后这一颗会自己出现，不需要重建页面。
-      if (SuggestFlow.visible(row, ref.watch(aiSettingsProvider).value))
+      // **不能塞进下面那个 `PopupMenuButton` 的固定项里**（宽屏时）：
+      // 那里面两项（标已读 / 删除）是无条件画出来的，而 AI 建议有三个条件
+      // （spec §8.3）。窄屏收进菜单时也照条件来，不画一个点了没反应的项。
+      if (!collapse && canSuggest)
         IconButton(
           key: const ValueKey('ai-suggest-detail'),
           tooltip: l10n.aiSuggest,
@@ -380,32 +422,43 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
           onPressed: () =>
               SuggestFlow.open(context, ref, row: row, onDeleted: _afterDelete),
         ),
-      // 星标：实例根本没有 `/star/list`（老版本/别的分支）时不要给一个
-      // 点了必然报错的按钮。探测结果是 `unknown`（还没探到）时按可用算 ——
-      // 宁可多显示一个按钮，也不要在一个正常的实例上把它藏起来。
-      if (ref.watch(capabilitiesProvider(widget.profileId)).value?.starEnabled ??
-          true)
+      if (canStar)
         IconButton(
-          tooltip: row.isStarred
-              ? AppLocalizations.of(context).unstar
-              : AppLocalizations.of(context).star,
+          tooltip: row.isStarred ? l10n.unstar : l10n.star,
           icon: Icon(row.isStarred ? Icons.star : Icons.star_border),
           onPressed: () => _toggleStar(row),
         ),
       PopupMenuButton<String>(
         onSelected: (value) => _onMenu(value, row),
         itemBuilder: (context) => <PopupMenuEntry<String>>[
-          PopupMenuItem(
-            value: 'unread',
-            child: Text(
-              row.isUnread
-                  ? AppLocalizations.of(context).markRead
-                  : AppLocalizations.of(context).markUnread,
+          // 窄屏才有的三项：顺序与宽屏顶栏从左到右一致（回、转、想），
+          // 用户从上往下扫的那条视线与宽屏是同一个。
+          if (collapse && canReply) ...<PopupMenuEntry<String>>[
+            PopupMenuItem<String>(
+              value: 'replyAll',
+              child: Text(l10n.replyAll),
             ),
+            PopupMenuItem<String>(
+              value: 'forward',
+              child: Text(l10n.forward),
+            ),
+          ],
+          if (collapse && canSuggest)
+            PopupMenuItem<String>(
+              value: 'suggest',
+              child: Text(l10n.aiSuggest),
+            ),
+          // 上面那一组是「对这一封做什么」，下面两项是「怎么处置这一行」——
+          // 两类混在一起排下来，用户会误以为删除与回复同一档。
+          if (collapse && (canReply || canSuggest))
+            const PopupMenuDivider(),
+          PopupMenuItem<String>(
+            value: 'unread',
+            child: Text(row.isUnread ? l10n.markRead : l10n.markUnread),
           ),
-          PopupMenuItem(
+          PopupMenuItem<String>(
             value: 'delete',
-            child: Text(AppLocalizations.of(context).delete),
+            child: Text(l10n.delete),
           ),
         ],
       ),
@@ -489,17 +542,16 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
           const SizedBox(height: 12),
           Text(
             row.displaySubject,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          _Participants(row: row),
-          const SizedBox(height: 8),
-          Text(
-            TimeUtils.formatDetailTime(row.createTime),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
+          // 头部（发件人 / 时间 / 收件人详情）。**整块都在 `SelectionArea`
+          // 里**：地址要能选中复制，`Cmd+A` 的作用范围也把头部算进去
+          // （`_body` 上面那段注释说的「用户看到的这一封」）。
+          _MailHeader(row: row),
           if (row.bounceMessage != null) ...<Widget>[
             const SizedBox(height: 12),
             _Banner(
@@ -524,9 +576,15 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
             const SizedBox(height: 12),
             _CodeCard(code: row.code),
           ],
+          // 头部与正文之间的 hairline。
+          //
+          // 原来这里只有一条 `Divider`，但上面紧挨着的是时间那一行，而正文
+          // 第一行的字号与时间不同 —— 留白不够时分界是「读出来的」而不是
+          // 「看出来的」。现在头部是一个带头像的区块（展开收件人详情还会更高），
+          // 不给一条线的话，正文第一段会被当成头部的最后一行。
           const SizedBox(height: 16),
           const Divider(height: 1),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           if (row.hasFullBody)
             HtmlBodyView(
               // 只有 `text/plain` 部分的邮件（GitHub 通知、很多站内信）在
@@ -582,6 +640,16 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
 
   Future<void> _onMenu(String value, MailRow row) async {
     switch (value) {
+      // 窄屏 ⋯ 菜单里的三项（宽屏它们是顶栏上直出的图标）。动作与顶栏那三颗
+      // **同一个函数**（[_compose] / `SuggestFlow.open`），不在这里另拼一份
+      // 地址与模式 —— 同一个动作两个入口各写一遍，正是本仓库反复吃过的那类
+      // bug（`_afterDelete` 上面那段注释记着）。
+      case 'replyAll':
+        _compose(ComposeMode.replyAll, row);
+      case 'forward':
+        _compose(ComposeMode.forward, row);
+      case 'suggest':
+        SuggestFlow.open(context, ref, row: row, onDeleted: _afterDelete);
       case 'unread':
         // 服务端**只支持标已读**（`PUT /email/read` 写死 `unread = READ`），
         // 所以「标未读」只能改本地，下次列表刷新会被服务端盖回来。
@@ -723,18 +791,67 @@ class _SummaryFallback extends StatelessWidget {
   }
 }
 
-/// 发件人 / 收件人行。
-class _Participants extends StatelessWidget {
-  const _Participants({required this.row});
+/// 这一封的「收件人」列表。
+///
+/// 服务端把 To 存在 `recipient`（JSON 字符串）里，但摘要行与很老的数据可能
+/// 只有 `toEmail` + `toName` 那一对 —— 两条都认，否则用户点开「收件人详情」
+/// 会看到一行空的。
+List<Recipient> _toRecipients(MailRow row) {
+  if (row.recipients.isNotEmpty) return row.recipients;
+  final address = row.toEmail.trim();
+  if (address.isEmpty) return const <Recipient>[];
+  return <Recipient>[Recipient(address: address, name: row.toName)];
+}
+
+/// 详情页头部：谁发的（头像 / 姓名 / 地址 / 时间）+ 收件人详情。
+///
+/// 有状态：收件人详情默认收起，点一下展开。**整块仍在 `SelectionArea` 之内**
+/// —— 头部这些地址同样要能选中复制，`Cmd+A` 的作用范围也把头部算进去
+/// （`_body` 上面那段注释说的「用户看到的这一封」）。
+///
+/// 头像用 [AvatarColors]（按发件地址哈希取色）而不是实例色：实例已经由上方
+/// 那条色带表达了，而「这封是谁发的」与「这封来自哪个实例」是两件事 —— 那正是
+/// `AvatarColors` 与 `InstanceColors` 分成两个类的原因，混用会让它们在聚合
+/// 视图里看起来像同一个信息。
+class _MailHeader extends StatefulWidget {
+  const _MailHeader({required this.row});
 
   final MailRow row;
 
   @override
+  State<_MailHeader> createState() => _MailHeaderState();
+}
+
+class _MailHeaderState extends State<_MailHeader> {
+  bool _expanded = false;
+
+  /// 换一封邮件时收起。
+  ///
+  /// 内嵌形态换邮件时本 widget 会被宿主重挂（`ValueKey`），但**不能只靠
+  /// 那个**：上一封展开了收件人详情、切到下一封还开着，用户会以为这封信的
+  /// 抄送名单多出来几个人。与 `MailDetailScreen.didUpdateWidget` 里那段是
+  /// 同一道保险。
+  @override
+  void didUpdateWidget(_MailHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.row.emailId != widget.row.emailId ||
+        oldWidget.row.profileId != widget.row.profileId) {
+      _expanded = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final labelStyle = theme.textTheme.labelSmall
-        ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-    final valueStyle = theme.textTheme.bodySmall;
+    final l10n = AppLocalizations.of(context);
+    final row = widget.row;
+
+    final name = row.name.trim();
+    final address = row.sendEmail.trim();
+    // 没有显示名就用地址顶（老数据里 `name` 常是空串）。
+    final title = name.isEmpty ? address : name;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final time = TimeUtils.formatDetailTime(row.createTime);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -742,31 +859,275 @@ class _Participants extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text('发件人  ', style: labelStyle),
+            _SenderAvatar(
+              key: const ValueKey<String>('detail-sender-avatar'),
+              address: address,
+              label: title,
+            ),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                row.name.isEmpty ? row.sendEmail : '${row.name} <${row.sendEmail}>',
-                style: valueStyle,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: <Widget>[
+                      // `EmailAddressText` 把地址的本地部分加重、域名退回去
+                      // —— 与列表页同一个约定，扫视时先认「谁」。
+                      Flexible(
+                        child: EmailAddressText(
+                          address,
+                          style:
+                              theme.textTheme.bodySmall?.copyWith(color: muted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (address.isNotEmpty) _CopyAddress(address: address),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-        if (row.recipients.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 4),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text('收件人  ', style: labelStyle),
-              Expanded(
+            // 时间右对齐、与姓名顶端起：它是头部第三重要的信息，扫视时先看
+            // 「谁」再看「什么时候」。放不进一行时它被挤到的最小宽度是
+            // 自己的文字宽（`Text` 不参与 `Expanded`），不会变成省略号。
+            if (time.isNotEmpty) ...<Widget>[
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
                 child: Text(
-                  row.recipients.map((r) => r.display).join('、'),
-                  style: valueStyle,
+                  time,
+                  style: theme.textTheme.labelSmall?.copyWith(color: muted),
                 ),
               ),
             ],
-          ),
+          ],
+        ),
+        // 没有收件人 / 抄送 / 密送可看时**不画这一行**：一个点开是空的展开
+        // 箭头比没有更糟（用户会以为内容还在加载）。草稿与某些老实例的行就是
+        // 这种形态。
+        if (_hasRecipients) ...<Widget>[
+          const SizedBox(height: 6),
+          _disclosure(context, l10n, _toRecipients(row), muted),
         ],
       ],
+    );
+  }
+
+  bool get _hasRecipients =>
+      widget.row.recipients.isNotEmpty ||
+      widget.row.toEmail.trim().isNotEmpty ||
+      widget.row.cc.isNotEmpty ||
+      widget.row.bcc.isNotEmpty;
+
+  /// 收件人详情的渐进披露控件。
+  ///
+  /// **默认收起是刻意的**：一封信绝大多数时候只有一个收件人，把「发件人 /
+  /// 收件人 / 抄送 / 密送」四行全摊开，等于用四行地址把正文挤出首屏，而其中
+  /// 三行多数时候是空的。收起时只留一行「收件人」摘要（超出省略），需要的人
+  /// 点一下就能看全 —— 真实需求往往是「这封抄送了谁」，一次点击不贵。
+  ///
+  /// 展开控件用 [InkWell] 而不是 `TextButton` 那类按钮：按钮会把自己做成一块
+  /// Material，既抢走 `SelectionArea` 的拖选手势（点击与拖动在同一次竞技场里
+  /// 谁赢随平台而变），也让这一行看起来比标题还重。展开后的地址仍在
+  /// `SelectionArea` 里，**可选、可复制**（`Ctrl/Cmd+C` 走选区那条路）。
+  Widget _disclosure(
+    BuildContext context,
+    AppLocalizations l10n,
+    List<Recipient> to,
+    Color muted,
+  ) {
+    final theme = Theme.of(context);
+    final row = widget.row;
+    final toText =
+        to.map((r) => r.address).where((a) => a.isNotEmpty).join(', ');
+    // To 缺失但还有抄送/密送时（少见：只密送给某个人的那种），摘要退成
+    // 「显示详情」—— 不能拿发件人地址顶上，那一行会被读成「收件人是他」。
+    final summary =
+        toText.isEmpty ? l10n.detailShowDetails : '${l10n.detailTo}  $toText';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(6),
+          child: Tooltip(
+            message:
+                _expanded ? l10n.detailHideDetails : l10n.detailShowDetails,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      _expanded ? l10n.detailHideDetails : summary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          theme.textTheme.labelSmall?.copyWith(color: muted),
+                    ),
+                  ),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: muted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // 展开后**只在有内容时才画那一行**：空的「抄送」行比没有这一行更让人
+        // 困惑（用户会以为加载坏了）。
+        if (_expanded) ...<Widget>[
+          const SizedBox(height: 2),
+          _AddressLine(
+            label: l10n.detailFrom,
+            value: row.name.trim().isEmpty
+                ? row.sendEmail
+                : '${row.name.trim()} <${row.sendEmail}>',
+          ),
+          if (to.isNotEmpty)
+            _AddressLine(
+              label: l10n.detailTo,
+              value: to.map((r) => r.display).join(', '),
+            ),
+          if (row.cc.isNotEmpty)
+            _AddressLine(
+              label: l10n.detailCc,
+              value: row.cc.map((r) => r.display).join(', '),
+            ),
+          if (row.bcc.isNotEmpty)
+            _AddressLine(
+              label: l10n.detailBcc,
+              value: row.bcc.map((r) => r.display).join(', '),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 发件人圆形头像：深色底 + 首字母。
+///
+/// 取色走 [AvatarColors.of]（按地址哈希）——「同一个人永远是同一个颜色」，
+/// 跨实例、跨文件夹都一样。
+class _SenderAvatar extends StatelessWidget {
+  const _SenderAvatar({
+    super.key,
+    required this.address,
+    required this.label,
+  });
+
+  final String address;
+
+  /// 取首字母的那段文字（优先显示名）。
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AvatarColors.of(address),
+        shape: BoxShape.circle,
+      ),
+      // 用 [AvatarColors.initial] 而不是 `label[0]`：emoji / 组合字符按
+      // `characters` 切，取半个字符会画出一个方块。
+      child: Text(
+        AvatarColors.initial(label),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// 发件人地址旁的小号「复制」热区。
+///
+/// 用 [InkWell] 而不是 `IconButton`：后者默认 48×48 的热区会把地址这一行
+/// 撑高（头部本来就只有两行字）。**它不抢选区手势**：无位移的点击归它，
+/// 带位移的拖动归 `SelectionArea`（两者在同一次竞技场里，拖动的那一方赢）。
+class _CopyAddress extends StatelessWidget {
+  const _CopyAddress({required this.address});
+
+  final String address;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: AppLocalizations.of(context).copySenderAddress,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: () async {
+          await Clipboard.setData(ClipboardData(text: address));
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context).copied)),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(
+            Icons.copy_rounded,
+            size: 13,
+            color: theme.colorScheme.outline,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「标签 + 地址」一行（收件人详情里用）。
+///
+/// 标签盒定宽：四行的地址左缘才会对齐 —— 中文标签是 2~3 个字、英文是
+/// 2~4 个字母，不定宽的话每一行的地址都错开一点，看起来像没排过版。
+class _AddressLine extends StatelessWidget {
+  const _AddressLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 52,
+            child: Text(
+              label,
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          Expanded(
+            child: EmailAddressText(
+              value,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
