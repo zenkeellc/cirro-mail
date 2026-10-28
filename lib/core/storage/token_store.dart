@@ -1,36 +1,10 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// 默认的安全存储实例。
-///
-/// **macOS 必须显式关掉 data protection keychain**：`flutter_secure_storage`
-/// 12 之前（这里锁的是 11.2.0）的 `MacOsOptions` 默认
-/// `usesDataProtectionKeychain: true`，那一条要求 App 带着
-/// `keychain-access-groups` entitlement 与一份配好的 provisioning profile。
-/// 本工程没有（也不需要）App Group，缺它时任何读写都抛
-/// `PlatformException`，`Code: -34018`（`errSecMissingEntitlement`）——
-/// 表现是**登录态永远存不下来**：本次运行靠内存缓存还能用，一重启
-/// `hasToken` 变成 false，于是每次请求都 401，用户看到的是
-/// 「该实例的会话已经过期」并且重登也没用（重登写得进内存，写不进钥匙串）。
-///
-/// 退回 legacy keychain 就只需要 app-sandbox 下默认具备的能力，
-/// 不需要 entitlement，也不需要签名（见插件 README 的 macOS 一节）。
-///
-/// **导出成顶层函数**（而不是只放在 [TokenStore] 的默认参数里）：
-/// `AuthApi` / `PushService` 这类只做一次读写、不配拥有缓存的地方直接用同一个
-/// 实例，免得「有的 key 存得进、有的存不进」这种最难查的分裂。
-FlutterSecureStorage defaultSecureStorage() {
-  if (!kIsWeb && Platform.isMacOS) {
-    return const FlutterSecureStorage(
-      mOptions: MacOsOptions(usesDataProtectionKeychain: false),
-    );
-  }
-  return const FlutterSecureStorage();
-}
+import 'secure_storage.dart';
 
 /// 每个 profile 一个 token，存系统密钥库（Keychain / Keystore / libsecret / DPAPI）。
 ///
@@ -42,15 +16,30 @@ FlutterSecureStorage defaultSecureStorage() {
 /// - **平台通道失败降级**：Linux 上没装 libsecret、或 macOS 上 keychain 被锁时
 ///   读写会抛 `PlatformException`。这时退化成「仅内存」—— 本次运行可用，
 ///   但明确告诉 UI「重启要重新登录」，而不是静默失败或明文落盘。
+/// - **macOS 上优先 data protection 钥匙串**：老钥匙串的 ACL 只信任写它的
+///   那个签名，构建一换就要用户点授权，于是开发机每次启动都弹框。选哪套
+///   由 [resolveSecureStorage] 探测决定，缺失 entitlement 的构建自动退回
+///   （Developer ID 分发包走的就是那条路）。
 class TokenStore {
-  /// 平台选项见 [defaultSecureStorage] 的注释（macOS 那条是必须的）。
   /// 不显式传 `aOptions` —— 11.x 的默认 `AndroidOptions()` 已经是
   /// AES-GCM + RSA OAEP 包装（旧版的 `encryptedSharedPreferences` 开关
   /// 在这个大版本里被移除了）。
-  TokenStore({FlutterSecureStorage? storage})
-      : _storage = storage ?? defaultSecureStorage();
+  ///
+  /// 不传 [storage] 时走 [resolveSecureStorage]：macOS 上优先 data protection
+  /// 钥匙串（没有逐 App ACL，不弹授权框），没有 entitlement 的构建自动退回
+  /// 老钥匙串。测试可以注入一个走内存的假存储，就不必碰平台通道。
+  TokenStore({FlutterSecureStorage? storage}) : _injectedStorage = storage;
 
-  final FlutterSecureStorage _storage;
+  final FlutterSecureStorage? _injectedStorage;
+
+  /// 真正用的存储。**懒解析**：构造 `TokenStore` 不碰平台通道（`bootstrap` 里
+  /// 就是构造完直接拿去用，那时还不到读钥匙串的时候），首次读写才去解析。
+  late final Future<FlutterSecureStorage> _storageFuture = _openStorage();
+
+  Future<FlutterSecureStorage> _openStorage() async {
+    final injected = _injectedStorage;
+    return injected ?? await resolveSecureStorage();
+  }
 
   /// profileId → token。命中的请求不再走平台通道。
   final Map<String, String> _cache = <String, String>{};
@@ -81,7 +70,8 @@ class TokenStore {
     if (_loaded.contains(profileId)) return null;
 
     try {
-      final value = await _storage.read(key: keyFor(profileId));
+      final storage = await _storageFuture;
+      final value = await storage.read(key: keyFor(profileId));
       if (value != null && value.isNotEmpty) {
         _cache[profileId] = value;
         _loaded.add(profileId);
@@ -121,7 +111,8 @@ class TokenStore {
     if (profileId.isEmpty) return null;
     _refreshWanted.remove(profileId);
     try {
-      final value = await _storage.read(key: keyFor(profileId));
+      final storage = await _storageFuture;
+      final value = await storage.read(key: keyFor(profileId));
       if (value != null && value.isNotEmpty) {
         _cache[profileId] = value;
         _loaded.add(profileId);
@@ -155,7 +146,8 @@ class TokenStore {
     _loaded.add(profileId);
     _refreshWanted.remove(profileId);
     try {
-      await _storage.write(key: keyFor(profileId), value: token);
+      final storage = await _storageFuture;
+      await storage.write(key: keyFor(profileId), value: token);
       _degraded = false;
     } on PlatformException catch (e) {
       _degraded = true;
@@ -167,7 +159,8 @@ class TokenStore {
     _cache.remove(profileId);
     _loaded.add(profileId);
     try {
-      await _storage.delete(key: keyFor(profileId));
+      final storage = await _storageFuture;
+      await storage.delete(key: keyFor(profileId));
     } on PlatformException catch (e) {
       _degraded = true;
       debugPrint('TokenStore.delete 失败：${e.message}');
@@ -191,7 +184,8 @@ class TokenStore {
   Future<String?> readPushToken(String instanceId) async {
     if (instanceId.isEmpty) return null;
     try {
-      final value = await _storage.read(key: pushKeyFor(instanceId));
+      final storage = await _storageFuture;
+      final value = await storage.read(key: pushKeyFor(instanceId));
       return (value == null || value.isEmpty) ? null : value;
     } catch (e) {
       // 比上面那几个方法捕得更宽：除了 PlatformException，这里还可能碰到
@@ -207,7 +201,8 @@ class TokenStore {
   Future<void> writePushToken(String instanceId, String token) async {
     if (instanceId.isEmpty || token.isEmpty) return;
     try {
-      await _storage.write(key: pushKeyFor(instanceId), value: token);
+      final storage = await _storageFuture;
+      await storage.write(key: pushKeyFor(instanceId), value: token);
     } catch (e) {
       _degraded = true;
       debugPrint('TokenStore.writePushToken 失败：$e');
@@ -217,7 +212,8 @@ class TokenStore {
   Future<void> deletePushToken(String instanceId) async {
     if (instanceId.isEmpty) return;
     try {
-      await _storage.delete(key: pushKeyFor(instanceId));
+      final storage = await _storageFuture;
+      await storage.delete(key: pushKeyFor(instanceId));
     } catch (e) {
       _degraded = true;
       debugPrint('TokenStore.deletePushToken 失败：$e');
@@ -249,7 +245,8 @@ class TokenStore {
   Future<String?> readPushStepWitness(String instanceId, String step) async {
     if (instanceId.isEmpty || step.isEmpty) return null;
     try {
-      final value = await _storage.read(key: _stepKeyFor(instanceId, step));
+      final storage = await _storageFuture;
+      final value = await storage.read(key: _stepKeyFor(instanceId, step));
       return (value == null || value.isEmpty) ? null : value;
     } catch (e) {
       _degraded = true;
@@ -266,10 +263,11 @@ class TokenStore {
   ) async {
     if (instanceId.isEmpty || step.isEmpty) return;
     try {
+      final storage = await _storageFuture;
       if (value.isEmpty) {
-        await _storage.delete(key: _stepKeyFor(instanceId, step));
+        await storage.delete(key: _stepKeyFor(instanceId, step));
       } else {
-        await _storage.write(key: _stepKeyFor(instanceId, step), value: value);
+        await storage.write(key: _stepKeyFor(instanceId, step), value: value);
       }
     } catch (e) {
       _degraded = true;
