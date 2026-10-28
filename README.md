@@ -141,11 +141,12 @@ None of this can live in code; each is an external configuration:
    same-named variable to `[vars]` in `wrangler.toml`; a name collision makes `secret put`
    fail outright).
 3. **In the app**, fill in the relay address (`https://push.zenkee.com` by default) + instance
-   slot + pairing code (wizard page ②). The pairing code **is also** the webhook secret to
-   enter in the instance backend; wizard page ⑤ displays it for copying.
-4. **In the instance backend** (the "Webhook push" section), enter the webhook URL given on
-   page ⑤ (with its `/<slot>/webhook` tail) and the secret, and flip that section's toggle
-   on. This is the only thing that must be done on the instance side — **note that this
+   slot + pairing code (wizard page ②). The pairing code is the **app-side device code**
+   (register devices, read only the mailboxes this device subscribed to) — it is **not** the
+   webhook secret; they are two separate keys (see `docs/push-setup.md`).
+4. **In the instance backend** (the "Webhook push" section), enter the webhook URL (with its
+   `/<slot>/webhook` tail) and the **`webhookSecret`** (echoed once when the slot was created),
+   and flip that section's toggle on. This is the only thing that must be done on the instance side — **note that this
    toggle is stored in the database as `webhookStatus`, where `0` means "enabled"**, the
    opposite of intuition, so it is always the first suspect when "the URL and secret are
    both right but nothing arrives".
@@ -213,9 +214,9 @@ single `connect()` — sandbox + no `network.client` → `CONNECT FAIL errno=1`;
 `CONNECT OK`; without the sandbox → `CONNECT OK`. Both Debug and Release entitlement files
 have it added.
 
-There is a **self-check** button in Settings: it takes the pairing code and asks the relay
-"how should the instance backend be configured", comparing it against the address you have
-entered — a wrong address is a **silent failure** (the instance only calls the webhook when
+There is a **self-check** button in Settings: it takes the pairing code (the app-side device
+code) and asks the relay whether this slot works at all (code valid? URL path right? has any
+event ever arrived?), comparing it against the address you are about to enter — a wrong address is a **silent failure** (the instance only calls the webhook when
 external mail actually arrives, and a failed call leaves just one line in its own log), so
 this step is worth clicking. In the wizard it is page ⑥, "check this link" (the former "test
 connection" and "self-check" have been merged into this one).
