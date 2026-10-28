@@ -257,6 +257,7 @@ class _FakeRepo extends EmailRepository {
     required Profile profile,
     required int accountId,
     int type = MailType.receive,
+    bool allReceive = false,
     CancelToken? cancelToken,
   }) async {
     probed.add(accountId);

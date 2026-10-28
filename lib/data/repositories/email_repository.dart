@@ -320,6 +320,11 @@ class EmailRepository {
       scope: scope,
       cursorEmailId: latestCursorOf(page),
     );
+    // 这一页是**不带游标**的全量口径，`total` 就在手上 —— 顺手把「服务端
+    // 一共有多少封」刷新掉。漏了这一步的话，没有 `/email/latest` 的老版本
+    // 实例上 `remote_total` 一辈子只有冷启动那一次的值（列表底部的
+    // 「还有 N 封未同步」会一直拿它当减数）。
+    await _saveRemoteTotal(profile.id, scope, page);
     return count;
   }
 
@@ -374,33 +379,46 @@ class EmailRepository {
 
   /// 把 `/email/list` 的 `total` 落库（「还有 N 封没同步」的减数）。
   ///
-  /// 只在不带游标的全量口径下有意义 —— 带 `beforeEmailId` 的翻页响应里
-  /// `total` 依然是全量值，所以翻页时也顺手更新它。
+  /// 不带游标的全量首页、以及带 `beforeEmailId` 的翻页响应里 `total` 依然是
+  /// 全量值，所以两条路径都顺手更新它。
+  ///
+  /// 走 [MailDao.recordMailboxTotal]（列级 UPDATE + 时间戳）而不是
+  /// `saveRemoteTotal`：那个方法把 `0` 当成「还不知道」直接丢掉，于是「服务端
+  /// 已经删空/清空」这个最该被看见的结论永远写不进去，底部会一直挂着一个
+  /// 正数。`recordMailboxTotal` 的「已知」判据是 `remoteTotalAt`（非 null），
+  /// 0 配上时间戳是一条正经结论。
   Future<void> _saveRemoteTotal(
     String profileId,
     String scope,
     MailPage page,
   ) async {
     final total = page.total;
-    if (total == null || total <= 0) return;
+    if (total == null) return;
     // 服务端的 total 是全库口径（含已删）；本地只缓存视图内的邮件。
     // 直接相减会得到一个永远为正的差值 —— 那是 [SyncStates.remoteTotal]
     // 的注解里说的「减数」，不是「差」。差值在对不上的时候会被上层
     // 夹到 0 显示，不要让这里猜。
-    await db.mailDao.saveRemoteTotal(
+    await db.mailDao.recordMailboxTotal(
       profileId: profileId,
       scope: scope,
       total: total,
+      at: DateTime.now().toUtc(),
     );
   }
 
-  /// 探一个邮箱的服务端总数（侧栏那个「未读 / 总数」的分母）。
+  /// 探一个 scope 的服务端总数（侧栏「未读 / 总数」的分母、以及列表底部
+  /// 「还有 N 封未同步」的减数）。
   ///
   /// **只读**：拉回来的那一页（这页只要一条，见下）**一行都不落库**。这不是
   /// 同步 —— 不碰游标、不碰邮件表、不碰退避计数。落库的只有
   /// `sync_states.remote_total` 与 `remote_total_at` 两列（见
   /// [MailDao.recordMailboxTotal]），而且**服务端真的回 0 也照写**：空邮箱
   /// 是一条正经结论，配上时间戳之后与「还没探过」分得开。
+  ///
+  /// [allReceive] 与同步/翻页那边同一个语义：true = 整个实例（scope
+  /// `all:type:x`），false = 这一个邮箱（`mailbox:<id>:type:x`）。必须显式
+  /// 传给请求 —— 见 `EmailApi.list` 的注释：缺省会让服务端回落成账户上的
+  /// 「合并接收」开关，探单邮箱时拿回整账户的总数。
   ///
   /// `size: 1` 就够：服务端的 `total` 是**过滤后的全量计数**，与
   /// `size` / `beforeEmailId` 都无关（worker 的 `countFilters` 走
@@ -414,11 +432,13 @@ class EmailRepository {
     required Profile profile,
     required int accountId,
     int type = MailType.receive,
+    bool allReceive = false,
     CancelToken? cancelToken,
   }) async {
     final runtime = registry.peek(profile.id);
     if (runtime == null || runtime.isDisposed || !runtime.hasToken) return null;
 
+    final scope = scopeOf(accountId: accountId, type: type, allReceive: allReceive);
     try {
       final page = await runtime.emailApi.list(
         profileId: profile.id,
@@ -426,15 +446,16 @@ class EmailRepository {
         type: type,
         size: 1,
         full: false,
+        allReceive: allReceive,
         cancelToken: cancelToken,
       );
       final total = page.total;
       if (total == null) return null;
       await db.mailDao.recordMailboxTotal(
         profileId: profile.id,
-        scope: mailboxScope(accountId, type),
+        scope: scope,
         total: total,
-        // 与 `saveRemoteTotal` 的默认值同一条约定：时间戳一律 UTC。
+        // 与 `_saveRemoteTotal` 的默认值同一条约定：时间戳一律 UTC。
         at: DateTime.now().toUtc(),
       );
       return total;

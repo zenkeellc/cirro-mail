@@ -102,6 +102,15 @@ class _MailListViewState extends ConsumerState<MailListView> {
   /// 第一行的内容高度，由 `_measureFirstRow` 量出来。0 = 还没量到。
   double _measuredRowHeight = 0;
 
+  /// 「继续加载」这一刻是否真的在跑（占位行/页脚的转圈与防重复点）。
+  ///
+  /// 不能用 `controller.isLoadingMore` 代替：那是普通字段，`loadMore` 里改它
+  /// 不会让这一屏重建 —— 用户点了之后既看不到转圈、也能连点好多下。
+  bool _advancing = false;
+
+  /// 上一次由滚动触发的加载时间（节流用）。
+  DateTime _lastScrollLoad = DateTime.fromMillisecondsSinceEpoch(0);
+
   /// 只有一个邮箱时才允许翻页（多邮箱没有统一游标）。
   bool get _canLoadMore => widget.query.singleMailbox;
 
@@ -151,18 +160,45 @@ class _MailListViewState extends ConsumerState<MailListView> {
     // 「再同步一轮」，进页面就白推一次是浪费。但**滚到底那一下要接上**
     // —— 聚合视图底部的说明写的就是「滚到底会自动同步」，见
     // `_maybeLoadMore`。
-    if (_canLoadMore && controller.hasMore) {
-      await controller.loadMore();
+    if (!_canLoadMore) return;
+    // 预热也要走「可能先放本地窗口」那条路：本地已经缓存了多过一屏的邮件时，
+    // 进页面就该多露出一页，而不是无条件再发一个「更旧」的请求。
+    if (controller.hasMore || await controller.cachedBeyondWindow()) {
+      await _advance();
     }
   }
 
   void _maybeLoadMore() {
     if (!_controller.hasClients) return;
+    if (_advancing) return;
     final position = _controller.position;
     if (position.pixels < position.maxScrollExtent - 400) return;
-    final controller = ref.read(mailListControllerProvider(widget.query));
-    if (controller.isLoadingMore || !controller.hasMore) return;
-    unawaited(controller.loadMore());
+    // 滚到底会连着收到一串事件（尤其 iOS 的回弹）：节流，别一秒发十几个
+    // count 查询。真正的重复请求还有 `_advancing` 挡着。
+    final now = DateTime.now();
+    if (now.difference(_lastScrollLoad) < const Duration(milliseconds: 300)) {
+      return;
+    }
+    _lastScrollLoad = now;
+    unawaited(_advance());
+  }
+
+  /// 推进列表（「加载更多」的唯一入口：滚动、预热、点占位行都走这里）。
+  ///
+  /// [retryExhausted] 只在用户**主动点了**底部占位行时为 true —— 那个数字可能
+  /// 是旧快照算出来的，到底之后也值得再问服务端一次（见
+  /// `MailListController.loadMore`）。
+  Future<void> _advance({bool retryExhausted = false}) async {
+    if (_advancing) return;
+    if (!mounted) return;
+    setState(() => _advancing = true);
+    try {
+      await ref
+          .read(mailListControllerProvider(widget.query))
+          .loadMore(retryExhausted: retryExhausted);
+    } finally {
+      if (mounted) setState(() => _advancing = false);
+    }
   }
 
   @override
@@ -170,6 +206,11 @@ class _MailListViewState extends ConsumerState<MailListView> {
     final async = ref.watch(mailListProvider(widget.query));
     final controller = ref.watch(mailListControllerProvider(widget.query));
     final rows = async.value ?? const <MailRow>[];
+    // 「还有 N 封没同步」：0 / null 都表示「别说」。在同一处算一次，
+    // 占位行与页脚用同一个数 —— 否则会出现「还有 10 封未同步 · 点击继续加载」
+    // 与「没有更多了」同时挂在一屏上的自相矛盾。
+    final unsynced =
+        ref.watch(unsyncedPlaceholderProvider(widget.query)).value ?? 0;
     final refs = <MailRef>[
       for (final row in rows)
         MailRef(profileId: row.profileId, emailId: row.emailId),
@@ -313,14 +354,18 @@ class _MailListViewState extends ConsumerState<MailListView> {
                 // 状态页脚之前 —— 它属于列表内容的一部分（点一下继续加载），
                 // 而不是一句说明文字。
                 _UnsyncedPlaceholder(
-                  query: widget.query,
+                  remaining: unsynced,
                   canAdvance: _canLoadMore,
-                  onTap: () => controller.loadMore(),
+                  busy: _advancing,
+                  // 用户主动点的这一下传 `retryExhausted`：数字可能是旧快照
+                  // 算出来的，`hasMore == false` 也值得再问服务端一次。
+                  onTap: () => unawaited(_advance(retryExhausted: true)),
                 ),
                 SliverToBoxAdapter(
                   child: _ListFooter(
-                    loading: controller.isLoadingMore,
-                    exhausted: !controller.hasMore,
+                    loading: _advancing || controller.isLoadingMore,
+                    // 占位行还在说「还有 N 封」的时候，页脚不能说「没有更多了」。
+                    exhausted: !controller.hasMore && unsynced <= 0,
                     aggregate: !_canLoadMore,
                   ),
                 ),
@@ -549,14 +594,17 @@ class _MailListViewState extends ConsumerState<MailListView> {
 ///
 /// 数字未知（还没完整拉过一次列表）时不显示：宁可什么都不说，也不要给一个
 /// 猜出来的数字 —— 那个数字会被用户拿去和邮箱网页版对账。
-class _UnsyncedPlaceholder extends ConsumerWidget {
+class _UnsyncedPlaceholder extends StatelessWidget {
   const _UnsyncedPlaceholder({
-    required this.query,
+    required this.remaining,
     required this.onTap,
     required this.canAdvance,
+    this.busy = false,
   });
 
-  final MailListQuery query;
+  /// 还有几封没同步（0 / null 已经在调用方折成 0）。
+  final int remaining;
+
   final VoidCallback onTap;
 
   /// 这一行点下去**真的能推进**吗（= 单邮箱，`loadMore` 走的是翻页）。
@@ -567,25 +615,41 @@ class _UnsyncedPlaceholder extends ConsumerWidget {
   /// 只会得出「按钮坏了」。点不动但说清楚，比点得动却毫无反应好。
   final bool canAdvance;
 
+  /// 正在加载（转圈 + 不接第二次点击）。
+  ///
+  /// 没有它的话，用户点下去到列表变化的这几百毫秒里**什么反馈都没有** ——
+  /// 这正是「点了没反应」的一半来源：请求其实发出去了，但界面既不转圈也
+  /// 不禁止连点。
+  final bool busy;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final remaining =
-        ref.watch(unsyncedPlaceholderProvider(query)).value ?? 0;
-    if (remaining <= 0) return const SliverToBoxAdapter(child: SizedBox.shrink());
+  Widget build(BuildContext context) {
+    if (remaining <= 0) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
 
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final label = Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
-        Icon(
-          Icons.cloud_download_outlined,
-          size: 15,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+        if (busy)
+          const SizedBox(
+            width: 15,
+            height: 15,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        else
+          Icon(
+            Icons.cloud_download_outlined,
+            size: 15,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         const SizedBox(width: 8),
         Text(
-          canAdvance ? l10n.pendingMore(remaining) : l10n.pendingMorePassive(remaining),
+          canAdvance
+              ? l10n.pendingMore(remaining)
+              : l10n.pendingMorePassive(remaining),
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -597,7 +661,9 @@ class _UnsyncedPlaceholder extends ConsumerWidget {
         color: theme.colorScheme.surfaceContainerHighest,
         child: canAdvance
             ? InkWell(
-                onTap: onTap,
+                // 加载中不接第二次点击：这次点击已经没有意义，接了只会
+                // 让用户以为「点一下才动一下」。
+                onTap: busy ? null : onTap,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   child: label,
