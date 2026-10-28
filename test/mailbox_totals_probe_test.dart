@@ -62,7 +62,9 @@ void main() {
     expect(q['full'], 0);
     // 不该出现的东西：探测不是翻页，也不是「收全部邮箱」。
     expect(q.containsKey('emailId'), isFalse);
-    expect(q.containsKey('allReceive'), isFalse);
+    // **必须显式带 0**：不带参数时服务端会回落到该账户自己的「合并接收」
+    // 开关，探单邮箱就会拿回整账户的 total（见 `EmailApi.list` 的注释）。
+    expect(q['allReceive'], 0);
   });
 
   test('只写 remote_total / remote_total_at，游标与退避计数一字不动', () async {

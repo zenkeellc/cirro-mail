@@ -136,18 +136,30 @@ final Provider<({int count, DateTime? nextAt})> sendQueueProvider = Provider(
 /// 口径：`服务端 total − 本地已有条数`，两者必须是**同一个 scope**
 /// （同实例、同邮箱、同方向），否则这个差值是错的。
 ///
-/// null 表示**不知道**，两种情形都返回 null：
-/// - `remoteTotal == 0`：还没完整拉过一次 `/email/list`（`/email/latest`
-///   的响应里没有 `total`）；
-/// - 查询不是单实例单邮箱口径（聚合视图没有统一游标）。
+/// null 表示**不知道**。四种情形都返回 null（上层据此把整行藏掉，
+/// 宁可什么都不说，也不要给一个猜出来的数字 —— 用户会拿它跟网页版对账）：
+/// - `remoteTotalAt == null`：还没在这个 scope 上拿到过一次真总数
+///   （`/email/latest` 的响应里没有 `total`，只有 `/email/list` 有）。
+///   注意判据是**时间戳**而不是 `remoteTotal > 0`：`total` 的 0 在库里
+///   表示「还不知道」，而「已知且服务端真的是 0」只有 `remoteTotalAt`
+///   说得清（与侧栏 `mailboxTotalProvider` 同一个判据）；
+/// - 查询不是单实例单邮箱口径（聚合视图没有统一游标）；
+/// - 星标文件夹（`/star/list` 没有 total，翻页也不写它）；
+/// - 未读视图：本地计数是「全部收件」，分子却是服务端的全量 total，
+///   两侧都没带 `unread=0` 条件 —— 算出来的数不代表「未读还差几封」。
 ///
 /// 做成 `StreamProvider.family` 而不是一次性 Future：本地条数每同步一封就变，
 /// 那个数要**实时**往下掉，占位行上的数字才会跟着动。
+///
+/// 新鲜度不在这里管：`MailListController` 打开列表 / 下拉刷新 / 删信之后会
+/// 调 `probeMailboxTotal` 重探一次（TTL 见 `AppDefaults.mailboxTotalTtl`），
+/// 重探写 `sync_states` 会推一次这里，数字随之变成真值。
 final unsyncedPlaceholderProvider =
     StreamProvider.family<int?, MailListQuery>((ref, query) {
   // 只有单个邮箱才谈得上「翻到底」—— 多邮箱的各实例游标是独立序列。
   if (!query.singleMailbox) return Stream<int?>.value(null);
   if (query.folder == MailFolder.starred) return Stream<int?>.value(null);
+  if (query.unreadOnly) return Stream<int?>.value(null);
 
   final box = query.mailboxes.first;
   final profileId = box.profileId;
@@ -160,8 +172,8 @@ final unsyncedPlaceholderProvider =
   final dao = ref.watch(databaseProvider).mailDao;
 
   return dao.watchSyncState(profileId, scope).asyncMap((state) async {
-    final total = state?.remoteTotal ?? 0;
-    if (total <= 0) return null;
+    if (state == null || state.remoteTotalAt == null) return null;
+    final total = state.remoteTotal;
     final local = await dao.countMailbox(
       profileId,
       box.accountId,

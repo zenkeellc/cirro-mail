@@ -856,6 +856,24 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
             .toList(growable: false));
   }
 
+  /// 星标文件夹里本地一共缓存了多少封。
+  ///
+  /// 与 [watchStarred] 同一个谓词（`isStar=1 & isDel=0` + 可选的实例集合），
+  /// 但要的是**总数**而不是列表页那 200 行的窗口：列表底部的「继续加载」
+  /// 要拿它判断「窗口外面还有没有已经缓存好的邮件」（见
+  /// `MailListController.loadMore`）。
+  Future<int> countStarred({List<String> profileIds = const <String>[]}) async {
+    final countExp = mails.emailId.count();
+    var query = selectOnly(mails)
+      ..addColumns([countExp])
+      ..where(mails.isStar.equals(1) & mails.isDel.equals(0));
+    if (profileIds.isNotEmpty) {
+      query = query..where(mails.profileId.isIn(profileIds));
+    }
+    final row = await query.getSingle();
+    return row.read(countExp) ?? 0;
+  }
+
   // ---------------------------------------------------------- 未读计数
 
   /// 每个实例的未读数。
@@ -1091,6 +1109,10 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
   /// 而不是 `remoteTotal`（见 [SyncStates.remoteTotalAt]），同步顺手拿到的
   /// 这个数与探测拿到的是**同一个数**，不给它盖时间戳的话，一次正常的同步
   /// 之后侧栏仍然显示占位符，然后白白再探一次。
+  ///
+  /// **新代码用 [recordMailboxTotal]，不要用这个方法**：它把 `0` 当成
+  /// 「还不知道」丢掉，于是「服务端真的清空了」这个最该被看见的结论永远写不
+  /// 进去（列表底部会一直挂着一个正数）。这里保留只是为了兼容既有调用与测试。
   Future<void> saveRemoteTotal({
     required String profileId,
     required String scope,

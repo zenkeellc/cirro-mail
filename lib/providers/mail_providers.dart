@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/config/app_defaults.dart';
 import '../core/error/app_exception.dart';
 import '../data/models/enums.dart';
 import '../data/models/instance_capabilities.dart';
@@ -59,6 +60,47 @@ final ossBaseProvider = Provider.family<String, String>(
   name: 'ossBase',
 );
 
+/// 列表窗口大小：默认 200 条，「继续加载」一次长一页。
+///
+/// 列表查询只取最新 200 条（[MailDao.watchMailboxSet] / [MailDao.watchStarred]
+/// 的默认 limit）。而「还有 N 封未同步 · 点击继续加载」把更旧的邮件同步进库
+/// 之后，它们按 `createTime desc` 正好落在第 200 行**之外** —— 库长了、屏幕
+/// 一动不动，用户看到的就是「点了也没把邮件同步进来」。所以窗口必须跟着
+/// 翻页一起长，本 provider 就是这个**可观察**的窗口大小。
+///
+/// 状态只装一个 int：`ref.watch(mailListWindowProvider(query))` 的值一变，
+/// [mailListProvider] 就换成新的 limit 重新订阅，列表随之多露出一页。
+final mailListWindowProvider =
+    NotifierProvider.family<MailListWindowController, int, MailListQuery>(
+  MailListWindowController.new,
+  name: 'mailListWindow',
+);
+
+class MailListWindowController extends Notifier<int> {
+  MailListWindowController(this.query);
+
+  /// 这个窗口属于哪张列表（只用于日志/调试，逻辑上不需要读它）。
+  final MailListQuery query;
+
+  /// 首屏展示多少条 —— 与历史实现里 `watchMailboxSet` 的默认 limit 一致。
+  static const int base = 200;
+
+  /// 一次露出多少条（= 一页）。
+  static const int step = AppDefaults.mailPageSize;
+
+  @override
+  int build() => base;
+
+  /// 把窗口放开 [by] 条。
+  ///
+  /// 不封顶：它只随用户主动加载增长，一次一页；而且长到的上限就是本地
+  /// 已缓存的封数（`MailListController.loadMore` 只在缓存多过窗口时才放）。
+  void revealMore({int by = step}) {
+    if (by <= 0) return;
+    state = state + by;
+  }
+}
+
 /// 一个列表页要展示的行。
 ///
 /// **统一从本地库读**，网络只在 `MailListController.refresh/loadMore` 里跑 ——
@@ -68,18 +110,24 @@ final ossBaseProvider = Provider.family<String, String>(
 /// 星标走另一张缓存路径；其余一律 `watchMailboxSet` —— 它同时覆盖了
 /// 「全部实例」「某实例全部邮箱」「跨实例的若干具体邮箱」三种形状，
 /// 不必再按实例数分叉。
+///
+/// `limit` 来自 [mailListWindowProvider]（默认 200、翻一页长一页），不是写死的：
+/// 写死的那版会让「继续加载」拉回来的更旧邮件永远落在窗口外。
 final mailListProvider =
     StreamProvider.family<List<MailRow>, MailListQuery>(
   (ref, query) {
     final db = ref.watch(databaseProvider);
+    final limit = ref.watch(mailListWindowProvider(query));
     return switch (query.folder) {
       MailFolder.starred => db.mailDao.watchStarred(
           profileIds: query.profileIds,
+          limit: limit,
         ),
       _ => db.mailDao.watchMailboxSet(
           mailboxes: query.mailboxes,
           type: query.apiType,
           unreadOnly: query.unreadOnly,
+          limit: limit,
         ),
     };
   },
@@ -115,7 +163,7 @@ class MailListController {
 
   final List<CancelToken> _inFlight = <CancelToken>[];
 
-  /// 把「更旧的方向已经翻到底」这个结论从库里读回来。
+  /// 把「更旧的方向已经翻到底」这个结论从库里读回来，并顺手确认真实总数。
   ///
   /// 只活在内存里的话，每次冷启动都会**白白多发一次**「拉到底才发现没有」的
   /// 请求 —— 而这个结论对某一页来说是不会变的（除非服务端删了新数据）。
@@ -138,6 +186,53 @@ class MailListController {
     } catch (_) {
       // 读不出来就按「还没翻到底」处理，只是多一次请求。
     }
+    // 打开列表就确认一次「服务端到底还有多少封」。`remote_total` 只在
+    // 冷启动首页 / 翻页 / 侧栏探测时写，而 `/email/latest` 那轮常规同步
+    // **不带 total** —— 不在这里补一发，底部那个数就是几天前的快照（本地删
+    // 过信之后就凭空多出「还有 N 封未同步」，还怎么点都点不掉）。
+    // TTL（`AppDefaults.mailboxTotalTtl`）之内不重复探，见 [_refreshRemoteTotal]。
+    unawaited(_refreshRemoteTotal());
+  }
+
+  /// 把本页 scope 的服务端总数刷新一次（`remote_total` + 时间戳）。
+  ///
+  /// [force] 为 false 时按 [AppDefaults.mailboxTotalTtl] 跳过刚探过的；删信、
+  /// 下拉刷新这类「数字一定变了」的动作传 true。
+  ///
+  /// 实现只有 `probeMailboxTotal` 那一个请求（`/email/list`，`size=1&full=0`），
+  /// 失败静默：这是展示用的旁路，不该让列表页报错。
+  Future<void> _refreshRemoteTotal({bool force = false}) async {
+    if (query.folder == MailFolder.starred) return;
+    if (!query.singleMailbox) return;
+    final box = query.mailboxes.first;
+    final profile = ref.read(profileByIdProvider(box.profileId));
+    if (profile == null) return;
+    final allReceive = box.accountId == kAllMailboxes;
+    final dao = ref.read(databaseProvider).mailDao;
+    final scope = EmailRepository.scopeOf(
+      accountId: box.accountId,
+      type: query.apiType,
+      allReceive: allReceive,
+    );
+    try {
+      if (!force) {
+        final state = await dao.syncState(box.profileId, scope);
+        final at = state?.remoteTotalAt;
+        if (at != null &&
+            DateTime.now().toUtc().difference(at) <
+                AppDefaults.mailboxTotalTtl) {
+          return;
+        }
+      }
+      await ref.read(emailRepositoryProvider).probeMailboxTotal(
+            profile: profile,
+            accountId: box.accountId,
+            type: query.apiType,
+            allReceive: allReceive,
+          );
+    } catch (_) {
+      // 探测失败就保持旧值/未知：数字是辅助信息，不是页面能否用的前提。
+    }
   }
 
   /// 下拉刷新：让所有相关实例立刻同步一轮，然后（可选）把本页把守的
@@ -153,15 +248,27 @@ class MailListController {
       unawaited(scheduler.refreshNow(profileId: single));
     }
     _hasMore = true;
+    // 同步那一轮走 `/email/latest`，响应里没有 total —— 光靠它底部那个数
+    // 永远不会更新。刷新是一个「用户认为一切该对齐了」的动作，顺手重探一次。
+    await _refreshRemoteTotal(force: true);
   }
 
-  /// 无限滚动：加载更旧的一页。
+  /// 无限滚动 / 底部那行「点击继续加载」：把**更旧的一页**放进列表。
   ///
-  /// 只有**单个邮箱**时才能这么做 —— 多邮箱的「下一页」没有统一的游标
-  /// （各实例、各邮箱的 emailId 都是独立序列）。多邮箱视图里滚到底是
-  /// 「再同步一轮」，而不是「往后翻页」。
-  Future<void> loadMore() async {
-    if (_loadingMore || !_hasMore) return;
+  /// 做三件事，次序不能反：
+  /// 1. **先放窗口**：本地缓存已经多过窗口时，先把窗口放开一页（不发请求，
+  ///    用户立刻多看到一页）—— 这是「继续加载」的一半；
+  /// 2. **再补总账**：`_hasMore == false` 只是快照（服务端删过信、本地窗口
+  ///    变过、总数变过都会让它过期），用户**主动点了**就重给一次机会
+  ///    （[retryExhausted]）。这次请求最差也会把 `remote_total` 刷成真值，
+  ///    占位行上那个假数字随之消失；
+  /// 3. **最后拉页**：`loadOlder` 写库之后窗口要跟着长到装得下新行 ——
+  ///    不长的话它们落在 200 行窗口之外，屏幕纹丝不动，这正是用户报的
+  ///    「点了也没把邮件同步到客户端」。
+  ///
+  /// 滚动触发时不传 [retryExhausted]：滚到底不该一直发「已经到底」的请求。
+  Future<void> loadMore({bool retryExhausted = false}) async {
+    if (_loadingMore) return;
 
     // 多邮箱 / 聚合（星标页的「全部实例」那一档也算）：不是翻页，是
     // **再同步一轮**。
@@ -178,7 +285,9 @@ class MailListController {
     // （`loadStarred` 要一个游标），「全部实例」那一档同样没有统一游标，
     // 不该走进去空转。
     if (!query.singleMailbox) return _syncRoundForAggregate();
-    if (query.folder == MailFolder.starred) return loadMoreStarred();
+    if (query.folder == MailFolder.starred) {
+      return loadMoreStarred(retryExhausted: retryExhausted);
+    }
 
     final box = query.mailboxes.first;
     final profile = ref.read(profileByIdProvider(box.profileId));
@@ -188,6 +297,17 @@ class MailListController {
     final cancel = CancelToken();
     _inFlight.add(cancel);
     try {
+      final window = ref.read(mailListWindowProvider(query));
+      final cached = await _cachedCount();
+      if (cached > window) {
+        ref.read(mailListWindowProvider(query).notifier).revealMore();
+        return;
+      }
+
+      // 到底了、但用户主动点了：见方法注释第 2 条。
+      if (!_hasMore && !retryExhausted) return;
+      _hasMore = true;
+
       _hasMore = await ref.read(emailRepositoryProvider).loadOlder(
             profile: profile,
             accountId: box.accountId,
@@ -195,6 +315,14 @@ class MailListController {
             allReceive: box.accountId == kAllMailboxes,
             cancelToken: cancel,
           );
+
+      // 这一页写进库的更旧邮件必须真能显示出来。
+      final grown = await _cachedCount();
+      if (grown > window) {
+        ref
+            .read(mailListWindowProvider(query).notifier)
+            .revealMore(by: grown - window);
+      }
     } on AppException {
       // 翻页失败不该弹错 —— 用户滚动到一半看到红条比「没反应」更糟。
       _hasMore = true;
@@ -202,6 +330,33 @@ class MailListController {
       _inFlight.remove(cancel);
       _loadingMore = false;
     }
+  }
+
+  /// 本地这个列表口径下已经缓存了多少封（**不受 200 行窗口限制**）。
+  ///
+  /// 与列表查询同一份谓词（星标走 [MailDao.countStarred]，其余走
+  /// [MailDao.countMailboxSet]）—— 两个数口径不一致的话，「窗口外面还有没有
+  /// 邮件」这个判断就会错，窗口也就长不到该长的地方。
+  Future<int> _cachedCount() {
+    final dao = ref.read(databaseProvider).mailDao;
+    if (query.folder == MailFolder.starred) {
+      return dao.countStarred(profileIds: query.profileIds);
+    }
+    return dao.countMailboxSet(
+      mailboxes: query.mailboxes,
+      type: query.apiType,
+      unreadOnly: query.unreadOnly,
+    );
+  }
+
+  /// 本地这个口径下已缓存的封数是否**多过**当前展示窗口。
+  ///
+  /// [loadMore] 用它决定「先放本地一页」还是「去服务端拉一页」；列表预热
+  /// （`MailListView._primeFirstPage`）也用它 —— 本地明明还有、窗口却卡着
+  /// 的时候，进页面就该先露出一页，而不是白发一个「更旧」的请求。
+  Future<bool> cachedBeyondWindow() async {
+    final window = ref.read(mailListWindowProvider(query));
+    return await _cachedCount() > window;
   }
 
   /// 多邮箱 / 聚合视图滚到底时的那一下：「**再同步一轮**」。
@@ -243,7 +398,7 @@ class MailListController {
     }
   }
 
-  Future<void> loadMoreStarred() async {
+  Future<void> loadMoreStarred({bool retryExhausted = false}) async {
     final profileId = _singleProfileId;
     if (profileId == null) return;
     final profile = ref.read(profileByIdProvider(profileId));
@@ -253,6 +408,17 @@ class MailListController {
     final cancel = CancelToken();
     _inFlight.add(cancel);
     try {
+      // 星标列表同样被 200 行窗口截住（`watchStarred` 的默认 limit）：
+      // 窗口外还有本地缓存就先放出来，否则写进来的旧星标一样看不见。
+      final window = ref.read(mailListWindowProvider(query));
+      final cached = await _cachedCount();
+      if (cached > window) {
+        ref.read(mailListWindowProvider(query).notifier).revealMore();
+        return;
+      }
+      if (!_hasMore && !retryExhausted) return;
+      _hasMore = true;
+
       final oldest = await ref
           .read(databaseProvider)
           .mailDao
@@ -262,6 +428,12 @@ class MailListController {
             beforeEmailId: oldest > 0 ? oldest : null,
             cancelToken: cancel,
           );
+      final grown = await _cachedCount();
+      if (grown > window) {
+        ref
+            .read(mailListWindowProvider(query).notifier)
+            .revealMore(by: grown - window);
+      }
     } catch (_) {
       _hasMore = true;
     } finally {
@@ -299,8 +471,13 @@ class MailListController {
   Future<void> markRead(Iterable<MailRef> refs, {required bool read}) =>
       ref.read(emailRepositoryProvider).markRead(refs, read: read);
 
-  Future<void> delete(Iterable<MailRef> refs) =>
-      ref.read(emailRepositoryProvider).delete(refs);
+  Future<void> delete(Iterable<MailRef> refs) async {
+    await ref.read(emailRepositoryProvider).delete(refs);
+    // 删信之后服务端的 total 立刻变小，而 `remote_total` 只是个快照 ——
+    // 不刷的话底部会凭空多出「还有 N 封未同步」（正好是刚删掉的封数），
+    // 而且这个假数字点也点不掉（总数一直偏大）。
+    await _refreshRemoteTotal(force: true);
+  }
 
   /// 取消本页所有在途请求（页面 dispose 时）。
   ///

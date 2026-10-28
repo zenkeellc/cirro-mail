@@ -28,6 +28,15 @@ class EmailApi {
   /// [allReceive] 为 true 时忽略 `accountId`（服务端 `emailListFilters` 就是这么写的），
   /// 返回该用户所有邮箱的邮件 —— 这是 App 里「合并视图」的实现方式，
   /// 比逐个邮箱把 `allReceive` 打开要好（那个接口是切换语义）。
+  ///
+  /// **[allReceive] 必须显式传 0/1，不能「为 false 就不带这个参数」**：
+  /// worker 在参数缺失时（`Number(undefined)` → NaN，见
+  /// `mail-worker/src/service/email-service.js` 的 `list()`）会回落到**该账户
+  /// 行上的 `all_receive` 标志**。用户在网页端把某个邮箱设成「合并接收」之后，
+  /// App 发一个「只看这个邮箱」的请求（比如探测它的总数、或给它翻旧邮件），
+  /// 服务端会照样返回**整个账户**的邮件 —— 于是写进
+  /// `mailbox:<id>:type:0` 的 total 是整账户的数，底部「还有 N 封未同步」
+  /// 从此一直偏大、点也点不完。显式 0 才是「只看这个邮箱」。
   Future<MailPage> list({
     required String profileId,
     required int accountId,
@@ -50,7 +59,8 @@ class EmailApi {
         // timeSort=1 → 取比游标更大的 id（往上翻新），0 → 更小的（往下翻旧）。
         'timeSort': ascending ? 1 : 0,
         'full': full ? 1 : 0,
-        if (allReceive) 'allReceive': 1,
+        // 显式 0/1，见方法注释：缺省会让服务端回落成账户自己的合并接收开关。
+        'allReceive': allReceive ? 1 : 0,
       },
       cancelToken: cancelToken,
     );
