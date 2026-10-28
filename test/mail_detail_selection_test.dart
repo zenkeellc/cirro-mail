@@ -33,6 +33,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mail_app/core/db/database.dart';
+import 'package:mail_app/core/storage/attachment_cache.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/core/storage/token_store.dart';
 import 'package:mail_app/data/models/mail_row.dart';
@@ -45,6 +46,14 @@ import 'package:mail_app/providers/core_providers.dart';
 import 'package:mail_app/providers/notification_providers.dart';
 import 'package:mail_app/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// 清附件目录那一步的空实现：本组用例只关心「删完之后的收尾」，不碰盘。
+/// （为什么不能用注入临时目录的真 `AttachmentCache`：widget 测试的 fake async
+/// 下，`Directory.create` / `exists` 这类真 I/O 的 future 不会完成。）
+class _NoopAttachmentCache extends AttachmentCache {
+  @override
+  Future<void> deleteMail(String profileId, int emailId) async {}
+}
 
 /// 打开详情时会顺手撤掉这条通知（见 `MailDetailScreen._openOnce`）。测试里
 /// 那会真的去建平台插件，失败一次、在日志里留一行。换成空实现。
@@ -201,6 +210,13 @@ void main() {
           prefs: PrefsStore(await SharedPreferences.getInstance()),
         )),
         notificationServiceProvider.overrideWithValue(_SilentNotifications()),
+        // 删邮件会顺手清磁盘上的附件目录（`EmailRepository.onDiskPurge`）。
+        // 这一组是 widget 测试，跑在 fake async 里 —— 真文件 I/O 的 future
+        // 在这里**永远等不到**（`path_provider` 那条平台通道同理会一直挂着），
+        // 删除就停在「清磁盘」那一步，`onDeleted` 不调，表现正是「点了确定、
+        // 什么都没发生」。磁盘清理本身由 `email_delete_disk_test.dart` 用真
+        // 临时目录覆盖（那边是普通 `test()`，没有 fake async）。
+        attachmentCacheProvider.overrideWithValue(_NoopAttachmentCache()),
       ],
       child: MaterialApp.router(
         routerConfig: router,
