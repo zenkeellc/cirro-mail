@@ -58,40 +58,64 @@ class HomeMenuScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(8),
         children: <Widget>[
-          // 网格嵌在列表里：下面还要追加一组邮箱（见下），而两样东西一起
-          // 滚才像一屏菜单。`shrinkWrap` + `NeverScrollableScrollPhysics`
-          // 是必须的 —— 不写就是两个滚动容器各滚各的（外层滚不动，
-          // 网格自己滚），用户会把「滚不动」当成页面坏了。
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: <Widget>[
-              for (final entry in HomeEntries.all)
-                _EntryTile(
-                  entry: entry,
-                  count: _countOf(
-                    entry,
-                    unread: unread,
-                    outbox: outbox,
-                    drafts: drafts,
-                  ),
-                  // 没登录任何实例时点进去只会看到空列表 —— 直接不给点。
-                  //
-                  // `push: true`：窄屏这一屏是**唯一**能进这几个页面的地方，
-                  // 而底部导航只认三支。压上去之后各页 `AppBar` 自带返回箭头，
-                  // 系统返回键也成立（理由见 `openHomeEntry`）。
-                  onTap: profiles.isEmpty
-                      ? null
-                      : () => openHomeEntry(
-                            context,
-                            ref,
-                            entry,
-                            current: GoRouterState.of(context).uri,
-                            push: true,
-                          ),
-                ),
-            ],
+          // 七项入口（星标 / 附件缓存 / 未读 / 收件箱 / 已发送 / 发件箱 /
+          // 草稿箱）横向铺成网格，下面还有一组邮箱（见下），两样东西一起滚
+          // 才像一屏菜单。
+          //
+          // 这里**不再是 `GridView.count(crossAxisCount: 3)`**：那个 1:1 的
+          // 格子让宽高都跟着屏宽走 —— 390 宽的屏上每格约 124pt，而图标 24pt
+          // + 文字 16pt 只占其中约 44pt，于是每格下方空出约 70pt、图标横向
+          // 也隔着 124pt；3 行铺下来是一块 374pt 高的板子，几乎吃掉半屏，
+          // 显得又高又散（旧版就是这样）。
+          //
+          // 现在换成 4 列、行高由内容自己决定的 `Wrap`：
+          // - 4 列把图标横向间距从 ~124pt 收到 ~89pt，7 项从 3 行变 2 行，
+          //   整块高度约 128pt（省下约 240pt）；
+          // - 行高来自子项固有高度而不是写死的 `childAspectRatio` —— 用户把
+          //   系统字号调大时格子会跟着长高，不会把文字裁掉（写死格高的
+          //   `GridView` 在大字号下必然溢出）。
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const columns = 4;
+              const spacing = 6.0;
+              // 每格等宽、除不尽时把余数均摊到间距上，避免最后一行歪掉。
+              final itemWidth =
+                  (constraints.maxWidth - spacing * (columns - 1)) / columns;
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: <Widget>[
+                  for (final entry in HomeEntries.all)
+                    SizedBox(
+                      width: itemWidth,
+                      child: _EntryTile(
+                        entry: entry,
+                        count: _countOf(
+                          entry,
+                          unread: unread,
+                          outbox: outbox,
+                          drafts: drafts,
+                        ),
+                        // 没登录任何实例时点进去只会看到空列表 —— 直接不给点。
+                        //
+                        // `push: true`：窄屏这一屏是**唯一**能进这几个页面的
+                        // 地方，而底部导航只认三支。压上去之后各页 `AppBar`
+                        // 自带返回箭头，系统返回键也成立（理由见
+                        // `openHomeEntry`）。
+                        onTap: profiles.isEmpty
+                            ? null
+                            : () => openHomeEntry(
+                                  context,
+                                  ref,
+                                  entry,
+                                  current: GoRouterState.of(context).uri,
+                                  push: true,
+                                ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
           // 邮箱下级菜单。与宽屏侧栏**共用同一份实现**（见那一族的类注释）——
           // 窄屏没有侧栏，不给这一组就等于「某个邮箱的收件箱」这条路径在窄屏
@@ -149,15 +173,24 @@ class _EntryTile extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
+      // 4 列之后每格只有 ~89pt 宽，内边距再留 12/4 就挤了：纵向收到 10、
+      // 横向收到 2，图标与文字之间 4 —— 整格约 64pt 高，仍然远大于 44pt 的
+      // 最小可点区域。
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             _EntryIcon(entry: entry, count: count),
-            const SizedBox(height: 6),
-            Text(label, style: theme.textTheme.labelMedium),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelMedium,
+            ),
           ],
         ),
       ),
