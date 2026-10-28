@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/storage/prefs_store.dart';
-import '../../core/storage/token_store.dart';
+import '../../core/storage/secure_storage.dart';
 import 'ai_provider.dart';
 import 'ai_settings.dart';
 
@@ -115,8 +115,9 @@ abstract final class AiSettingsCodec {
   }
 }
 
-/// API Key 的存取 —— **只走系统密钥库**，复用 [defaultSecureStorage]（那一处
-/// 关掉 macOS data protection keychain 的配置是必须的，见 `token_store.dart`）。
+/// API Key 的存取 —— **只走系统密钥库**，与 token 共用
+/// [resolveSecureStorage] 选出来的那套（macOS 上优先 data protection 钥匙串，
+/// 缺 entitlement 的构建自动退回老钥匙串，见 `core/storage/secure_storage.dart`）。
 ///
 /// 三条不能破的规矩：
 /// 1. **不进 prefs**：Key 落 prefs 就是明文落盘（各平台 prefs 都不加密），
@@ -126,10 +127,17 @@ abstract final class AiSettingsCodec {
 /// 3. **失败降级**：Linux 没装 libsecret、钥匙串被锁、插件没注册都会抛，
 ///    这时当作「没配 Key」——表现为 AI 入口变灰，而不是写信页崩掉。
 class AiApiKeyStore {
-  AiApiKeyStore({FlutterSecureStorage? storage})
-      : _storage = storage ?? defaultSecureStorage();
+  AiApiKeyStore({FlutterSecureStorage? storage}) : _injectedStorage = storage;
 
-  final FlutterSecureStorage _storage;
+  final FlutterSecureStorage? _injectedStorage;
+
+  /// 与 `TokenStore` 共用一次探测结果；同样的懒解析 —— 构造不碰平台通道。
+  late final Future<FlutterSecureStorage> _storageFuture = _openStorage();
+
+  Future<FlutterSecureStorage> _openStorage() async {
+    final injected = _injectedStorage;
+    return injected ?? await resolveSecureStorage();
+  }
 
   /// 密钥库里的 key 名。与 `token_` / `push_` 并列，用 `ai_` 前缀。
   static const String storageKey = 'ai_api_key';
@@ -142,7 +150,8 @@ class AiApiKeyStore {
   /// 读 Key。没有就是不配过 —— 空串与只有空白的都当没配。
   Future<String?> read() async {
     try {
-      final value = await _storage.read(key: storageKey);
+      final storage = await _storageFuture;
+      final value = await storage.read(key: storageKey);
       final trimmed = value?.trim();
       return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
     } catch (e) {
@@ -163,7 +172,8 @@ class AiApiKeyStore {
       return;
     }
     try {
-      await _storage.write(key: storageKey, value: trimmed);
+      final storage = await _storageFuture;
+      await storage.write(key: storageKey, value: trimmed);
       _degraded = false;
     } catch (e) {
       _degraded = true;
@@ -173,7 +183,8 @@ class AiApiKeyStore {
 
   Future<void> delete() async {
     try {
-      await _storage.delete(key: storageKey);
+      final storage = await _storageFuture;
+      await storage.delete(key: storageKey);
       _degraded = false;
     } catch (e) {
       _degraded = true;

@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/storage/token_store.dart';
 import '../features/ai/ai_service.dart';
 import '../features/ai/ai_settings.dart';
 import '../features/ai/ai_settings_store.dart';
@@ -14,9 +13,9 @@ final Provider<AiSettingsStore> aiSettingsStoreProvider =
     Provider<AiSettingsStore>(
   (ref) => AiSettingsStore(
     prefs: ref.watch(prefsStoreProvider),
-    // 复用 `token_store.dart` 的实例构造：macOS 必须关掉 data protection
-    // keychain，否则读写一律 `errSecMissingEntitlement`（见那里的长注释）。
-    keys: AiApiKeyStore(storage: defaultSecureStorage()),
+    // 复用 `secure_storage.dart` 的选择：macOS 优先 data protection 钥匙串
+    // （不弹授权框），缺 entitlement 的构建自动退回老钥匙串（见那里的长注释）。
+    keys: AiApiKeyStore(),
   ),
   name: 'aiSettingsStore',
 );

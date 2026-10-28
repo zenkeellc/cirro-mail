@@ -110,8 +110,8 @@ void main() {
   }) async {
     final t = transport ?? sharedTransport();
     final p = await prefs();
-    // Key 走内存钥匙串：`fakeKeychain` 装好 mock、再让 `AiSettingsStore` 用它
-    // 默认的 `defaultSecureStorage()` 去读 —— 与既有用例「Key 只在请求头里」
+    // Key 走内存钥匙串：`fakeKeychain` 装好 mock、再让 `AiSettingsStore` 用
+    // `resolveSecureStorage()` 选出的存储去读 —— 与既有用例「Key 只在请求头里」
     // 等断言同一套机制。（计划里的 `AiApiKeyStore(storage: fakeKeychain(...))`
     // 形状对不上真实 API：那是 `FlutterSecureStorage?`，不是 `Map`。）
     fakeKeychain(
