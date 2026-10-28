@@ -130,18 +130,23 @@ class RelayClient {
         .toList(growable: false);
   }
 
-  /// 部署者一键开通：在**自己的**中转端上开一个实例位，拿回配对码。
+  /// 部署者一键开通：在**自己的**中转端上开一个实例位，拿回两个凭证。
   ///
   /// ## 为什么这条要单独拿出来说
   ///
-  /// 「配对码在哪获取」是这个功能上最容易卡死的一步：配对码 = `instances.secret`，
-  /// 它**只在中转位被创建的那一刻回显一次**，之后两端都读不回来（`/setting/query`
-  /// 把它 mask 成 `******`）。用户自己的实例后台里那个字段是空的，他没有任何
-  /// 地方能「查」到它 —— 只能由 Endpoint 端生成。
+  /// 「配对码在哪获取」是这个功能上最容易卡死的一步：两个凭证都**只在
+  /// 中转位被创建的那一刻回显一次**，之后两端都读不回来（`/setting/query`
+  /// 把 secret mask 成 `******`，`GET /admin/instances` 一律不回）。
+  /// 用户自己的实例后台里那个字段是空的，他没有任何地方能「查」到它 ——
+  /// 只能由 Endpoint 端生成。
   ///
   /// 所以真正意义上的「自动获取」只有这一条路：部署者（也就是能碰到
-  /// `ADMIN_TOKEN` 的那个人）在这里现开一个位。开完实例位 id 与配对码
-  /// 两边都拿到了，不需要用户去别处复制粘贴。
+  /// `ADMIN_TOKEN` 的那个人）在这里现开一个位。开完实例位 id、**设备配对码**
+  /// 与 webhookSecret 一次拿到，不需要用户去别处复制粘贴。
+  ///
+  /// 两个凭证的用途**不重叠**（见 `docs/push-setup.md`（「两把钥匙」那一节））：
+  /// 设备配对码给 App 自己注册 / 读事件，webhookSecret 给实例后台填。
+  /// 后者拿到之后由调用方**只留在本次会话的内存里**交给用户，不落盘。
   ///
   /// ## 关于 [adminToken]
   ///
@@ -169,21 +174,34 @@ class RelayClient {
     );
   }
 
-  /// 自检：拿**配对码**问中转端「实例后台该怎么填、我填的对不对」。
+  /// 自检：拿**设备配对码**问中转端「这个位认不认我、地址该填什么」。
   ///
   /// 这条存在的理由是失败长得太安静：webhook 填错之后，实例那边只有当
   /// **真的收到一封外部来信**时才会去打它，打不通也只在自己的日志里留
   /// 一行。用户在这一头什么都看不到，只能一直等一封不会来的通知。
   ///
-  /// [webhookUrl] 是用户在实例后台**准备粘贴**的地址；传空串表示只验配对码。
+  /// ## 为什么送的是 [deviceCode] 而不是 webhookSecret
+  ///
+  /// 这两个凭证在拆开之后**权限不重叠**（见 `docs/push-setup.md`（「两把钥匙」那一节））：
+  /// [deviceCode] 是 App 自己那份（可以公开），webhookSecret 只有中转位的
+  /// 创建者 / 实例管理员才有。App 自检要问的是「我这份设备码对不对」，
+  /// 所以送 [deviceCode]，中转端回 [RelayVerifyResult.codeOk]。
+  ///
+  /// [webhookSecret] 仍然留在参数里，只给「手里真的拿到了 secret 的人」
+  /// 用（老 App 走的就是这条，行为不变）；两者都送时中转端会分别判。
+  ///
+  /// [webhookUrl] 是用户在实例后台**准备粘贴**的地址；传空串表示只验凭证。
   Future<RelayVerifyResult> verifyWebhook({
     required String instanceId,
-    required String webhookSecret,
+    required String deviceCode,
+    String? webhookSecret,
     String webhookUrl = '',
   }) async {
     final data = await _post('/verify-webhook', <String, dynamic>{
       'instanceId': instanceId,
-      if (webhookSecret.isNotEmpty) 'webhookSecret': webhookSecret,
+      if (deviceCode.isNotEmpty) 'deviceCode': deviceCode,
+      if (webhookSecret != null && webhookSecret.isNotEmpty)
+        'webhookSecret': webhookSecret,
       if (webhookUrl.isNotEmpty) 'webhookUrl': webhookUrl,
     });
     return RelayVerifyResult.fromJson(
@@ -192,15 +210,23 @@ class RelayClient {
   }
 
   /// 补拉事件（推送丢了之后的兜底）。游标是 `emailId`。
+  ///
+  /// [deviceId] **必填**：中转端只回**这台设备登记过的那些邮箱**的事件
+  /// （契约 §3.3）。少了它中转端直接 400，而「一个邮箱都没登记」是 200 + 空
+  /// 列表 —— 两种结果在界面上不该长得一样。
   Future<RelayEventsPage> events({
     required String instanceId,
     required String deviceToken,
+    required String deviceId,
     required int since,
     String? mailboxEmail,
     int limit = 50,
   }) async {
     final query = <String, dynamic>{
       'instanceId': instanceId,
+      // 设备号不是秘密（它就是本机生成的、带实例位前缀的那个值），
+      // 放 query 让 curl 调试也能复现；头上再放一份，中转端两处都认。
+      'deviceId': deviceId,
       'since': '$since',
       'limit': '$limit',
       if (mailboxEmail != null && mailboxEmail.isNotEmpty)
@@ -211,7 +237,10 @@ class RelayClient {
     final data = await _get(
       '/events',
       query: query,
-      headers: <String, dynamic>{'Authorization': deviceToken},
+      headers: <String, dynamic>{
+        'Authorization': deviceToken,
+        'X-Device-Id': deviceId,
+      },
     );
     final map = (data is Map) ? data : const <String, dynamic>{};
     final list = map['events'];
@@ -308,13 +337,19 @@ class RelayHealth {
 
 /// `/admin/instances` 开出来的一个实例位。
 ///
-/// [webhookSecret] 是**唯一一次**能拿到它的机会（中转端落库后连管理员也读不回来），
-/// 调用方拿到之后必须立刻存进 `TokenStore`，不能只留在内存里 ——
-/// 用户关掉这一页再进来，这个值就永久丢失了，只能轮换一个新的。
+/// [deviceCode] 与 [webhookSecret] 都是**唯一一次**能拿到它们的机会（中转端
+/// 落库后连管理员也读不回来），但两边的处理**刻意不同**：
+///
+/// - [deviceCode]（设备配对码）是 App 自己的凭证，可以公开，调用方把它当作
+///   「配对码」存进 `TokenStore`（注册 / 注销 / 读事件都用它）；
+/// - [webhookSecret] 是实例后台要填的那个密钥，权限比设备配对码大得多
+///   （能伪造 webhook）。它**不进 prefs、不进 `TokenStore`**，只在本次
+///   会话的内存里显示一次给用户看 —— 用户关掉这一页就只剩重置这一条路。
 class RelayInstance {
   const RelayInstance({
     required this.instanceId,
     required this.name,
+    required this.deviceCode,
     required this.webhookSecret,
     required this.webhookPath,
     required this.usingInstanceFcm,
@@ -322,13 +357,20 @@ class RelayInstance {
 
   final String instanceId;
   final String name;
+
+  /// App 侧凭证（设备配对码）。**可以公开**，内置进安装包也不算事故。
+  final String deviceCode;
+
+  /// 实例后台 webhook 要填的密钥。**绝不能落盘**，只显示一次。
   final String webhookSecret;
+
   final String webhookPath;
   final bool usingInstanceFcm;
 
   factory RelayInstance.fromJson(Map<dynamic, dynamic> json) => RelayInstance(
         instanceId: json['instanceId']?.toString() ?? '',
         name: json['name']?.toString() ?? '',
+        deviceCode: json['deviceCode']?.toString() ?? '',
         webhookSecret: json['webhookSecret']?.toString() ?? '',
         webhookPath: json['webhookPath']?.toString() ?? '',
         usingInstanceFcm: json['usingInstanceFcm'] == true,
@@ -337,14 +379,21 @@ class RelayInstance {
 
 /// `/verify-webhook` 的结论。
 ///
-/// 三个字段各自是**独立的一件事实**，不要合成一个 bool：「配对码对不对」
+/// 三个字段各自是**独立的一件事实**，不要合成一个 bool：「凭证对不对」
 /// 和「地址填得对不对」是两次不同的手滑，用户得知道该改哪一个。
+///
+/// 凭证这一类有**两个**字段，因为中转端按调用方送的是哪一种分别回：
+/// - [codeOk] 送 `deviceCode` 时才有值；
+/// - [secretOk] 送 `webhookSecret` 时才有值（老 App 走这条）。
+/// 两个都可能是 `null`（一个都没送），所以判断「通没通」要合成一个值，
+/// 合成规则见 [credentialOk]。
 class RelayVerifyResult {
   const RelayVerifyResult({
     required this.instanceId,
     required this.name,
     required this.webhookUrl,
     required this.webhookPath,
+    required this.codeOk,
     required this.secretOk,
     required this.urlOk,
     required this.lastEventAt,
@@ -361,7 +410,12 @@ class RelayVerifyResult {
   /// 只要路径部分（相对中转地址）。
   final String webhookPath;
 
-  /// 配对码是不是这个位的 secret。null = 这次没送 secret 过来。
+  /// 送过去的**设备配对码**对不对。null = 这次没送设备配对码。
+  final bool? codeOk;
+
+  /// 送过去的 **webhookSecret** 对不对。null = 这次没送 webhookSecret。
+  ///
+  /// 保留它是为了老调用方的兼容；App 自己现在送的是 [codeOk] 那一条。
   final bool? secretOk;
 
   /// 送过来的地址路径对不对。null = 这次没送地址。
@@ -379,16 +433,22 @@ class RelayVerifyResult {
         name: json['name']?.toString() ?? '',
         webhookUrl: json['webhookUrl']?.toString() ?? '',
         webhookPath: json['webhookPath']?.toString() ?? '',
+        codeOk: json['codeOk'] is bool ? json['codeOk'] as bool : null,
         secretOk: json['secretOk'] is bool ? json['secretOk'] as bool : null,
         urlOk: json['urlOk'] is bool ? json['urlOk'] as bool : null,
         lastEventAt: json['lastEventAt']?.toString(),
       );
 
+  /// 凭证这一件事实的合成值 —— 送了哪种就取哪种（`codeOk` 优先）。
+  ///
+  /// `null` 表示两种都没送：那不是「通过」，只是「没问」。
+  bool? get credentialOk => codeOk ?? secretOk;
+
   /// 两个已知的检查项是不是都过了。
   ///
   /// `null`（没送那一项）**不算通过**：这个 getter 是拿来做 UI 判断的，
   /// 「没问」和「问过且对」不是一回事。
-  bool get allOk => secretOk == true && urlOk == true;
+  bool get allOk => credentialOk == true && urlOk == true;
 }
 
 class RelayEventsPage {
@@ -404,6 +464,11 @@ class RelayEventsPage {
 }
 
 /// 中转端补拉回来的一条事件（**只有元数据**，正文在实例那边）。
+///
+/// 拆分之后这条路的可见范围收窄了：中转端只回**这台设备（`deviceId`）在
+/// `devices` 表里登记过的那些邮箱**的事件，调用方再带 `mailboxEmail` 时
+/// 与那个集合取交集。所以 [code] 这类字段只会出现在用户自己订阅过的邮箱
+/// 的事件里 —— 它不再是「任何人凭实例位就能读到全实例验证码」的入口。
 class RelayEvent {
   const RelayEvent({
     required this.instanceId,
