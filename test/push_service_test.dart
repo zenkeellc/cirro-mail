@@ -656,16 +656,111 @@ void main() {
       await Future<void>.delayed(Duration.zero);
     });
   });
+
+  // 拆分之后 App 自检送的是**设备配对码**（`deviceCode`），不是
+  // webhookSecret —— 后者权限大得多，App 没有理由拿着它去自检。
+  group('/verify-webhook 送的是设备配对码', () {
+    test('送 deviceCode、不送 webhookSecret，并能读出 codeOk', () async {
+      final keychain = fakeKeychain(initial: <String, String>{
+        'push_inst-1': 'device-code-1',
+      });
+      final adapter = _FakeAdapter(
+        respond: (path) => path == '/verify-webhook'
+            ? <String, Object?>{
+                'code': 200,
+                'data': <String, Object?>{
+                  'instanceId': 'inst-1',
+                  'name': 'my box',
+                  'webhookUrl': 'https://push.example.com/inst-1/webhook',
+                  'webhookPath': '/inst-1/webhook',
+                  'codeOk': true,
+                  'secretOk': null,
+                  'urlOk': true,
+                  'lastEventAt': null,
+                },
+              }
+            : null,
+      );
+      final push = await service(
+        prefs: _configuredPrefs,
+        clientFactory: (baseUrl) => RelayClient(baseUrl: baseUrl, dio: adapter.dio()),
+      );
+
+      final result = await push.verifyWebhook(
+        webhookUrl: 'https://push.example.com/inst-1/webhook',
+      );
+
+      expect(adapter.paths, <String>['/verify-webhook']);
+      final body = adapter.requests.single.body;
+      expect(body['instanceId'], 'inst-1');
+      expect(body['deviceCode'], 'device-code-1',
+          reason: 'App 存的配对码现在是 deviceCode，送出去的就是它');
+      expect(body.containsKey('webhookSecret'), isFalse,
+          reason: 'App 自己不该拿 webhookSecret 去自检');
+      expect(body['webhookUrl'], 'https://push.example.com/inst-1/webhook');
+
+      expect(result.codeOk, isTrue);
+      expect(result.secretOk, isNull);
+      expect(result.credentialOk, isTrue, reason: '取了 codeOk');
+      expect(result.allOk, isTrue);
+      // 钥匙串里存的还是 deviceCode，没被 webhookSecret 顶掉。
+      expect(keychain['push_inst-1'], 'device-code-1');
+    });
+
+    test('老中转端只回 secretOk 时，credentialOk 回落到它', () {
+      const old = RelayVerifyResult(
+        instanceId: 'inst-1',
+        name: '',
+        webhookUrl: 'https://push.example.com/inst-1/webhook',
+        webhookPath: '/inst-1/webhook',
+        codeOk: null,
+        secretOk: true,
+        urlOk: true,
+        lastEventAt: null,
+      );
+      expect(old.credentialOk, isTrue);
+      expect(old.allOk, isTrue);
+    });
+  });
+
+  // `/events` 现在必须带 deviceId —— 中转端只回这台设备登记过的邮箱的事件。
+  // 少了它中转端回 400，补拉这条兜底路径等于废了。
+  group('/events 必须带 deviceId', () {
+    test('deviceId 进 query，deviceToken 走 Authorization 头', () async {
+      final adapter = _FakeAdapter();
+      final client = RelayClient(
+        baseUrl: 'https://push.example.com',
+        dio: adapter.dio(),
+      );
+
+      await client.events(
+        instanceId: 'inst-1',
+        deviceToken: 'device-code-1',
+        deviceId: 'inst-1-abc',
+        since: 7,
+      );
+
+      expect(adapter.paths, <String>['/events']);
+      final uri = adapter.uris.single;
+      expect(uri.queryParameters['deviceId'], 'inst-1-abc');
+      expect(uri.queryParameters['instanceId'], 'inst-1');
+      expect(uri.queryParameters['since'], '7');
+      expect(adapter.headers.single['Authorization'], 'device-code-1');
+    });
+  });
 }
 
 /// 按路径给一份信封。返回 null 走默认的「200 空数据」。
 typedef _Respond = Map<String, Object?>? Function(String path);
 
-/// 只回预设信封的适配器，并把每一次请求的路径与 body 记下来。
+/// 只回预设信封的适配器，并把每一次请求的路径、query 与 body 记下来。
 ///
 /// 这台设备在测试里拿不到 FCM token（那是插件的平台通道，且是私有字段），
 /// 所以「登记成功」这一步单独测不了；这里能钉住的是**出站形状** ——
 /// 而那正是本次 bug 逃过单测的地方。
+///
+/// 除了 body 还记完整 `Uri`：`/events` 的 `deviceId` 走的是 query
+/// （见 `RelayClient.events`），光看路径断不出它有没有带。
 class _FakeAdapter implements HttpClientAdapter {
   _FakeAdapter({this._respond});
 
@@ -673,6 +768,12 @@ class _FakeAdapter implements HttpClientAdapter {
 
   final List<({String path, Map<String, dynamic> body})> requests =
       <({String path, Map<String, dynamic> body})>[];
+
+  /// 每一次请求的完整 URI（含 query），与 [requests] 一一对应。
+  final List<Uri> uris = <Uri>[];
+
+  /// 每一次请求的头，与 [requests] 一一对应。
+  final List<Map<String, dynamic>> headers = <Map<String, dynamic>>[];
 
   List<String> get paths =>
       requests.map((r) => r.path).toList(growable: false);
@@ -707,6 +808,8 @@ class _FakeAdapter implements HttpClientAdapter {
         : jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
     final path = options.uri.path;
     requests.add((path: path, body: decoded));
+    uris.add(options.uri);
+    headers.add(Map<String, dynamic>.of(options.headers));
 
     final body = (_respond?.call(path) ??
         <String, Object?>{'code': 200, 'data': <String, Object?>{}});

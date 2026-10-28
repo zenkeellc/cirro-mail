@@ -13,7 +13,7 @@ enum PushPage {
   /// ① 现在通没通：平台 / 配置 / 登记三条状态 + 已登记邮箱。
   status,
 
-  /// ② 中转地址、实例位、配对码三条值的填写与保存。
+  /// ② 中转地址、实例位、设备配对码三条值的填写与保存。
   ///
   /// 名字不叫 `values`：那个名字在 enum 上是**保留的**（隐式的
   /// `PushPage.values` 列表），声明同名成员会让「按顺序遍历所有页」没法写。
@@ -28,7 +28,7 @@ enum PushPage {
   /// ⑤ 把两条值填进**实例后台**（唯一的手工步骤）。
   instance,
 
-  /// ⑥ 一次问清整条链路：中转通不通、配对码对不对、地址对不对、
+  /// ⑥ 一次问清整条链路：中转通不通、设备配对码对不对、地址对不对、
   /// 最近有没有真的收到过信。
   check,
 
@@ -71,7 +71,7 @@ class PushFacts {
   final String relayUrl;
   final String instanceId;
 
-  /// 配对码在密钥库里，读出来才知道有没有。
+  /// 设备配对码在密钥库里，读出来才知道有没有。
   final bool hasPairingCode;
 
   /// 设备号有没有带对的实例位前缀。它对不上时中转端会 401。
@@ -86,7 +86,7 @@ class PushFacts {
   ///
   /// 这一页 App 完全验证不了，所以判据只能是「用户说了他做了」——
   /// 但那个确认**绑定在他当时填的三条值上**（见 `TokenStore` 里那份
-  /// 见证值的说明）：改了地址或配对码，这份确认就该作废，因为要重新
+  /// 见证值的说明）：改了地址或实例位，这份确认就该作废，因为要重新
   /// 在实例后台填一遍。
   final bool instanceConfirmed;
 
@@ -138,6 +138,34 @@ bool? pageDone(PushPage page, PushFacts facts, {bool? chainVerified}) =>
       // 读一遍就算数。
       PushPage.limits => true,
     };
+
+/// 第 ⑥ 页那次「检查整条链路」**这一把算不算通过**。
+///
+/// 判据按 `docs/push-setup.md`（「两把钥匙」那一节） §4 定：
+///
+/// ```text
+/// (codeOk ?? secretOk) != false && urlOk != false && fcmConfigured
+/// ```
+///
+/// 几处细节都是刻意的：
+///
+/// - **凭证那一项取 [codeOk] 优先**：App 现在送的是设备配对码，中转端回的
+///   就是 `codeOk`；`secretOk` 只在老 App（送 webhookSecret）或更老的中转端
+///   （只会回 `secretOk`）那一侧出现。两者都 `null`（没问）按「不拦」处理
+///   —— `!= false` 而不是 `== true`，与拆分之前的判据一致。
+/// - **地址那一项同理**：`urlOk == null`（没送地址）不拦。
+/// - **FCM 必须是真的有**：前两项全对但中转端没服务账号，推送一条也发不
+///   出去，那种「全绿」是最误导人的一种。
+///
+/// 抽成纯函数只为了能单测：第 ⑥ 页的判据散在 `_chainCheck`（决定存不存
+/// 见证值）与 `_chainVerified`（决定圆圈打不打勾）两处，**必须是同一个**。
+bool chainCheckPassed({
+  required bool? codeOk,
+  required bool? secretOk,
+  required bool? urlOk,
+  required bool fcmConfigured,
+}) =>
+    (codeOk ?? secretOk) != false && urlOk != false && fcmConfigured;
 
 /// 这一页在向导里的序号（从 0 数），用于进度条。
 int pageIndexOf(PushPage page) => page.index;

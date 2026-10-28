@@ -157,7 +157,7 @@ class _PushCopyRowState extends State<PushCopyRow> {
 /// 自检结论。三件事分开列 —— 合成一个「失败」会让用户不知道该改哪一处。
 ///
 /// 第 ⑥ 页把那一次「检查整条链路」拆成两段问中转端：`/health`（中转活着吗、
-/// 有没有 FCM 服务账号）与 `/verify-webhook`（配对码与地址对不对）。两段
+/// 有没有 FCM 服务账号）与 `/verify-webhook`（设备配对码与地址对不对）。两段
 /// 的结论都要落到同一个地方 —— 分成两处显示的话，「哪一条不对」又变成
 /// 用户自己拼的了。所以 [health] 是可选的补充，不是第二套组件。
 class PushSelfCheckResult extends StatelessWidget {
@@ -171,15 +171,19 @@ class PushSelfCheckResult extends StatelessWidget {
   final RelayVerifyResult result;
   final AppLocalizations l10n;
 
-  /// `/health` 的结论。传 null 就只说配对码与地址那两条。
+  /// `/health` 的结论。传 null 就只说凭证与地址那两条。
   final RelayHealth? health;
 
   @override
   Widget build(BuildContext context) {
     final lines = <({String text, PushTone tone})>[];
-    // 只数「配对码 / 地址」那一组。中转那两行不算进来，否则下面那个
-    // `isEmpty` 判断会被它们顶掉，永远说不出「配对码与地址都对上了」。
+    // 只数「凭证 / 地址」那一组。中转那两行不算进来，否则下面那个
+    // `isEmpty` 判断会被它们顶掉，永远说不出「凭证与地址都对上了」。
     var credentialLines = 0;
+
+    // 凭证那一项：App 现在送的是设备配对码，中转端回 `codeOk`；`secretOk`
+    // 只在老 App / 老中转端那一侧出现（见 `RelayVerifyResult`）。
+    final codeOk = result.credentialOk;
 
     // 中转这一层排在最前面：它不通的话，下面两条根本问不出来。
     final health = this.health;
@@ -192,7 +196,7 @@ class PushSelfCheckResult extends StatelessWidget {
       );
     }
 
-    if (result.secretOk == false) {
+    if (codeOk == false) {
       lines.add((text: l10n.pushSelfCheckSecretBad, tone: PushTone.warn));
       credentialLines++;
     }
@@ -200,10 +204,10 @@ class PushSelfCheckResult extends StatelessWidget {
       lines.add((text: l10n.pushSelfCheckUrlBad, tone: PushTone.warn));
       credentialLines++;
     }
-    if (credentialLines == 0 && result.secretOk != null && result.urlOk != null) {
+    if (credentialLines == 0 && codeOk != null && result.urlOk != null) {
       // 两个字段都是 null 时那不是「通过」，只是「没问」—— 所以只有真的
       // 拿到过答案、且都没问题才说 ok。
-      final verified = result.secretOk == true || result.urlOk == true;
+      final verified = codeOk == true || result.urlOk == true;
       lines.add((
         text: verified ? l10n.pushSelfCheckOk : l10n.pushNeedLoginFirst,
         tone: verified ? PushTone.ok : PushTone.info,

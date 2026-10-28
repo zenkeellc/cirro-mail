@@ -96,9 +96,9 @@ void resetBackgroundForTesting() {
 ///    平台上推送只能靠轮询。macOS 是支持的，但要自己塞
 ///    `GoogleService-Info.plist`（见 [_hasConfigFile]），**还要**有带
 ///    Push Notifications 的 entitlements 与 Mac 描述文件（见 [initialize]）。
-/// 2. **配没配**（[relayUrl]/[instanceId]/配对码）：用户有没有在中转端开位、
+/// 2. **配没配**（[relayUrl]/[instanceId]/设备配对码）：用户有没有在中转端开位、
 ///    有没有把三条值填进来。没配就是没配，不该报错。
-/// 3. **注册成不成功**：网络、FCM token 拿不拿得到、中转端认不认配对码。
+/// 3. **注册成不成功**：网络、FCM token 拿不拿得到、中转端认不认设备配对码。
 ///
 /// 这三层任意一层不满足都只是「没有推送」，**轮询照跑**（那是 [SyncEngine]
 /// 的事，跟这里无关）。所以本类的每个方法都不抛异常，只返回结果对象 ——
@@ -215,7 +215,7 @@ class PushService {
   /// 这时候配置不该丢，也不该在启动时去注册。
   bool get enabled => _prefs.pushEnabled;
 
-  /// 有没有配对码（配对码在密钥库里，读起来是异步的）。
+  /// 有没有设备配对码（它在密钥库里，读起来是异步的）。
   Future<bool> hasPairingCode() async {
     if (!isConfigured) return false;
     return await _tokens.readPushToken(instanceId) != null;
@@ -623,7 +623,7 @@ class PushService {
 
     final deviceToken = await _tokens.readPushToken(instanceId);
     if (deviceToken == null) {
-      return const PushSyncResult(ok: false, message: '缺少配对码');
+      return const PushSyncResult(ok: false, message: '缺少设备配对码');
     }
 
     final client = _client();
@@ -720,23 +720,27 @@ class PushService {
 
   /// 配对码（在密钥库里，所以是异步的）。
   ///
-  /// 它**同时就是**实例后台要填的 webhook secret，所以设置页必须能把它
-  /// 显示出来供复制 —— 用户拿不到它就没法把 webhook 配起来，而这一步
-  /// 只能他自己在另一个网站做。
+  /// 拆分之后它的语义是**设备配对码**（中转端的 `device_code`），只用来
+  /// 注册 / 注销 / 读事件。它**不是**实例后台要填的 webhook secret ——
+  /// 后者是另一个凭证，App 只在「本次会话一键开通真的拿回来了」时短暂
+  /// 显示一次，不落盘，也不归这里管。
   Future<String?> pairingCode() async {
     if (!isConfigured) return null;
     return _tokens.readPushToken(instanceId);
   }
 
-  /// 自检：拿配对码问中转端「实例后台该怎么填」。
+  /// 自检：拿**设备配对码**问中转端「这个位认不认我、地址该怎么填」。
   ///
   /// 之所以要做成一次**主动**的往返，而不是在本地拼一串字符串给用户看：
   /// 地址对不对是个只有中转端知道答案的问题（它知道自己的 `instanceId`
   /// 和路径规则），而用户填错的后果是**静默的** —— 实例那边只有真收到
   /// 外部来信时才会去打 webhook，打不通也只在自己日志里留一行。
   ///
+  /// 送出去的是 `deviceCode`（App 那份凭证），不是 webhookSecret：两者
+  /// 拆开之后权限不重叠，App 没有理由、也不该拿着 secret 去自检。
+  ///
   /// [webhookUrl] 传用户在实例后台里**已经填/准备填**的那个值，
-  /// 让中转端顺手比一下路径；传空串就只验配对码。
+  /// 让中转端顺手比一下路径；传空串就只验凭证。
   Future<RelayVerifyResult> verifyWebhook({String webhookUrl = ''}) async {
     final client = _client();
     if (client == null) {
@@ -744,11 +748,11 @@ class PushService {
     }
     final code = await _tokens.readPushToken(instanceId);
     if (code == null) {
-      throw const ApiException(code: 401, message: '还没有配对码');
+      throw const ApiException(code: 401, message: '还没有设备配对码');
     }
     return client.verifyWebhook(
       instanceId: instanceId,
-      webhookSecret: code,
+      deviceCode: code,
       webhookUrl: webhookUrl,
     );
   }

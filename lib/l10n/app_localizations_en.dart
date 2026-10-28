@@ -169,11 +169,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'The id your deployment\'s /admin/instances created';
 
   @override
-  String get pushPairingCode => 'Pairing code';
+  String get pushPairingCode => 'Device pairing code';
 
   @override
   String get pushPairingCodeHint =>
-      'Shown once when the slot was created; rotate if you lost it';
+      'Shown once when the slot was created; it\'s safe to share — it only registers this device. Ask the slot admin to rotate if lost';
 
   @override
   String get pushDeviceId => 'Device id';
@@ -223,7 +223,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushWebhookHint =>
-      'Paste these two into the \"Webhook push\" settings of *your* cloud-mail instance, then turn that switch on. This step can only be done by you — the relay doesn\'t know the instance\'s login system and can\'t do it for you.';
+      'Paste the webhook URL below into the \"Webhook push\" settings of *your* cloud-mail instance, then turn that switch on; see the note below about the secret field. This step can only be done by you — the relay doesn\'t know the instance\'s login system and can\'t do it for you.';
 
   @override
   String get pushWebhookUrl => 'Webhook URL';
@@ -232,7 +232,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pushWebhookSecret => 'Webhook secret';
 
   @override
-  String get pushWebhookNoSecret => 'No pairing code yet, so no secret to show';
+  String get pushWebhookSecretCustodian =>
+      'The webhook secret is held by whoever created the relay slot — the app neither stores nor shows it.';
+
+  @override
+  String get pushWebhookSecretOnce =>
+      'The webhook secret is shown only this once: copy it now and paste it into the instance admin; it\'s gone as soon as you leave this page.';
 
   @override
   String get pushCopy => 'Copy';
@@ -244,11 +249,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pushChecking => 'Checking…';
 
   @override
-  String get pushSelfCheckOk => 'Pairing code and URL both check out';
+  String get pushSelfCheckOk => 'Device pairing code and URL both check out';
 
   @override
   String get pushSelfCheckSecretBad =>
-      'Wrong pairing code — this slot\'s secret was rotated; get a fresh one';
+      'Wrong device pairing code — this slot\'s code was rotated; get a fresh one';
 
   @override
   String get pushSelfCheckUrlBad =>
@@ -265,7 +270,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushNeedLoginFirst =>
-      'Fill in the pairing code and slot id above first, so the self-check knows what to ask about.';
+      'Fill in the device pairing code and slot id above first, so the self-check knows what to ask about.';
 
   @override
   String get pushLimits => 'Limits (worth knowing up front)';
@@ -339,7 +344,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushPageValuesBody =>
-      'All three come from the relay: the URL is the worker\'s domain, the slot id is the slot it created for you, and the pairing code is shown once, at creation.';
+      'All three come from the relay: the URL is the worker\'s domain, the slot id is the slot it created for you, and the device pairing code is shown once, at creation.';
 
   @override
   String get pushPageValuesSave => 'Save these three values';
@@ -349,7 +354,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushPageValuesKeep =>
-      'The pairing code is shown once, when a slot is created; neither backend can read it back. If you lose it, rotate the slot.';
+      'The device pairing code is shown once, when a slot is created; nobody can read it back. If you lose it, have the slot admin rotate a new one.';
 
   @override
   String get pushPageValuesProvision => 'I run the relay — create a new slot';
@@ -414,16 +419,21 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String pushPageWebhookRelayMessageNoSecret(String url) {
+    return 'Please open \"Webhook push\" in the cloud-mail instance admin, fill in the URL $url, and turn that switch on. The webhook secret has to be obtained separately from whoever created the relay slot (the app doesn\'t show it). New mail can only reach my phone after that.';
+  }
+
+  @override
   String get pushPageWebhookStatus0 =>
       'Note: that switch is stored as webhookStatus, and 0 means enabled — the field name reads backwards, so it is the first suspect when nothing arrives.';
 
   @override
   String get pushPageWebhookConfirm =>
-      'I\'ve filled in both values in the instance admin, and turned Webhook push on';
+      'I\'ve filled in the URL in the instance admin (and the secret, if I have it), and turned Webhook push on';
 
   @override
   String get pushPageWebhookConfirmed =>
-      'Confirmed. Change the URL or the pairing code above and this step needs confirming again.';
+      'Confirmed. Change the URL or the slot id above and this step needs confirming again.';
 
   @override
   String get pushPageWebhookUnconfirmed =>
@@ -466,7 +476,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushPageCheckBody =>
-      'One pass answers four things: can the relay be reached, does it have FCM, is this pairing code right, and is the URL saved in your instance correct.';
+      'One pass answers four things: can the relay be reached, does it have FCM, is this device pairing code right, and is the URL saved in your instance correct.';
 
   @override
   String get pushPageCheckAction => 'Check this chain';
@@ -1425,7 +1435,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushAutoProvisionDone =>
-      'Provisioned — instance id and pairing code filled in';
+      'Provisioned — slot id and device pairing code filled in; the webhook secret is shown once below';
+
+  @override
+  String get pushAutoProvisionNoDeviceCode =>
+      'The slot was created, but the relay didn\'t return a device pairing code (it may be an older version) — upgrade mail-push first, or enter the device pairing code manually';
 
   @override
   String get sendDelay => 'Send delay';
@@ -1489,7 +1503,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushBuiltInApplied =>
-      'Pre-filled from this build; the pairing code is stored in the keychain only.';
+      'Pre-filled from this build; the device pairing code is stored in the keychain only.';
 
   @override
   String get aiTitle => 'AI';

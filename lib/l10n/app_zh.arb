@@ -74,8 +74,8 @@
   "pushRelayUrlHint": "自建的 mail-push Worker，形如 https://push.example.com",
   "pushInstanceId": "实例位 id",
   "pushInstanceIdHint": "部署者在中转端 /admin/instances 开的那个 id",
-  "pushPairingCode": "配对码",
-  "pushPairingCodeHint": "开实例位时只显示一次，丢了就重新轮换",
+  "pushPairingCode": "设备配对码",
+  "pushPairingCodeHint": "开实例位时显示一次；它可以公开，只用来登记这台设备。丢了让中转位管理员轮换",
   "pushDeviceId": "设备号",
   "pushDeviceIdHint": "本机自动生成、并且带实例位前缀，不需要你改。排查时有用：中转端就是靠它认这台设备的。",
   "pushEnable": "开启后台推送",
@@ -89,15 +89,16 @@
   "pushNotConfigured": "还没有填中转配置，当前只能靠 App 在运行时收信。",
   "pushNoFirebaseConfig": "这份构建里没有 Firebase 配置文件（google-services.json / GoogleService-Info.plist），FCM 不可用。需要你先在 Firebase 建项目再重新构建。",
   "pushRelayFcmMissing": "中转端没有配 FCM 服务账号，推送发不出去。",
-  "pushWebhookHint": "把下面两条填进**你那个 cloud-mail 实例**后台的「Webhook 推送」里，再把开关打开。这一步只能你自己做：中转端不认识实例的登录体系，替不了。",
+  "pushWebhookHint": "把下面的 Webhook 地址填进**你那个 cloud-mail 实例**后台的「Webhook 推送」里，再把开关打开；密钥那一栏见下方说明。这一步只能你自己做：中转端不认识实例的登录体系，替不了。",
   "pushWebhookUrl": "Webhook 地址",
   "pushWebhookSecret": "Webhook 密钥",
-  "pushWebhookNoSecret": "还没有配对码，拿不到密钥",
+  "pushWebhookSecretCustodian": "Webhook 密钥由中转位的创建者保管 —— App 里不存、也不显示它。",
+  "pushWebhookSecretOnce": "Webhook 密钥只显示这一次：现在复制走填进实例后台，离开这一页就再也看不到了。",
   "pushCopy": "复制",
   "pushCopied": "已复制",
   "pushChecking": "自检中…",
-  "pushSelfCheckOk": "配对码与地址都对上了",
-  "pushSelfCheckSecretBad": "配对码不对 —— 这个实例位的密钥已经轮换过，去重新要一个",
+  "pushSelfCheckOk": "设备配对码与地址都对上了",
+  "pushSelfCheckSecretBad": "设备配对码不对 —— 这个实例位的设备码轮换过了，去重新要一个",
   "pushSelfCheckUrlBad": "地址填错了 —— 要带上 /<实例位>/webhook 这一段",
   "pushSelfCheckNoEventYet": "配置看着没问题，但这个位还没有真的收到过来信 —— 记得去实例后台保存并打开开关。",
   "pushSelfCheckGotEvent": "最近一次收到 webhook：{time}",
@@ -108,7 +109,7 @@
       }
     }
   },
-  "pushNeedLoginFirst": "先在上面把配对码和实例位填好，自检才知道要问哪一条。",
+  "pushNeedLoginFirst": "先在上面把设备配对码和实例位填好，自检才知道要问哪一条。",
   "pushLimits": "限制（先说清楚，免得白等）",
   "pushLimit1": "只覆盖外部来信：站内互发、以及别的客户端发出的信不触发推送，只有轮询能收到。",
   "pushLimit2": "实例若把收信规则设成「按规则收信」，webhook 完全不触发。",
@@ -146,10 +147,10 @@
   "pushPageStatusOff": "总开关是关着的 —— 下面这些都不会发生。",
   "pushPageStatusGo": "去把开关打开",
   "pushPageValuesTitle": "把三条值填进来",
-  "pushPageValuesBody": "三条都从中转端来：地址是那个 Worker 的域名，实例位是它给你开的位置，配对码只在开位那一刻显示一次。",
+  "pushPageValuesBody": "三条都从中转端来：地址是那个 Worker 的域名，实例位是它给你开的位置，设备配对码只在开位那一刻显示一次。",
   "pushPageValuesSave": "保存这三条值",
   "pushPageValuesSaved": "已保存",
-  "pushPageValuesKeep": "配对码只在开实例位时显示一次，之后两端都读不回来。丢了只能重新轮换。",
+  "pushPageValuesKeep": "设备配对码只在开实例位时显示一次，之后没人能读回来。丢了让中转位的管理员轮换一份新的。",
   "pushPageValuesProvision": "中转是我部署的 —— 现开一个实例位",
   "pushPageEnableTitle": "打开「后台推送」",
   "pushPageEnableBody": "这个开关只管 App 不在前台时要不要提醒；前台收信、轮询、应用内提醒都不受影响。",
@@ -177,9 +178,17 @@
       }
     }
   },
+  "pushPageWebhookRelayMessageNoSecret": "麻烦在 cloud-mail 实例后台的「Webhook 推送」里填上地址 {url}，并把那一栏的开关打开。Webhook 密钥要单独向中转位的创建者要（App 里不显示），填好之后新邮件才能推到我的手机上。",
+  "@pushPageWebhookRelayMessageNoSecret": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
   "pushPageWebhookStatus0": "提醒：那个开关在库里叫 webhookStatus，0 才是「启用」，字段名与直觉相反 —— 收不到推送时第一嫌疑永远是它。",
-  "pushPageWebhookConfirm": "我已经在实例后台填好这两条，并把 Webhook 推送开关打开了",
-  "pushPageWebhookConfirmed": "已确认过。上面的地址或配对码改过之后，这一步要重新确认一次。",
+  "pushPageWebhookConfirm": "我已经在实例后台填好地址（和密钥，如果你拿到了），并把 Webhook 推送开关打开了",
+  "pushPageWebhookConfirmed": "已确认过。上面的地址或实例位改过之后，这一步要重新确认一次。",
   "pushPageWebhookUnconfirmed": "你在另一个网站上做的事，App 看不到，所以这一步得你自己点一下那个勾；不点的话它会一直显示成「没做」。",
   "pushPageWebhookEvidence": "中转端已经真的收到过 webhook（{time}）—— 这一步通了，不需要再确认。",
   "@pushPageWebhookEvidence": {
@@ -211,7 +220,7 @@
   "pushUnregistering": "退订中…",
   "pushRefreshing": "刷新中…",
   "pushPageCheckTitle": "检查这条链路",
-  "pushPageCheckBody": "一次问清四件事：中转连不连得上、它有没有配 FCM、这个配对码对不对、实例后台里那个地址填对没有。",
+  "pushPageCheckBody": "一次问清四件事：中转连不连得上、它有没有配 FCM、这个设备配对码对不对、实例后台里那个地址填对没有。",
   "pushPageCheckAction": "检查这条链路",
   "pushPageCheckStale": "上面的值改过了 —— 再检查一次才会得到新的结论。",
   "pushPageCheckFcmOk": "中转端配了 FCM 服务账号",
@@ -797,7 +806,8 @@
   "pushAutoProvisionHint": "用部署者的管理员口令为本机开一个中转实例位。口令只用于这一次请求，不落 prefs、不进钥匙串、不写日志。",
   "pushAdminToken": "管理员口令",
   "pushAdminTokenHint": "只在当前页面可见，离开即清空",
-  "pushAutoProvisionDone": "已开通，实例位与配对码已填好",
+  "pushAutoProvisionDone": "已开通，实例位与设备配对码已填好；Webhook 密钥在下方显示这一次",
+  "pushAutoProvisionNoDeviceCode": "实例位开好了，但中转端没有回设备配对码（它可能还是旧版本）—— 请先升级 mail-push，或手动填写设备配对码",
   "sendDelay": "发送延迟",
   "sendDelayHint": "点「发送」之后等这么久才真的发出去 —— 想反悔的话在这段时间里还来得及取消。",
   "sendDelayNone": "立即发送",
@@ -858,7 +868,7 @@
   "@pushAdminTokenNeeded": {
     "description": "push settings: pushAdminTokenNeeded"
   },
-  "pushBuiltInApplied": "已按本次构建的内置配置填好；配对码只存进钥匙串，不写 prefs。",
+  "pushBuiltInApplied": "已按本次构建的内置配置填好；设备配对码只存进钥匙串，不写 prefs。",
   "@pushBuiltInApplied": {
     "description": "push settings: pushBuiltInApplied"
   },

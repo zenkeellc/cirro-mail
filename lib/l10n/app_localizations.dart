@@ -401,13 +401,13 @@ abstract class AppLocalizations {
   /// No description provided for @pushPairingCode.
   ///
   /// In en, this message translates to:
-  /// **'Pairing code'**
+  /// **'Device pairing code'**
   String get pushPairingCode;
 
   /// No description provided for @pushPairingCodeHint.
   ///
   /// In en, this message translates to:
-  /// **'Shown once when the slot was created; rotate if you lost it'**
+  /// **'Shown once when the slot was created; it\'s safe to share — it only registers this device. Ask the slot admin to rotate if lost'**
   String get pushPairingCodeHint;
 
   /// No description provided for @pushDeviceId.
@@ -491,7 +491,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushWebhookHint.
   ///
   /// In en, this message translates to:
-  /// **'Paste these two into the \"Webhook push\" settings of *your* cloud-mail instance, then turn that switch on. This step can only be done by you — the relay doesn\'t know the instance\'s login system and can\'t do it for you.'**
+  /// **'Paste the webhook URL below into the \"Webhook push\" settings of *your* cloud-mail instance, then turn that switch on; see the note below about the secret field. This step can only be done by you — the relay doesn\'t know the instance\'s login system and can\'t do it for you.'**
   String get pushWebhookHint;
 
   /// No description provided for @pushWebhookUrl.
@@ -506,11 +506,17 @@ abstract class AppLocalizations {
   /// **'Webhook secret'**
   String get pushWebhookSecret;
 
-  /// No description provided for @pushWebhookNoSecret.
+  /// No description provided for @pushWebhookSecretCustodian.
   ///
   /// In en, this message translates to:
-  /// **'No pairing code yet, so no secret to show'**
-  String get pushWebhookNoSecret;
+  /// **'The webhook secret is held by whoever created the relay slot — the app neither stores nor shows it.'**
+  String get pushWebhookSecretCustodian;
+
+  /// No description provided for @pushWebhookSecretOnce.
+  ///
+  /// In en, this message translates to:
+  /// **'The webhook secret is shown only this once: copy it now and paste it into the instance admin; it\'s gone as soon as you leave this page.'**
+  String get pushWebhookSecretOnce;
 
   /// No description provided for @pushCopy.
   ///
@@ -533,13 +539,13 @@ abstract class AppLocalizations {
   /// No description provided for @pushSelfCheckOk.
   ///
   /// In en, this message translates to:
-  /// **'Pairing code and URL both check out'**
+  /// **'Device pairing code and URL both check out'**
   String get pushSelfCheckOk;
 
   /// No description provided for @pushSelfCheckSecretBad.
   ///
   /// In en, this message translates to:
-  /// **'Wrong pairing code — this slot\'s secret was rotated; get a fresh one'**
+  /// **'Wrong device pairing code — this slot\'s code was rotated; get a fresh one'**
   String get pushSelfCheckSecretBad;
 
   /// No description provided for @pushSelfCheckUrlBad.
@@ -563,7 +569,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushNeedLoginFirst.
   ///
   /// In en, this message translates to:
-  /// **'Fill in the pairing code and slot id above first, so the self-check knows what to ask about.'**
+  /// **'Fill in the device pairing code and slot id above first, so the self-check knows what to ask about.'**
   String get pushNeedLoginFirst;
 
   /// No description provided for @pushLimits.
@@ -689,7 +695,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageValuesBody.
   ///
   /// In en, this message translates to:
-  /// **'All three come from the relay: the URL is the worker\'s domain, the slot id is the slot it created for you, and the pairing code is shown once, at creation.'**
+  /// **'All three come from the relay: the URL is the worker\'s domain, the slot id is the slot it created for you, and the device pairing code is shown once, at creation.'**
   String get pushPageValuesBody;
 
   /// No description provided for @pushPageValuesSave.
@@ -707,7 +713,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageValuesKeep.
   ///
   /// In en, this message translates to:
-  /// **'The pairing code is shown once, when a slot is created; neither backend can read it back. If you lose it, rotate the slot.'**
+  /// **'The device pairing code is shown once, when a slot is created; nobody can read it back. If you lose it, have the slot admin rotate a new one.'**
   String get pushPageValuesKeep;
 
   /// No description provided for @pushPageValuesProvision.
@@ -812,6 +818,12 @@ abstract class AppLocalizations {
   /// **'Please open \"Webhook push\" in the cloud-mail instance admin, fill in the URL {url} and the secret {code}, and turn that switch on. New mail can only reach my phone after that.'**
   String pushPageWebhookRelayMessage(String url, String code);
 
+  /// No description provided for @pushPageWebhookRelayMessageNoSecret.
+  ///
+  /// In en, this message translates to:
+  /// **'Please open \"Webhook push\" in the cloud-mail instance admin, fill in the URL {url}, and turn that switch on. The webhook secret has to be obtained separately from whoever created the relay slot (the app doesn\'t show it). New mail can only reach my phone after that.'**
+  String pushPageWebhookRelayMessageNoSecret(String url);
+
   /// No description provided for @pushPageWebhookStatus0.
   ///
   /// In en, this message translates to:
@@ -821,13 +833,13 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageWebhookConfirm.
   ///
   /// In en, this message translates to:
-  /// **'I\'ve filled in both values in the instance admin, and turned Webhook push on'**
+  /// **'I\'ve filled in the URL in the instance admin (and the secret, if I have it), and turned Webhook push on'**
   String get pushPageWebhookConfirm;
 
   /// No description provided for @pushPageWebhookConfirmed.
   ///
   /// In en, this message translates to:
-  /// **'Confirmed. Change the URL or the pairing code above and this step needs confirming again.'**
+  /// **'Confirmed. Change the URL or the slot id above and this step needs confirming again.'**
   String get pushPageWebhookConfirmed;
 
   /// No description provided for @pushPageWebhookUnconfirmed.
@@ -893,7 +905,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageCheckBody.
   ///
   /// In en, this message translates to:
-  /// **'One pass answers four things: can the relay be reached, does it have FCM, is this pairing code right, and is the URL saved in your instance correct.'**
+  /// **'One pass answers four things: can the relay be reached, does it have FCM, is this device pairing code right, and is the URL saved in your instance correct.'**
   String get pushPageCheckBody;
 
   /// No description provided for @pushPageCheckAction.
@@ -2519,8 +2531,14 @@ abstract class AppLocalizations {
   /// No description provided for @pushAutoProvisionDone.
   ///
   /// In en, this message translates to:
-  /// **'Provisioned — instance id and pairing code filled in'**
+  /// **'Provisioned — slot id and device pairing code filled in; the webhook secret is shown once below'**
   String get pushAutoProvisionDone;
+
+  /// No description provided for @pushAutoProvisionNoDeviceCode.
+  ///
+  /// In en, this message translates to:
+  /// **'The slot was created, but the relay didn\'t return a device pairing code (it may be an older version) — upgrade mail-push first, or enter the device pairing code manually'**
+  String get pushAutoProvisionNoDeviceCode;
 
   /// No description provided for @sendDelay.
   ///
@@ -2615,7 +2633,7 @@ abstract class AppLocalizations {
   /// push settings: pushBuiltInApplied
   ///
   /// In en, this message translates to:
-  /// **'Pre-filled from this build; the pairing code is stored in the keychain only.'**
+  /// **'Pre-filled from this build; the device pairing code is stored in the keychain only.'**
   String get pushBuiltInApplied;
 
   /// No description provided for @aiTitle.

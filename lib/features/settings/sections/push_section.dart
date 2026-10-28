@@ -153,8 +153,26 @@ class _PushSectionState extends ConsumerState<PushSection> {
   static const String _kWebhookStep = 'webhook';
   static const String _kChainStep = 'chain';
 
-  /// 从 prefs 读回来的配对码。它同时就是 webhook secret，所以要显示出来。
+  /// 从钥匙串读回来的**设备配对码**（不是 webhook secret）。
+  ///
+  /// 拆分之后它是 App 自己的凭证，只用于「这台设备在这个实例位上算不算
+  /// 登记过」。显示区里**不再**把它当成实例后台要填的密钥露出来。
   String _pairingCode = '';
+
+  /// 「一键开通」在**本次会话里**真的拿回来的 `webhookSecret`。
+  ///
+  /// 它**只活在内存里**：不写 prefs、不进 `TokenStore`、不记日志。中转端
+  /// 落库之后连管理员也读不回来，所以这是用户唯一一次能看到它的机会 ——
+  /// 页面会把「只显示这一次」明说出来，让用户当场复制到实例后台。离开
+  /// 这一页（State 销毁）就没了，只能去中转端轮换一个新的。
+  String _sessionWebhookSecret = '';
+
+  /// [_sessionWebhookSecret] 属于**哪一个实例位**。
+  ///
+  /// 用户在一键开通之后可能又去改了实例位 / 换了中转位，那份 secret 就
+  /// 不属于新的那一个了 —— 继续显示只会让他把上一个位的密钥填进新位的
+  /// 实例后台。所以 [_save] 里拿实例位一比，对不上就整份作废。
+  String _webhookSecretSlot = '';
 
   /// 第 ⑤ 页那一句二元问题：这个实例是不是用户自己在管。
   ///
@@ -320,8 +338,10 @@ class _PushSectionState extends ConsumerState<PushSection> {
   ///
   /// 三条的落点**刻意不同**：
   /// - 中转地址、实例位 → 存 prefs（它们不是秘密，设置页本来就明文显示）；
-  /// - 配对码 → 只存 `TokenStore`，**不写 prefs**。它同时就是实例的
-  ///   `webhookSecret`，写进 prefs 等于把它留在一份无加密的配置里。
+  /// - 设备配对码 → 只存 `TokenStore`，**不写 prefs**：它虽然是可公开的
+  ///   App 侧凭证，但仍是「这个实例位上这台设备」的身份，不该躺在无加密的
+  ///   配置里。构建期注入的 `PUSH_PAIRING_CODE` 语义就是它（见
+  ///   `AppDefaults.pushPairingCode`），webhookSecret **不从这里进来**。
   ///
   /// 只在字段**为空**时补：默认值是用来省掉首次配置的，用户手填过的值
   /// （哪怕跟默认值不一样）绝不能被构建期的常量盖掉。
@@ -480,16 +500,28 @@ class _PushSectionState extends ConsumerState<PushSection> {
     // 否则「复制」出去的是上一次的密钥。
     setState(() {
       _pairingCode = _code.text.trim();
+      // 本次会话拿到的 webhookSecret 是**某个实例位**的。实例位改了它就
+      // 作废 —— 继续显示只会把上一个位的密钥填进新位。
+      if (_sessionWebhookSecret.isNotEmpty &&
+          _webhookSecretSlot != _instanceId.text.trim()) {
+        _sessionWebhookSecret = '';
+        _webhookSecretSlot = '';
+      }
       _verify = null;
       _verifyInputs = '';
     });
   }
 
-  /// 部署者一键开通：在中转端现开一个实例位，把 id 与配对码一起拿回来。
+  /// 部署者一键开通：在中转端现开一个实例位，把 id 与两个凭证一起拿回来。
   ///
   /// 这是「配对码从哪来」这个问题的**唯一一个真正的自动答案**（另一个是
-  /// 构建期 `--dart-define` 注入）。中转位建好之后 secret 就再也读不回来，
-  /// 所以拿到的那一刻必须立刻落进 `TokenStore` —— 见 [_save]。
+  /// 构建期 `--dart-define` 注入）。拆分之后两个值的落点不同：
+  ///
+  /// - `deviceCode`（设备配对码）→ 立刻落进 `TokenStore`（见 [_save]），
+  ///   它就是输入框里那个「配对码」；
+  /// - `webhookSecret` → **只留在内存**（[_sessionWebhookSecret]），这一页
+  ///   显示 / 可复制一次，不落盘。它权限更大（能伪造 webhook），不该躺在
+  ///   这台设备上。
   Future<void> _provision() async {
     final token = _adminToken.text.trim();
     if (token.isEmpty) {
@@ -515,17 +547,31 @@ class _PushSectionState extends ConsumerState<PushSection> {
       );
       if (!mounted) return;
       _instanceId.text = inst.instanceId;
-      _code.text = inst.webhookSecret;
-      // 立刻落盘 + 刷新显示区：这个 secret 只有这一次机会，留在输入框里
-      // 而没落库的话，用户一去不返就永久丢了。
+      _code.text = inst.deviceCode;
+      // 立刻落盘 + 刷新显示区：设备配对码以后还要用来注册 / 读事件，
+      // 留在输入框里而没落库的话，用户一去不返就得到中转端轮换一次。
       await _save();
       if (!mounted) return;
+      final hasDeviceCode = inst.deviceCode.isNotEmpty;
       setState(() {
-        _pairingCode = inst.webhookSecret;
+        _pairingCode = inst.deviceCode;
+        // webhookSecret 只进内存。为空（老中转端）时也不假装拿到了。
+        _sessionWebhookSecret = inst.webhookSecret;
+        // 记下它属于哪个位：上面那次 `_save` 已经可能把旧的清掉了。
+        _webhookSecretSlot = inst.instanceId;
         _verify = null;
         _verifyInputs = '';
       });
-      _setMessage(AppLocalizations.of(context).pushAutoProvisionDone, error: false);
+      // `deviceCode` 为空只可能是「中转端比这个 App 还老」—— 它的管理面
+      // 还不回这个字段。新 App 不能把 webhookSecret 回落成配对码存起来
+      // （那是拆分之前的行为），所以这里只能如实说：位开出来了、webhook
+      // 密钥也拿到了，但设备配对码得手动填（或先把中转端升级）。
+      _setMessage(
+        hasDeviceCode
+            ? AppLocalizations.of(context).pushAutoProvisionDone
+            : AppLocalizations.of(context).pushAutoProvisionNoDeviceCode,
+        error: !hasDeviceCode,
+      );
     } on AppException catch (e) {
       if (!mounted) return;
       _setMessage(e.userMessage, error: true);
@@ -582,9 +628,16 @@ class _PushSectionState extends ConsumerState<PushSection> {
       // `_verify` 算数，退出这一页就没了。不通过就把它**清掉**，让重新
       // 检查真的能翻盘；失败本身不写见证值（当场显示就够了，记下来只会
       // 在下次进来时给一个他其实已经处理过的红叉）。
-      final ok = result.secretOk != false &&
-          result.urlOk != false &&
-          health.fcmConfigured;
+      //
+      // 判据与 [_chainVerified] 共用 `chainCheckPassed`：一处存见证值、
+      // 一处打勾，两处必须是同一个答案（拆分之后凭证那项优先取 `codeOk`，
+      // 见契约 §4.4）。
+      final ok = chainCheckPassed(
+        codeOk: result.codeOk,
+        secretOk: result.secretOk,
+        urlOk: result.urlOk,
+        fcmConfigured: health.fcmConfigured,
+      );
       // 一起把「中转端当时记着的最近一次事件」写进去：用户下次进来只看
       // 第 ⑤ 页时，那是唯一一条不靠自述的证据（见 [instanceStepDone]）。
       final witness = ok ? _witnessValue(evidence: result.lastEventAt ?? '') : '';
@@ -631,9 +684,21 @@ class _PushSectionState extends ConsumerState<PushSection> {
   }
 
   /// 把第 ⑤ 页那两条值拼成一段现成的话，给「不是我在管」的人直接转发。
+  ///
+  /// 分两版，因为 webhookSecret 现在**只在本次会话一键开通拿回来时**才在
+  /// App 里出现：
+  /// - 手上有 secret → 老文案，地址 + 密钥一起给；
+  /// - 手上没有 → 只给地址，并说明密钥要另外向**中转位的创建者**要。把
+  ///   「去要一个 secret」这一步说清楚，比让收信的人对着半句话猜要好。
   Future<void> _copyRelayMessage() async {
     final l10n = AppLocalizations.of(context);
-    await _copy(l10n.pushPageWebhookRelayMessage(_webhookUrlPreview(), _pairingCode));
+    final url = _webhookUrlPreview();
+    final secret = _sessionWebhookSecret;
+    await _copy(
+      secret.isEmpty
+          ? l10n.pushPageWebhookRelayMessageNoSecret(url)
+          : l10n.pushPageWebhookRelayMessage(url, secret),
+    );
   }
 
   Future<void> _register() async {
@@ -799,8 +864,12 @@ class _PushSectionState extends ConsumerState<PushSection> {
   /// 第 ⑥ 页「检查过了吗、过了吗」。
   ///
   /// 四个条件缺一不可：**这次真的问过**（有结论、且输入没被改过）、
-  /// **配对码与地址都对**、**中转端有 FCM 服务账号**（没有它，前面全对也
+  /// **凭证与地址都对**、**中转端有 FCM 服务账号**（没有它，前面全对也
   /// 投不出去）、以及**那次问的是一个能用的中转地址**。
+  ///
+  /// 凭证那一项的判断放在 [chainCheckPassed] 里（纯函数、可单测）：
+  /// App 送的是设备配对码，所以看 `codeOk`；老的 `secretOk` 只在更老的
+  /// 中转端上出现，两者取先有的那个。
   ///
   /// 最后一条是补上的一个真 bug：`_health` 曾经可能属于**上一个**地址
   /// （用户在地址框里改了域名再点检查，或者加载时那次检查与手动检查交错），
@@ -814,9 +883,16 @@ class _PushSectionState extends ConsumerState<PushSection> {
   bool? get _chainVerified {
     final result = _verify;
     if (result == null || _verifyInputs != _inputsFingerprint()) return null;
-    if (result.secretOk == false || result.urlOk == false) return false;
+    if (!chainCheckPassed(
+      codeOk: result.codeOk,
+      secretOk: result.secretOk,
+      urlOk: result.urlOk,
+      fcmConfigured: _health?.fcmConfigured ?? false,
+    )) {
+      return false;
+    }
     if (_healthUrl != _relay.text.trim()) return false;
-    return _health?.fcmConfigured ?? false;
+    return true;
   }
 
   /// 进度条上第 ⑥ 页那个勾：本次会话的有效结论，**或者**上次会话存下来的
@@ -1463,7 +1539,14 @@ class _PushSectionState extends ConsumerState<PushSection> {
 
   Widget _instancePage(AppLocalizations l10n) {
     final theme = Theme.of(context);
-    final noSecret = _pairingCode.isEmpty;
+    // App 这一侧三条值齐没齐（地址 / 实例位 / **设备配对码**）。它们齐了才
+    // 谈得上「去实例后台填 webhook」—— 地址和密钥都是从这条链路来的。
+    final configured = _pairingCode.isNotEmpty;
+    final hasAddress = _webhookUrlPreview().isNotEmpty;
+    // 本次会话「一键开通」真的拿回来的 webhookSecret（只在内存里，见
+    // [_sessionWebhookSecret]）。为空就一律不显示 —— 它由中转位的创建者
+    // 保管，不再拿 App 里的设备配对码冒充。
+    final sessionSecret = _sessionWebhookSecret;
     // 这一页 App **验证不了**（事情发生在另一个网站上），所以「做完了」的
     // 主判据是用户自己那个勾；中转端真的收到过 webhook 是唯一一个客观证据。
     final confirmed = _witnessValid(_webhookWitness);
@@ -1510,7 +1593,9 @@ class _PushSectionState extends ConsumerState<PushSection> {
           Align(
             alignment: Alignment.centerLeft,
             child: FilledButton.tonalIcon(
-              onPressed: noSecret ? null : _copyRelayMessage,
+              // 转达文案只要求「地址拼得出来」—— 密钥那半句按手上有没有
+              // secret 分两版（见 [_copyRelayMessage]），没有地址才禁用。
+              onPressed: hasAddress ? _copyRelayMessage : null,
               icon: const Icon(Icons.forward_to_inbox_outlined),
               label: Text(l10n.pushPageWebhookRelayCopy),
             ),
@@ -1526,19 +1611,35 @@ class _PushSectionState extends ConsumerState<PushSection> {
           copyLabel: l10n.pushCopy,
           onCopy: _copy,
         ),
+        // 拆分之后 App 里的「配对码」是**设备配对码**，跟实例后台要填的
+        // webhookSecret 是两个凭证（见 docs/push-setup.md）：
+        // 前者可以公开、只用来注册设备；后者权限大得多，只有中转位创建者
+        // 才有。所以这一栏只有**本次会话一键开通真的拿回了它**时才显示值，
+        // 其余情况一律显示「由创建者保管」那句 —— 绝不拿配对码冒充。
         PushCopyRow(
           label: l10n.pushWebhookSecret,
-          value: _pairingCode,
-          emptyHint: l10n.pushWebhookNoSecret,
+          value: sessionSecret,
+          emptyHint: l10n.pushWebhookSecretCustodian,
           copyLabel: l10n.pushCopy,
           onCopy: _copy,
           obscure: true,
         ),
 
-        if (noSecret) ...<Widget>[
+        if (sessionSecret.isNotEmpty) ...<Widget>[
           const SizedBox(height: 8),
-          // 空 secret 只可能是「还没登录 / 还没填配对码」，而这一页恰恰
-          // 是唯一需要它的一页 —— 得说清该回哪去。
+          // 只在这个会话里存在：用户不复制走、也不填进实例后台的话，
+          // 离开这一页就再也读不到了（只能去中转端轮换一个）。
+          PushNotice(
+            icon: Icons.timer_outlined,
+            text: l10n.pushWebhookSecretOnce,
+            tone: PushTone.warn,
+          ),
+        ],
+
+        if (!configured) ...<Widget>[
+          const SizedBox(height: 8),
+          // 还没配好三条值 —— 这一页恰恰是唯一需要地址与密钥的一页，
+          // 得说清该回哪去。
           PushNotice(
             icon: Icons.key_off_outlined,
             text: l10n.pushNeedLoginFirst,
@@ -1557,9 +1658,9 @@ class _PushSectionState extends ConsumerState<PushSection> {
           controlAffinity: ListTileControlAffinity.leading,
           dense: true,
           value: confirmed,
-          onChanged: noSecret
-              ? null
-              : (value) => _setWebhookConfirmed(value ?? false),
+          onChanged: configured
+              ? (value) => _setWebhookConfirmed(value ?? false)
+              : null,
           title: Text(l10n.pushPageWebhookConfirm),
         ),
 

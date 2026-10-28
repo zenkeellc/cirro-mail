@@ -142,11 +142,21 @@ class AppDefaults {
     defaultValue: 'https://push.zenkee.com',
   );
 
-  /// 部署者在本机打包时注入的实例位 id 与配对码（见 `sections/push_section.dart`）。
+  /// 部署者在本机打包时注入的实例位 id 与**设备配对码**（见
+  /// `sections/push_section.dart`）。
   ///
-  /// 配对码 = 中转端的 `instances.secret`，**只在创建时回显一次**，
-  /// 两个后端都读不回来 —— 所以「内置默认配置」只能靠构建期注入。
-  /// 默认空串：开源仓库里不带任何密钥，部署者自己 `--dart-define`。
+  /// ## 这两个默认值可以内置，webhookSecret 不可以
+  ///
+  /// 设备配对码（中转端的 `instances.device_code`）是**App 自己的凭证**，
+  /// 权限只有「注册设备 / 读自己登记过的邮箱的事件」，设计上就是可公开的
+  /// —— 内置进安装包不再是事故，最坏结果只是「谁都能给自己装一份 App」。
+  /// 它只在创建时回显一次，App 端也只在密钥库里存一份。
+  ///
+  /// **绝不要把 webhookSecret 内置进来**：那是实例后台要填的密钥，权限大
+  /// 得多（能伪造 webhook 往 events 里灌数据），装进客户手机等于把它公开。
+  /// 见 `docs/push-setup.md`（「两把钥匙」那一节）。
+  ///
+  /// 默认空串：开源仓库里不带任何配置，部署者自己 `--dart-define`。
   static const String pushInstanceId = String.fromEnvironment(
     'PUSH_INSTANCE_ID',
     defaultValue: '',

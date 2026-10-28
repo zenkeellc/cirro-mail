@@ -166,10 +166,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushInstanceIdHint => '部署者在中转端 /admin/instances 开的那个 id';
 
   @override
-  String get pushPairingCode => '配对码';
+  String get pushPairingCode => '设备配对码';
 
   @override
-  String get pushPairingCodeHint => '开实例位时只显示一次，丢了就重新轮换';
+  String get pushPairingCodeHint => '开实例位时显示一次；它可以公开，只用来登记这台设备。丢了让中转位管理员轮换';
 
   @override
   String get pushDeviceId => '设备号';
@@ -214,7 +214,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pushWebhookHint =>
-      '把下面两条填进**你那个 cloud-mail 实例**后台的「Webhook 推送」里，再把开关打开。这一步只能你自己做：中转端不认识实例的登录体系，替不了。';
+      '把下面的 Webhook 地址填进**你那个 cloud-mail 实例**后台的「Webhook 推送」里，再把开关打开；密钥那一栏见下方说明。这一步只能你自己做：中转端不认识实例的登录体系，替不了。';
 
   @override
   String get pushWebhookUrl => 'Webhook 地址';
@@ -223,7 +223,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushWebhookSecret => 'Webhook 密钥';
 
   @override
-  String get pushWebhookNoSecret => '还没有配对码，拿不到密钥';
+  String get pushWebhookSecretCustodian =>
+      'Webhook 密钥由中转位的创建者保管 —— App 里不存、也不显示它。';
+
+  @override
+  String get pushWebhookSecretOnce =>
+      'Webhook 密钥只显示这一次：现在复制走填进实例后台，离开这一页就再也看不到了。';
 
   @override
   String get pushCopy => '复制';
@@ -235,10 +240,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushChecking => '自检中…';
 
   @override
-  String get pushSelfCheckOk => '配对码与地址都对上了';
+  String get pushSelfCheckOk => '设备配对码与地址都对上了';
 
   @override
-  String get pushSelfCheckSecretBad => '配对码不对 —— 这个实例位的密钥已经轮换过，去重新要一个';
+  String get pushSelfCheckSecretBad => '设备配对码不对 —— 这个实例位的设备码轮换过了，去重新要一个';
 
   @override
   String get pushSelfCheckUrlBad => '地址填错了 —— 要带上 /<实例位>/webhook 这一段';
@@ -253,7 +258,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get pushNeedLoginFirst => '先在上面把配对码和实例位填好，自检才知道要问哪一条。';
+  String get pushNeedLoginFirst => '先在上面把设备配对码和实例位填好，自检才知道要问哪一条。';
 
   @override
   String get pushLimits => '限制（先说清楚，免得白等）';
@@ -322,7 +327,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pushPageValuesBody =>
-      '三条都从中转端来：地址是那个 Worker 的域名，实例位是它给你开的位置，配对码只在开位那一刻显示一次。';
+      '三条都从中转端来：地址是那个 Worker 的域名，实例位是它给你开的位置，设备配对码只在开位那一刻显示一次。';
 
   @override
   String get pushPageValuesSave => '保存这三条值';
@@ -331,7 +336,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushPageValuesSaved => '已保存';
 
   @override
-  String get pushPageValuesKeep => '配对码只在开实例位时显示一次，之后两端都读不回来。丢了只能重新轮换。';
+  String get pushPageValuesKeep =>
+      '设备配对码只在开实例位时显示一次，之后没人能读回来。丢了让中转位的管理员轮换一份新的。';
 
   @override
   String get pushPageValuesProvision => '中转是我部署的 —— 现开一个实例位';
@@ -388,14 +394,20 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String pushPageWebhookRelayMessageNoSecret(String url) {
+    return '麻烦在 cloud-mail 实例后台的「Webhook 推送」里填上地址 $url，并把那一栏的开关打开。Webhook 密钥要单独向中转位的创建者要（App 里不显示），填好之后新邮件才能推到我的手机上。';
+  }
+
+  @override
   String get pushPageWebhookStatus0 =>
       '提醒：那个开关在库里叫 webhookStatus，0 才是「启用」，字段名与直觉相反 —— 收不到推送时第一嫌疑永远是它。';
 
   @override
-  String get pushPageWebhookConfirm => '我已经在实例后台填好这两条，并把 Webhook 推送开关打开了';
+  String get pushPageWebhookConfirm =>
+      '我已经在实例后台填好地址（和密钥，如果你拿到了），并把 Webhook 推送开关打开了';
 
   @override
-  String get pushPageWebhookConfirmed => '已确认过。上面的地址或配对码改过之后，这一步要重新确认一次。';
+  String get pushPageWebhookConfirmed => '已确认过。上面的地址或实例位改过之后，这一步要重新确认一次。';
 
   @override
   String get pushPageWebhookUnconfirmed =>
@@ -436,7 +448,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pushPageCheckBody =>
-      '一次问清四件事：中转连不连得上、它有没有配 FCM、这个配对码对不对、实例后台里那个地址填对没有。';
+      '一次问清四件事：中转连不连得上、它有没有配 FCM、这个设备配对码对不对、实例后台里那个地址填对没有。';
 
   @override
   String get pushPageCheckAction => '检查这条链路';
@@ -1336,7 +1348,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushAdminTokenHint => '只在当前页面可见，离开即清空';
 
   @override
-  String get pushAutoProvisionDone => '已开通，实例位与配对码已填好';
+  String get pushAutoProvisionDone => '已开通，实例位与设备配对码已填好；Webhook 密钥在下方显示这一次';
+
+  @override
+  String get pushAutoProvisionNoDeviceCode =>
+      '实例位开好了，但中转端没有回设备配对码（它可能还是旧版本）—— 请先升级 mail-push，或手动填写设备配对码';
 
   @override
   String get sendDelay => '发送延迟';
@@ -1396,7 +1412,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushAdminTokenNeeded => '请先填管理员口令';
 
   @override
-  String get pushBuiltInApplied => '已按本次构建的内置配置填好；配对码只存进钥匙串，不写 prefs。';
+  String get pushBuiltInApplied => '已按本次构建的内置配置填好；设备配对码只存进钥匙串，不写 prefs。';
 
   @override
   String get aiTitle => 'AI';

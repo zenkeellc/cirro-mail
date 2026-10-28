@@ -165,4 +165,90 @@ void main() {
       expect(pageDone(PushPage.status, _facts(available: false)), isNull);
     });
   });
+
+  // 第 ⑥ 页的通过判据（契约 §4.4）：`(codeOk ?? secretOk) != false &&
+  // urlOk != false && fcmConfigured`。
+  //
+  // 抽出这个纯函数是为了让「存见证值」和「打勾」两处用同一个答案 ——
+  // 拆分之后凭证有两种（App 送 deviceCode，老路径按 webhookSecret 验），
+  // 两处各写一遍迟早会漂。
+  group('第⑥页的通过判据', () {
+    test('只回了 codeOk（App 送 deviceCode）时仍算通过', () {
+      expect(
+        chainCheckPassed(
+          codeOk: true,
+          secretOk: null,
+          urlOk: true,
+          fcmConfigured: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('老中转端只回 secretOk 时按 secretOk 判', () {
+      expect(
+        chainCheckPassed(
+          codeOk: null,
+          secretOk: true,
+          urlOk: true,
+          fcmConfigured: true,
+        ),
+        isTrue,
+      );
+      expect(
+        chainCheckPassed(
+          codeOk: null,
+          secretOk: false,
+          urlOk: true,
+          fcmConfigured: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('凭证不对 / 地址不对 / 没配 FCM 都算不通过', () {
+      expect(
+        chainCheckPassed(
+          codeOk: false,
+          secretOk: null,
+          urlOk: true,
+          fcmConfigured: true,
+        ),
+        isFalse,
+        reason: '设备配对码不对',
+      );
+      expect(
+        chainCheckPassed(
+          codeOk: true,
+          secretOk: null,
+          urlOk: false,
+          fcmConfigured: true,
+        ),
+        isFalse,
+        reason: '地址少了 /<实例位>/webhook 那一段',
+      );
+      expect(
+        chainCheckPassed(
+          codeOk: true,
+          secretOk: null,
+          urlOk: true,
+          fcmConfigured: false,
+        ),
+        isFalse,
+        reason: '中转端没配 FCM，前面全对也投不出去 —— 这种「全绿」最误导人',
+      );
+    });
+
+    test('两项都是 null（没送）时不拦 —— 与拆分之前的 `!= false` 一致', () {
+      expect(
+        chainCheckPassed(
+          codeOk: null,
+          secretOk: null,
+          urlOk: null,
+          fcmConfigured: true,
+        ),
+        isTrue,
+      );
+    });
+  });
 }
