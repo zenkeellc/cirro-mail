@@ -82,8 +82,8 @@ flutter build linux              # 需在 Linux 上
 
 1. ~~建 Firebase 项目、放配置文件~~ —— **已完成**（见上一节；三份都在仓库里）。
 2. **部署 `mail-push` + 配 FCM 服务账号** —— 见 [`docs/push-setup.md`](docs/push-setup.md) 第四节。App 里默认填的中转地址是 <https://push.zenkee.com>（自建部署可换成你自己的）；服务账号私钥由部署者自己走 `npx wrangler secret put FCM_SERVICE_ACCOUNT` 上传（整串 JSON，别往 `wrangler.toml` 的 `[vars]` 里加同名变量 —— 同名会让 `secret put` 直接失败）。
-3. **在 App 里**填中转地址 `https://push.zenkee.com` + 实例位 + 配对码（向导第 ② 页）。配对码**同时就是**实例后台要填的 webhook secret，第 ⑤ 页会把它显示出来供复制。
-4. **在实例后台**（「Webhook 推送」那一栏）填上第 ⑤ 页给出的 webhook 地址（带 `/<实例位>/webhook` 尾巴）与 secret，并把那一栏的开关拨开。这是整个链路里唯一必须在实例侧做的事 —— **注意那个开关在库里是 `webhookStatus`，`0` 才是「启用」**，字段名与直觉相反，所以「地址 secret 都填对了却收不到」的第一嫌疑永远是它。
+3. **在 App 里**填中转地址 `https://push.zenkee.com` + 实例位 + **设备配对码**（向导第 ② 页）。配对码只给 App 用（登记设备、收自己订阅过的邮箱），**不是**实例后台的 webhook secret —— 两把钥匙，别混着用（见 [`docs/push-setup.md`](docs/push-setup.md)）。
+4. **在实例后台**（「Webhook 推送」那一栏）填上 webhook 地址（带 `/<实例位>/webhook` 尾巴）与 **`webhookSecret`**（创建中转位时回显一次的那把，与配对码不是同一个值），并把那一栏的开关拨开。这是整个链路里唯一必须在实例侧做的事 —— **注意那个开关在库里是 `webhookStatus`，`0` 才是「启用」**，字段名与直觉相反，所以「地址 secret 都填对了却收不到」的第一嫌疑永远是它。
 
 ### 仍然只能在 Xcode / Apple 开发者后台里做的
 
@@ -114,7 +114,7 @@ TeamIdentifier=<你的 Team ID>      # 改之前是 not set
 
 这不是「保险起见」：本机用一个最小 App 只做一次 `connect()` 实测过，沙箱 + 无 `network.client` → `CONNECT FAIL errno=1`，加上 → `CONNECT OK`，不加沙箱 → `CONNECT OK`。Debug 和 Release 两个 entitlements 文件里都已经补上了。
 
-设置页里有一个**自检**按钮：它拿配对码去问中转端「实例后台该怎么填」，并对比你已经填进去的地址 —— 地址填错是**静默失败**（实例那边只有真收到外部来信时才会去打 webhook，打不通也只在自己日志里留一行），所以这一步值得点一下。向导里它是第 ⑥ 页那个「检查这条链路」（原来的「测试连接」与「自检」已合成这一个）。
+设置页里有一个**自检**按钮：它拿配对码（设备配对码）去问中转端「这个位通不通」（码对不对、地址路径对不对、最近有没有真的收到过信），并对比你准备填进实例后台的地址 —— 地址填错是**静默失败**（实例那边只有真收到外部来信时才会去打 webhook，打不通也只在自己日志里留一行），所以这一步值得点一下。向导里它是第 ⑥ 页那个「检查这条链路」（原来的「测试连接」与「自检」已合成这一个）。
 
 ⚠️ webhook 只覆盖**外部来信**。站内互发、别的客户端发的信都不触发它，只能靠轮询。实例若开了 `ruleType=RULE`，webhook 完全不触发。
 
