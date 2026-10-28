@@ -57,6 +57,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 这条 job 会额外装 NDK r28c（解压后约 2.5 GB）与 CMake（约 0.3 GB），
+      # 再叠上 Flutter SDK、Gradle 依赖和 build/ —— 而 `ubuntu-latest` 开跑时
+      # 只剩 10 GB 出头。商业版那次就是这么炸的：
+      #   > Execution failed for task ':app:mergeDebugNativeLibs'.
+      #   >   No space left on device
+      # 预装的这几套工具链这份工程一个都用不到，先清掉给构建腾地方。
+      # 两行 `df -h` 是刻意的：下次再碰上空间问题，日志里直接有前后对比。
+      - name: 释放磁盘空间
+        run: |
+          df -h /
+          sudo rm -rf \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/local/share/boost \
+            /usr/local/lib/android/sdk/emulator \
+            /usr/local/lib/android/sdk/system-images
+          # runner 上跑着 docker，里面预载的镜像也没人用。
+          sudo docker image prune -af || true
+          df -h /
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
