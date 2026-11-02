@@ -1445,5 +1445,31 @@
   "detailBcc": "密送",
   "detailShowDetails": "显示详情",
   "detailHideDetails": "收起详情",
-  "copySenderAddress": "复制发件人地址"
+  "copySenderAddress": "复制发件人地址",
+  "versionUnknown": "版本未知",
+  "versionBuild": "构建号",
+  "versionCommit": "提交",
+  "versionBuiltAt": "构建时间",
+  "versionChannel": "渠道",
+  "checkForUpdates": "检查更新",
+  "updateCheckNow": "检查",
+  "updateRetry": "重试",
+  "checkingForUpdates": "检查中…",
+  "updateUpToDate": "已是最新版本",
+  "updateAvailable": "发现新版本 {version}",
+  "@updateAvailable": {
+    "description": "settings > about: shown when the manifest advertises a newer version",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateCheckFailed": "检查失败",
+  "updateCheckFailedHint": "请检查网络连接后再试",
+  "updateDownload": "下载",
+  "updateLater": "稍后",
+  "updateAutoCheck": "自动检查更新",
+  "updateView": "查看",
+  "updateOpenFailed": "打不开下载页"
 }

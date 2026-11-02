@@ -190,4 +190,60 @@ class AppDefaults {
   );
 
   static const String userAgent = 'cloud-mail-flutter';
+
+  // ---- 版本 / 更新 ----
+  //
+  // 前五个由 `tool/version.dart` 在构建时算出、再用 `--dart-define` 注进来
+  // （官方构建：CI 与 `.release/scripts/` 都走那个包装）。**默认空串**：
+  // 直接 `flutter run` / 直接 `flutter build` 时没有这些值，运行时退回
+  // `PackageInfo`（pubspec 里那个 `0.1.0+1`）—— 见 `core/version/version_info.dart`。
+  //
+  // build 号是 `git rev-list --count HEAD`：每次提交 +1，不需要手工维护。
+  static const String appVersionName = String.fromEnvironment(
+    'APP_VERSION_NAME',
+    defaultValue: '',
+  );
+  static const String appBuildNumber = String.fromEnvironment(
+    'APP_BUILD_NUMBER',
+    defaultValue: '',
+  );
+  static const String appGitCommit = String.fromEnvironment(
+    'APP_GIT_SHA',
+    defaultValue: '',
+  );
+  /// 构建时间（UTC，ISO-8601）。
+  static const String appBuildTime = String.fromEnvironment(
+    'APP_BUILD_TIME',
+    defaultValue: '',
+  );
+
+  /// 更新渠道。公开版 `public`；商业版由商业构建参数改成 `pro`
+  /// （渠道名只出现在构建参数与版本清单里，核心不关心它叫什么）。
+  static const String updateChannel = String.fromEnvironment(
+    'APP_UPDATE_CHANNEL',
+    defaultValue: 'public',
+  );
+
+  /// 版本清单地址（静态 JSON，见 `docs/app-update.md`）。
+  ///
+  /// 自建/自打包的人可以 `--dart-define=APP_UPDATE_MANIFEST=`（空串）关掉
+  /// 检查 —— 关掉时关于页只显示版本、不显示「检查更新」。
+  static const String updateManifestUrl = String.fromEnvironment(
+    'APP_UPDATE_MANIFEST',
+    defaultValue: 'https://cirro.zenkee.com/app-version.json',
+  );
+
+  /// 「启动时自动检查更新」的默认值（用户可在关于页关掉，偏好落在 prefs）。
+  static const bool updateCheckDefault = bool.fromEnvironment(
+    'APP_UPDATE_CHECK',
+    defaultValue: true,
+  );
+
+  /// 启动时自动检查的最小间隔：一天一次足够，也避免每次唤醒就打一次网络。
+  static const Duration updateCheckInterval = Duration(hours: 24);
+
+  /// 桌面窗口标题里用的应用名。与三个桌面 runner 里的字符串一致
+  /// （`macos/Runner/AppDelegate.swift` / `linux/runner/my_application.cc` /
+  /// `windows/runner/main.cpp`）—— 换名字时要几处一起换。
+  static const String appDisplayName = 'Cirro Mail';
 }

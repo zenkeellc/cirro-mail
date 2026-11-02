@@ -56,6 +56,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # build 号 = `git rev-list --count HEAD`（见 tool/version.dart）。默认的
+          # 浅克隆只带 1 个提交，算出来的 build 号永远是 1；这个 job 现在还要
+          # 验证版本注入那条路，所以把历史取全（代价只是几十 MB）。
+          fetch-depth: 0
 
       # 这条 job 会额外装 NDK r28c（解压后约 2.5 GB）与 CMake（约 0.3 GB），
       # 再叠上 Flutter SDK、Gradle 依赖和 build/ —— 而 `ubuntu-latest` 开跑时
@@ -92,18 +97,39 @@ jobs:
 
       - run: flutter pub get
 
+      # 版本在构建期算好、再用 `--dart-define` 注进去（关于页 / 更新检查读的
+      # 就是这几个常量）。日志里先打一份摘要：事后翻日志就能对上「这个包是
+      # 哪个提交、第几次构建」。
+      #
+      # 浅克隆那条断言兜的是「谁把 checkout 的 fetch-depth 删了」——
+      # 那时 build 号会静默地恒为 1，发出去一堆同号的包。
+      - name: 计算构建版本
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            echo "::error::浅克隆：build 号只能数到 1，checkout 需要 fetch-depth: 0"
+            exit 1
+          fi
+          dart tool/version.dart --format=summary
+
       # 刻意**不保证**仓库里有 `google-services.json`：构建脚本会检测它
       # 是否存在（见 `android/app/build.gradle.kts`），不存在就跳过 Google
       # 服务插件并打一行提示。这条 job 恰好就在验证那个「没有 Firebase
       # 配置也能编出来」的承诺 —— 它一旦坏掉，所有还没去 Firebase 建项目
       # 的人都编不出调试包。
-      - run: flutter build apk --debug
+      #
+      # `dart tool/build.dart` 是 `flutter build` 的包装：自己带上
+      # `--build-name` / `--build-number` 与 `APP_*` 的 `--dart-define`，
+      # 其余参数原样透传。CI 与本地发布脚本共用它，注入只有一条路。
+      - run: dart tool/build.dart apk --debug
 
   build-macos:
     name: macOS 构建冒烟
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 同 build-android：build 号是提交数，浅克隆会把它算成 1。
+          fetch-depth: 0
 
       - uses: subosito/flutter-action@v2
         with:
@@ -137,7 +163,17 @@ jobs:
           open(p, 'w', encoding='utf-8').write(s)
           PY
 
-      - run: flutter build macos --debug
+      - name: 计算构建版本
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            echo "::error::浅克隆：build 号只能数到 1，checkout 需要 fetch-depth: 0"
+            exit 1
+          fi
+          dart tool/version.dart --format=summary
+
+      # 与 Android 那条一样走包装脚本（见上面的注释）：版本只算一次、
+      # 只在一个地方注入。
+      - run: dart tool/build.dart macos --debug
 
   # 开源面守卫：`main` 上不许出现任何商业侧引用（商业代码只存在于私有
   # overlay 包里，见 README/架构说明）。这条只在 main 上跑得有意义。

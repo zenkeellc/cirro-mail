@@ -4,9 +4,12 @@
 #include <flutter/standard_method_codec.h>
 
 #include <optional>
+#include <string>
+#include <variant>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "single_instance.h"
+#include "utils.h"
 
 namespace {
 
@@ -78,12 +81,29 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
-        // 两个方法共用这条通道（`Cmd+W` 那条见 Dart 侧 `WindowChannel.hide`）。
+        // 三个方法共用这条通道（`Cmd+W` 那条见 Dart 侧 `WindowChannel.hide`）。
         // `hideMainWindow` 走的是**已有的** `HideToTray()` —— 就是 `WM_CLOSE`
         // 那条路调的那个：藏窗口 + 确保通知区图标在。不另写一条「只藏窗口」
         // 的路径，否则会出现「`Cmd+W` 藏了之后托盘里没有图标、再也叫不回来」。
         if (call.method_name() == "hideMainWindow") {
           HideToTray();
+          result->Success();
+          return;
+        }
+        if (call.method_name() == "setWindowTitle") {
+          // 与另外两个无参方法不同，这条的参数是 map（`{"title": ...}`）。
+          std::string title;
+          const auto* arguments =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (arguments != nullptr) {
+            const auto it = arguments->find(flutter::EncodableValue("title"));
+            if (it != arguments->end()) {
+              if (const auto* value = std::get_if<std::string>(&it->second)) {
+                title = *value;
+              }
+            }
+          }
+          SetWindowTitle(title);
           result->Success();
           return;
         }
@@ -106,6 +126,17 @@ void FlutterWindow::ShowMainWindow() {
   // 最小化过就先还原，否则 `ShowWindow(SW_SHOW)` 对最小化的窗口没有效果。
   ::ShowWindow(hwnd, ::IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
   ::SetForegroundWindow(hwnd);
+}
+
+void FlutterWindow::SetWindowTitle(const std::string& title) {
+  HWND hwnd = GetHandle();
+  if (hwnd == nullptr || title.empty()) {
+    return;
+  }
+  // 标题从 Dart 过来是 UTF-8，`SetWindowTextW` 只认 UTF-16，所以先转一道。
+  // 转换失败时 `Utf16FromUtf8` 返回空串，`SetWindowTextW` 什么都不做 ——
+  // 标题没改掉是小事，不值得让通道回调失败。
+  ::SetWindowTextW(hwnd, Utf16FromUtf8(title).c_str());
 }
 
 void FlutterWindow::HideToTray() {

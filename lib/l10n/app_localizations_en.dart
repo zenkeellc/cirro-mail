@@ -2069,4 +2069,61 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get copySenderAddress => 'Copy sender address';
+
+  @override
+  String get versionUnknown => 'Version unknown';
+
+  @override
+  String get versionBuild => 'Build';
+
+  @override
+  String get versionCommit => 'Commit';
+
+  @override
+  String get versionBuiltAt => 'Built at';
+
+  @override
+  String get versionChannel => 'Channel';
+
+  @override
+  String get checkForUpdates => 'Check for updates';
+
+  @override
+  String get updateCheckNow => 'Check';
+
+  @override
+  String get updateRetry => 'Retry';
+
+  @override
+  String get checkingForUpdates => 'Checking…';
+
+  @override
+  String get updateUpToDate => 'You\'re up to date';
+
+  @override
+  String updateAvailable(String version) {
+    return 'Version $version is available';
+  }
+
+  @override
+  String get updateCheckFailed => 'Update check failed';
+
+  @override
+  String get updateCheckFailedHint =>
+      'Check your network connection and try again';
+
+  @override
+  String get updateDownload => 'Download';
+
+  @override
+  String get updateLater => 'Later';
+
+  @override
+  String get updateAutoCheck => 'Check for updates automatically';
+
+  @override
+  String get updateView => 'View';
+
+  @override
+  String get updateOpenFailed => 'Could not open the download page';
 }

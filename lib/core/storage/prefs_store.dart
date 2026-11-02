@@ -49,6 +49,19 @@ class PrefsStore {
   static const String _kSidebarCollapsed = 'cm_sidebar_collapsed_instances';
   static const String _kAiSettings = 'cm_ai_settings';
   static const String _kAiUsage = 'cm_ai_usage';
+  /// 「启动时自动检查更新」开关（见关于页）。默认由构建参数决定，
+  /// 见 `AppDefaults.updateCheckDefault`。
+  static const String _kUpdateCheckEnabled = 'cm_update_check_enabled';
+  /// 上次**成功**检查更新的时间（毫秒时间戳，0 = 从没检查过）。
+  ///
+  /// 只在成功后写：失败写进去等于「今天不再重试」，而失败最常见的原因
+  /// 恰恰是「当时没网」—— 那不该让用户整天都看不到更新。
+  static const String _kUpdateLastCheckMs = 'cm_update_last_check_ms';
+  /// 已经提示过（SnackBar / 关于页）的最新版本，形如 `0.2.0+132`。
+  ///
+  /// 存版本串而不是 bool：下个版本发布时它跟当前清单对不上，提示自然重新
+  /// 出现，不需要额外的「清标记」逻辑。
+  static const String _kUpdateLastNotified = 'cm_update_last_notified';
 
   // ---- 当前实例 ----
   String? get activeProfileId => _prefs.getString(_kActiveProfile);
@@ -432,4 +445,34 @@ class PrefsStore {
 
   @visibleForTesting
   Future<void> clearAll() => _prefs.clear();
+
+  // ---- 版本 / 更新检查 ----
+
+  /// 启动时是否自动检查新版本。关于页那个开关就是它。
+  ///
+  /// 默认取 [AppDefaults.updateCheckDefault]（构建参数 `APP_UPDATE_CHECK`，
+  /// 公开构建是 true）。关掉**不影响**版本展示，也不影响手动「检查」。
+  bool get updateCheckEnabled =>
+      _prefs.getBool(_kUpdateCheckEnabled) ?? AppDefaults.updateCheckDefault;
+
+  Future<void> setUpdateCheckEnabled(bool value) =>
+      _prefs.setBool(_kUpdateCheckEnabled, value);
+
+  /// 上次成功检查更新的时间戳（毫秒）。0 = 从没检查过。
+  int get updateLastCheckMs => _prefs.getInt(_kUpdateLastCheckMs) ?? 0;
+
+  Future<void> setUpdateLastCheckMs(int ms) =>
+      _prefs.setInt(_kUpdateLastCheckMs, ms);
+
+  /// 已经提示过的版本（`0.2.0+132`）。空串 = 还没提示过。
+  String get updateLastNotified =>
+      _prefs.getString(_kUpdateLastNotified) ?? '';
+
+  Future<void> setUpdateLastNotified(String version) async {
+    if (version.isEmpty) {
+      await _prefs.remove(_kUpdateLastNotified);
+    } else {
+      await _prefs.setString(_kUpdateLastNotified, version);
+    }
+  }
 }

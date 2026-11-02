@@ -3601,6 +3601,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Copy sender address'**
   String get copySenderAddress;
+
+  /// No description provided for @versionUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Version unknown'**
+  String get versionUnknown;
+
+  /// No description provided for @versionBuild.
+  ///
+  /// In en, this message translates to:
+  /// **'Build'**
+  String get versionBuild;
+
+  /// No description provided for @versionCommit.
+  ///
+  /// In en, this message translates to:
+  /// **'Commit'**
+  String get versionCommit;
+
+  /// No description provided for @versionBuiltAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Built at'**
+  String get versionBuiltAt;
+
+  /// No description provided for @versionChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel'**
+  String get versionChannel;
+
+  /// No description provided for @checkForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get checkForUpdates;
+
+  /// No description provided for @updateCheckNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Check'**
+  String get updateCheckNow;
+
+  /// No description provided for @updateRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get updateRetry;
+
+  /// No description provided for @checkingForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get checkingForUpdates;
+
+  /// No description provided for @updateUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re up to date'**
+  String get updateUpToDate;
+
+  /// settings > about: shown when the manifest advertises a newer version
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version} is available'**
+  String updateAvailable(String version);
+
+  /// No description provided for @updateCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Update check failed'**
+  String get updateCheckFailed;
+
+  /// No description provided for @updateCheckFailedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your network connection and try again'**
+  String get updateCheckFailedHint;
+
+  /// No description provided for @updateDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get updateDownload;
+
+  /// No description provided for @updateLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get updateLater;
+
+  /// No description provided for @updateAutoCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates automatically'**
+  String get updateAutoCheck;
+
+  /// No description provided for @updateView.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get updateView;
+
+  /// No description provided for @updateOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the download page'**
+  String get updateOpenFailed;
 }
 
 class _AppLocalizationsDelegate

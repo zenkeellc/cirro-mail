@@ -1482,5 +1482,31 @@
   "detailBcc": "Bcc",
   "detailShowDetails": "Show details",
   "detailHideDetails": "Hide details",
-  "copySenderAddress": "Copy sender address"
+  "copySenderAddress": "Copy sender address",
+  "versionUnknown": "Version unknown",
+  "versionBuild": "Build",
+  "versionCommit": "Commit",
+  "versionBuiltAt": "Built at",
+  "versionChannel": "Channel",
+  "checkForUpdates": "Check for updates",
+  "updateCheckNow": "Check",
+  "updateRetry": "Retry",
+  "checkingForUpdates": "Checking…",
+  "updateUpToDate": "You're up to date",
+  "updateAvailable": "Version {version} is available",
+  "@updateAvailable": {
+    "description": "settings > about: shown when the manifest advertises a newer version",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateCheckFailed": "Update check failed",
+  "updateCheckFailedHint": "Check your network connection and try again",
+  "updateDownload": "Download",
+  "updateLater": "Later",
+  "updateAutoCheck": "Check for updates automatically",
+  "updateView": "View",
+  "updateOpenFailed": "Could not open the download page"
 }

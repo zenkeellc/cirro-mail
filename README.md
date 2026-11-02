@@ -65,6 +65,23 @@ flutter build linux              # must run on Linux
 break the build — `android/app/build.gradle.kts` checks whether it exists and, if not, skips
 the Google Services plugin and prints a notice. You get no push, but everything else works.
 
+## Versioning & updates
+
+Version numbers come from git, not from manual edits: the name is the latest tag without its
+`v` prefix, and the **build number is `git rev-list --count HEAD`**, so it grows on every
+commit. Builds you ship should go through `dart tool/build.dart <flutter build args>`, which
+injects both via `--dart-define`; a plain `flutter run` / `flutter build` still works and
+falls back to the `0.1.0+1` in `pubspec.yaml`. The About page and the desktop window title
+show the current version (`0.1.0+131`).
+
+At launch (at most once a day) the app fetches a static version manifest from the website;
+when a newer build exists, the About page offers a download entry. The only request is that
+one static JSON on `cirro.zenkee.com` — no account, mail, or device data — and it can be
+turned off completely with `--dart-define=APP_UPDATE_MANIFEST=` (empty), or automatic checks
+can be disabled on the About page. See
+[`docs/app-update.md`](docs/app-update.md) for the manifest schema, how to publish a new
+manifest (`mail-site/scripts/app-version.mjs`), and the per-platform download fallback.
+
 ## Package name / Bundle ID
 
 The package name is `com.zenkee.mailapp`. **The package name you enter in the Firebase

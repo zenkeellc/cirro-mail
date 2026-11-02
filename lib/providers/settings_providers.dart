@@ -365,3 +365,26 @@ final writingSnippetsProvider =
   WritingSnippetsController.new,
   name: 'writingSnippets',
 );
+
+/// 「启动时自动检查更新」开关（关于页）。
+///
+/// 与 [ThemeModeController] 同一个形状：直接读同步的 [PrefsStore]，改动即时
+/// 落盘。它只管**自动检查**这一件事 —— 关于页手动「检查」按钮不受它影响，
+/// 版本信息也永远显示。清单地址为空（构建期关掉更新检查）时关于页根本不
+/// 画这个开关。
+class UpdateCheckEnabledController extends Notifier<bool> {
+  @override
+  bool build() => ref.watch(prefsStoreProvider).updateCheckEnabled;
+
+  Future<void> set(bool value) async {
+    state = value;
+    await ref.read(prefsStoreProvider).setUpdateCheckEnabled(value);
+  }
+}
+
+final NotifierProvider<UpdateCheckEnabledController, bool>
+    updateCheckEnabledProvider =
+    NotifierProvider<UpdateCheckEnabledController, bool>(
+  UpdateCheckEnabledController.new,
+  name: 'updateCheckEnabled',
+);

@@ -1,0 +1,229 @@
+# 版本号与更新检查
+
+App 怎么知道「自己是什么版本」、怎么知道「有没有新版」、发布的人怎么把新版告诉所有客户端。三件事各管一段：**build 号来自 git**，**版本清单是官网上的一个静态 JSON**，**发布时用脚本改那个 JSON**。
+
+本文写给两类人：想自己打包的（第二、三节）与负责发版的（第四、五节）。只想把自动检查关掉的普通用户看第六节。
+
+---
+
+## 一、版本号从哪来
+
+版本号不手工维护，全由 git 推出来：
+
+| 值 | 来源 | 注入的编译期变量 |
+|---|---|---|
+| 版本名（`0.1.0`、`0.1.0-pro.1`） | 最近的 git tag，**去掉前缀 `v`**；没有 tag 时退回 `pubspec.yaml` 的版本 | `APP_VERSION_NAME` |
+| build 号（正整数） | `git rev-list --count HEAD` | `APP_BUILD_NUMBER` |
+| 提交（短 sha） | `git rev-parse --short HEAD` | `APP_GIT_SHA` |
+| 构建时间（UTC，ISO 8601，秒精度） | 构建那一刻，如 `2026-11-02T02:39:46Z` | `APP_BUILD_TIME` |
+| 渠道（`public` / `pro`） | 构建参数，默认 `public` | `APP_UPDATE_CHANNEL` |
+
+**build 号 = 提交数**是这套东西的根：每提交一次，tag 不用动，build 号自己 +1，所以两个不同 build 的产物一定对应不同的提交。打新版本的 tag 只决定「版本名」，不决定 build 号。
+
+⚠️ **CI 里 checkout 必须 `fetch-depth: 0`**（完整历史）。浅克隆算出来的 `git rev-list --count HEAD` 永远是 1 —— 工具会为此在 stderr 打一条警告，但出来的包 build 号就是错的，而且不容易发现。
+
+这些值在编译期用 `--dart-define` 注入。**没注入时**（直接 `flutter run`、或没走包装脚本的 `flutter build`）App 退回 `PackageInfo`，也就是 `pubspec.yaml` 里那个 `0.1.0+1` —— 能跑、能显示，但 build 号不会随提交走。所以**要发出去的包一律走第三节的包装脚本**。
+
+界面上版本串的格式是 `0.1.0+131`（版本名 + build 号）：关于页与桌面窗口标题都用它（窗口标题多了应用名，见 `window_title.dart` 的 `Cirro Mail v0.1.0+131`）。build 号为 0（不知道）时只显示版本名。
+
+## 二、`tool/version.dart`：只算版本，不构建
+
+```bash
+dart tool/version.dart                      # = --format=summary，人读的摘要（默认）
+dart tool/version.dart --format=shell       # KEY='value' 行，可直接 eval（发版脚本用）
+dart tool/version.dart --format=json        # 机器读（CI / 发布脚本解析用）
+dart tool/version.dart --build-args         # = --format=build-args，只输出 flutter build 参数串
+dart tool/version.dart --channel=pro        # 换发行渠道（默认 public）
+```
+
+四种格式：
+
+| 格式 | 给谁 | 内容 |
+|---|---|---|
+| `summary`（默认） | 人 | 版本名、build 号及其来源、提交、构建时间（UTC）、渠道、工作区是否 dirty，外加一行注入参数 |
+| `shell` | 发布脚本 | `APP_VERSION_NAME='0.1.0'` 这种 `KEY='value'` 行；`eval "$(dart tool/version.dart --format=shell)"` 之后变量可直接用。另外给出 `VERSION_NAME` / `BUILD_NUMBER` / `CHANNEL`，方便拼发布文件名 |
+| `json` | CI / 脚本 | `{versionName, buildNumber, commit, builtAt, channel, dirty, shallow, display, sources}`；`builtAt` 是秒精度 UTC（`2026-11-02T02:39:46Z`） |
+| `build-args`（=`--build-args`） | `flutter build` | 一行 `--build-name=… --build-number=… --dart-define=APP_VERSION_NAME=… …`；值里没有空格，可以安全地按空白切分 |
+
+- `--build-args` 只打印参数串，不构建；想手写 `flutter build` 时把它拼在后面即可（等价写法见下一节的对照）。
+- `--channel=<名字>` 决定注入的 `APP_UPDATE_CHANNEL`。优先级：`--channel` > 环境变量 `APP_UPDATE_CHANNEL` > `public`。**渠道名只影响客户端读版本清单里的哪个渠道**，不影响版本号，核心代码也不关心它叫什么。
+- `--repo=<目录>` 指定从哪个检出算版本（默认是本工具所在的检出）。另一个发行渠道的检出还没合入这个工具时，可以临时指过去借用，版本按那个仓库算。
+- 给人看的是 `summary`，给脚本用的是 `shell` / `json`。**不要解析 `summary` 的文本**。
+
+## 三、`tool/build.dart`：构建时自动注入
+
+包装脚本，收的是原样的 `flutter build` 参数，自己把版本相关的 flag 和 dart-define 补上：
+
+```bash
+dart tool/build.dart macos --release
+dart tool/build.dart linux --release
+dart tool/build.dart windows --release
+dart tool/build.dart apk --debug
+dart tool/build.dart --dry-run macos --release   # 只打印最终命令，不执行
+dart tool/build.dart apk --release --channel=pro  # 换渠道（包装层吃掉 --channel）
+```
+
+`--dry-run` / `--channel=…` / `--repo=…` / `--help` 由包装层吃掉，**其余参数原样透传**给 `flutter build`（所以 `--dart-define=APP_UPDATE_CHANNEL=pro` 这种手写参数也会照常交给 flutter）。自己传过的 `--build-name` / `--build-number` / 同名 `APP_*` define 不会被重复追加 —— **显式值优先**。`--dry-run` 打印的最终命令可以直接复制出来手动跑，CI 日志里也会先打这一行。
+
+它等价于先跑一遍 `tool/version.dart --build-args`，再执行：
+
+```bash
+flutter build macos --release \
+  --build-name=0.1.0 \
+  --build-number=131 \
+  --dart-define=APP_VERSION_NAME=0.1.0 \
+  --dart-define=APP_BUILD_NUMBER=131 \
+  --dart-define=APP_GIT_SHA=<short sha> \
+  --dart-define=APP_BUILD_TIME=2026-11-02T02:40:00Z \
+  --dart-define=APP_UPDATE_CHANNEL=public
+```
+
+想换渠道又不想用 `--channel` 时，也可以直接把那个 define 透传给包装脚本（`dart tool/build.dart macos --release --dart-define=APP_UPDATE_CHANNEL=pro`）。两种写法效果相同 —— 但**一个包只能有一个渠道**，别在 wrapper 与手写参数里各写一个；真撞上了，显式传的那个优先。
+
+## 四、版本清单长什么样
+
+客户端查新版本**只读一个静态文件**：
+
+```
+https://cirro.zenkee.com/app-version.json
+```
+
+源文件是官网仓库里的 `mail-site/public/app-version.json`，Cloudflare Pages 部署时**原样**发布（不经过任何接口、不鉴权、不代表「在线服务」）。schema 固定为：
+
+```json
+{
+  "schema": 1,
+  "updatedAt": "2026-11-02T02:40:00Z",
+  "channels": {
+    "public": {
+      "version": "0.1.0",
+      "buildNumber": 1,
+      "publishedAt": "2026-10-28T14:00:46Z",
+      "notes": "首个公开发布：多实例、AI 写信、附件预览。First public release.",
+      "releaseUrl": "https://github.com/zenkeellc/cirro-mail/releases/tag/v0.1.0",
+      "downloads": {
+        "macos": "https://github.com/zenkeellc/cirro-mail/releases/download/v0.1.0/CirroMail-0.1.0-macos-universal.dmg",
+        "linux": "https://github.com/zenkeellc/cirro-mail/releases/download/v0.1.0/CirroMail-0.1.0-linux-x86_64.tar.gz",
+        "windows": null,
+        "android": null,
+        "ios": null
+      }
+    },
+    "pro": { "…同构…": "另一个发行渠道的条目" }
+  }
+}
+```
+
+字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `schema` | number | 固定 `1`；改结构才升，客户端不认别的值 |
+| `updatedAt` | string | 清单最近一次被改的时间（ISO 8601，带时区） |
+| `channels` | object | 渠道名 → 该渠道的最新版本；`public` 与 `pro` 两个键都在 |
+| `version` | string | 版本名 = tag 去掉 `v`，如 `0.1.0` / `0.1.0-pro.1` |
+| `buildNumber` | number | 正整数，`git rev-list --count HEAD` |
+| `publishedAt` | string | 这个版本发布的时间（ISO 8601，带时区） |
+| `notes` | string | 一句话更新说明，**纯文本**（可空串）；客户端直接显示，不放 HTML |
+| `releaseUrl` | string | release 页地址（https），平台直链缺失时回退到它 |
+| `downloads` | object | 五个平台键 `macos` / `linux` / `windows` / `android` / `ios`，值是 https 直链或 `null` |
+
+**字段名与类型是契约**：客户端按 `schema: 1` 校验，认不出的 schema 按坏数据处理（**不猜**），文件不是合法 JSON 时提示「检查失败」。所以改清单时宁可留 `null`、留空 `notes`，也别省字段、别改类型 —— 类型错了客户端不会当没事发生。
+
+**客户端怎么判断「有没有新版」**：先比 `version`（semver；预发布按 semver §11 排序，所以 `0.1.0-pro.1 < 0.1.0`），版本名相同才比 `buildNumber`。**不是**「buildNumber 大就新」——`0.2.0+1` 比 `0.1.0+999` 新。当前运行版本未知时不做判断，按「已是最新」处理、不弹提示。
+
+`channels` 里为什么有两个渠道：同一份构建参数只注入一个 `APP_UPDATE_CHANNEL`，客户端只读自己那个渠道。`public` 是公开仓库发的版本；`pro` 是另一个发行渠道（自己的发布仓库）的版本，两边各自独立比较。
+
+## 五、发布时怎么更新清单
+
+发布是两步：**先发 GitHub Release，再改官网清单**。清单更新后，已经装了旧版的客户端下一次检查就会看到新版本。
+
+1. **发 tag + Release**（照旧流程），拿到 tag，例如 `v0.2.0`。
+
+2. **取真实资产地址**（不要手拼，资产名随平台/架构会变）：
+
+   ```bash
+   gh release view v0.2.0 -R zenkeellc/cirro-mail --json assets,url
+   ```
+
+   从 `assets[].url` 里取 macOS 的 `.dmg`、Linux 的 `.tar.gz`（或 `.deb`）、Windows 的 `.zip` 等；**这个仓库当前只发桌面端，`windows` / `android` / `ios` 没有产物就写 `null`**。
+
+3. **改清单**（在父仓库的 `mail-site/` 目录下跑；脚本无第三方依赖）：
+
+   ```bash
+   node scripts/app-version.mjs \
+     --channel public \
+     --version 0.2.0 \
+     --build 132 \
+     --release-url https://github.com/zenkeellc/cirro-mail/releases/tag/v0.2.0 \
+     --macos-url https://github.com/zenkeellc/cirro-mail/releases/download/v0.2.0/CirroMail-0.2.0-macos-universal.dmg \
+     --linux-url https://github.com/zenkeellc/cirro-mail/releases/download/v0.2.0/CirroMail-0.2.0-linux-x86_64.tar.gz \
+     --notes-file /tmp/notes.txt
+   ```
+
+   - `--build` 用 `dart tool/version.dart --format=json`（或 `--format=shell`）给出的数，别手数提交。
+   - `--notes-file` 与 `--notes "一句话"` 二选一；说明别超过一两句纯文本。
+   - 只想改某个平台直链时只传对应的 `--macos-url` 等，其余字段保持原样；传空值（如 `--ios-url=`）会写成 `null`。
+   - 脚本自动刷新 `updatedAt`；只有 `version` 或 `buildNumber` 真的变了才刷新该渠道的 `publishedAt`（修一处下载地址或说明不算新版本）。
+   - 写回固定 2 空格缩进、末尾换行、键顺序稳定，diff 只动该动的行。
+
+4. **校验**（`--check` 只校验、不写盘，适合放进 CI）：
+
+   ```bash
+   node scripts/app-version.mjs --check
+   ```
+
+   校验失败（schema 不对、版本名带 `v`、build 不是正整数、URL 不是 https、平台键拼错、缺 `null` 平台……）会**列出每一条错误并以非零退出码结束**。验收线上文件时也可以直接 `curl -s https://cirro.zenkee.com/app-version.json | python3 -m json.tool`。
+
+5. **提交并部署**：把 `mail-site/public/app-version.json` 的改动提交、推到 `main`。官网的 GitHub Actions 会在改动落在 `mail-site/**` 时跑构建与测试并部署到 Cloudflare Pages；部署完成后 <https://cirro.zenkee.com/app-version.json> 就是新内容。**不需要重启任何服务**。
+
+> 发 `pro` 渠道就把 `--channel` 换成 `pro`、URL 换成那个发布仓库的资产。清单里两个渠道互不影响，所以「公开版先发、另一个渠道晚一天」也没问题。
+
+## 六、隐私与关闭
+
+**客户端请求什么、不请求什么：**
+
+- 只有 `GET https://cirro.zenkee.com/app-version.json` 这一个请求（带一个 `?_=<毫秒时间戳>` 的 cache-buster，避免 CDN 缓存把新清单挡住；超时 8 秒）。域名就是官网域名，清单地址可替换，见下。
+- 不带账号、不带邮件内容、不带设备标识；不要求登录、不写 cookie；这个文件是静态的，服务端拿不到「谁在升级」。
+- 不自动下载、不自动安装：有新版时只显示版本说明 + 打开下载页/直链，装不装由用户决定。
+- 自动检查默认开启，启动时最多一天一次（同一台机器 24 小时内不重复打网络）。
+- 检查失败（断网、超时、静态站把未知路径回成 200 + HTML、schema 不认识）时关于页显示「检查失败」+ 一句本地化提示（「请检查网络连接后再试」）+「重试」。**原始错误文本不上屏**（Dio/网络报错可能是英文，用户可见文案一律走 l10n），只留在 `UpdateException` 里给测试与诊断；静态站的 200+HTML 也走这条，不会被当成「已是最新」。
+
+**三种关法：**
+
+| 场景 | 做法 |
+|---|---|
+| 打包时彻底关掉（自建 / 只想自己控制） | `--dart-define=APP_UPDATE_MANIFEST=`（**空串**）—— 关于页整块「检查更新 + 自动检查开关」都隐藏，只留版本信息，也不再发任何请求 |
+| 指向自己的清单 | `--dart-define=APP_UPDATE_MANIFEST=https://你的域名/app-version.json`（任何静态 JSON 地址都行，照第四节的 schema 放好即可） |
+| 用户自己不想被自动检查 | 关于页的「自动检查更新」开关（偏好存本地）：**只停启动时的自动检查**，版本照常显示，手动点「检查」仍然可用 |
+
+关闭清单地址（第一个）是**编译期的**：装好的包改不了，要重新打包。其余两个是运行时的。另外 `--dart-define=APP_UPDATE_CHECK=false` 只改「自动检查」的**默认值**（用户仍可在关于页打开），它**不是**关闭入口 —— 要彻底关掉用第一个。
+
+## 七、平台下载与回退
+
+运行平台按 `defaultTargetPlatform` 映射到清单里的键（android / ios / macos / windows / linux）。有新版时客户端按「先直链、后 release 页」的顺序给下载地址：
+
+1. `downloads.<当前平台>` 有 https 直链 → 直接用它；
+2. 是 `null`（或空串）→ 用 `releaseUrl`（release 页面上有全部资产，含 `SHA256SUMS.txt`）；
+3. 两者都没有 → **不出现「下载」按钮**，只展示 `notes`。
+
+当前的实际状态：macOS 与 Linux 有直链，`windows` / `android` / `ios` 是 `null`（还没有这些平台的产物）—— 所以这三个平台一律回退到 release 页。以后补了产物，按第五节把对应 `--windows-url` 等填上即可，客户端不用改。
+
+关于页那一块长这样：版本行（`0.1.0+131`）、构建提交/构建时间/渠道小字、「检查更新」区域（手动「检查」按钮 + 「自动检查更新」开关）。检查结果就地显示：检查中 / 已是最新（+ 重新检查）/ 发现新版本（+ 清单 `notes` 原样展示 +「下载」「稍后」）/ 检查失败（+「重试」）。启动时发现新版本另弹一条提示，动作是「下载」，点提示文字进设置页（关于分类在最后一项；设置页目前没有 `?section=about` 这类深链，只能先到设置首页）。下载走系统浏览器/外部打开，不在 App 内安装。
+
+## 八、发版检查清单
+
+- [ ] tag 已推、GitHub Release 已发，资产可下载
+- [ ] `dart tool/version.dart --format=summary` 的版本名/build 号与要发的包一致
+- [ ] `node scripts/app-version.mjs --check` 通过
+- [ ] 新清单比旧的大（先比 `version`、再比 `buildNumber`），`releaseUrl` 与平台直链能打开
+- [ ] 清单提交并部署后，`curl -s https://cirro.zenkee.com/app-version.json | python3 -m json.tool` 能看到新版本
+- [ ] 拿一个旧包启动，关于页能提示新版本（有测试包时）
+
+---
+
+## 相关文档
+
+- [`push-setup.md`](push-setup.md)：内置推送（与更新检查无关，独立配置）
+- 官网仓库的 `mail-site/README.md`：站点部署流程（`public/` 下的文件会原样进 `dist/`，清单就是其中一件）
+- 清单生成脚本：`mail-site/scripts/app-version.mjs`（`--help` 看全部参数）

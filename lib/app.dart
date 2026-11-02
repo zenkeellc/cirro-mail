@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/version/window_title.dart';
 import 'features/notifications/notification_host.dart';
 import 'features/shortcuts/shortcut_host.dart';
+import 'features/update/update_host.dart';
 import 'l10n/app_localizations.dart';
 import 'providers/settings_providers.dart';
 import 'router.dart';
@@ -54,8 +56,20 @@ class MailApp extends ConsumerWidget {
       //   `test/mail_shortcuts_clipboard_test.dart` 是端到端的验证。
       // - 它在 `NotificationHost` **外面**：通知点开会 push 路由，快捷键
       //   要罩住推上来的那一页。
-      builder: (context, child) => MailShortcutHost(
-        child: NotificationHost(child: child ?? const SizedBox.shrink()),
+      //
+      // 最外面两层是「版本」的两个出口，都是**不改布局**的接线柱：
+      // - `UpdateHost`：启动后每天最多一次查官网版本清单，发现新版本弹一条
+      //   SnackBar（下载 / 查看）。它要 `ScaffoldMessenger`，所以必须在这
+      //   里面（`MaterialApp` 提供），放外面不会崩、但 SnackBar 静默不弹。
+      // - `WindowTitleHost`：把版本写进**原生**窗口标题栏。它不碰
+      //   `MaterialApp.title` —— 那只影响任务切换器显示的名字（见
+      //   `core/version/window_title.dart` 与三个 runner 的 `setWindowTitle`）。
+      builder: (context, child) => WindowTitleHost(
+        child: UpdateHost(
+          child: MailShortcutHost(
+            child: NotificationHost(child: child ?? const SizedBox.shrink()),
+          ),
+        ),
       ),
       debugShowCheckedModeBanner: false,
     );

@@ -1956,4 +1956,60 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get copySenderAddress => '复制发件人地址';
+
+  @override
+  String get versionUnknown => '版本未知';
+
+  @override
+  String get versionBuild => '构建号';
+
+  @override
+  String get versionCommit => '提交';
+
+  @override
+  String get versionBuiltAt => '构建时间';
+
+  @override
+  String get versionChannel => '渠道';
+
+  @override
+  String get checkForUpdates => '检查更新';
+
+  @override
+  String get updateCheckNow => '检查';
+
+  @override
+  String get updateRetry => '重试';
+
+  @override
+  String get checkingForUpdates => '检查中…';
+
+  @override
+  String get updateUpToDate => '已是最新版本';
+
+  @override
+  String updateAvailable(String version) {
+    return '发现新版本 $version';
+  }
+
+  @override
+  String get updateCheckFailed => '检查失败';
+
+  @override
+  String get updateCheckFailedHint => '请检查网络连接后再试';
+
+  @override
+  String get updateDownload => '下载';
+
+  @override
+  String get updateLater => '稍后';
+
+  @override
+  String get updateAutoCheck => '自动检查更新';
+
+  @override
+  String get updateView => '查看';
+
+  @override
+  String get updateOpenFailed => '打不开下载页';
 }

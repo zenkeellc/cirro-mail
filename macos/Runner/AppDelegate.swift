@@ -224,19 +224,28 @@ class AppDelegate: FlutterAppDelegate {
       binaryMessenger: controller.engine.binaryMessenger
     )
     channel.setMethodCallHandler { [weak self] call, result in
-      // 两个方法共用一条通道：`showMainWindow`（点通知时把窗口叫起来）与
-      // `hideMainWindow`（`Cmd+W` 藏窗）。**不是**两个通道 —— 通道名是
-      // Dart 侧 [WindowChannel] 的一个常量，多开一条就要多维护一处字符串。
-      guard call.method == "showMainWindow" || call.method == "hideMainWindow" else {
+      // 三个方法共用一条通道：`showMainWindow`（点通知时把窗口叫起来）、
+      // `hideMainWindow`（`Cmd+W` 藏窗）与 `setWindowTitle`（标题栏显示版本）。
+      // **不是**三条通道 —— 通道名是 Dart 侧 [WindowChannel] 的一个常量，
+      // 多开一条就要多维护一处字符串。
+      guard call.method == "showMainWindow" || call.method == "hideMainWindow"
+        || call.method == "setWindowTitle" else {
         result(FlutterMethodNotImplemented)
         return
       }
       // 通道回调不保证落在主线程上，而 AppKit 只认主线程。
       DispatchQueue.main.async {
-        if call.method == "showMainWindow" {
+        switch call.method {
+        case "showMainWindow":
           self?.showMainWindow()
-        } else {
+        case "hideMainWindow":
           self?.hideMainWindow()
+        default:
+          // 与上面两个无参方法不同，这条的参数是 map（`{"title": ...}`）。
+          let arguments = call.arguments as? [String: Any]
+          if let title = arguments?["title"] as? String, !title.isEmpty {
+            self?.setWindowTitle(title)
+          }
         }
         result(nil)
       }
@@ -281,6 +290,17 @@ class AppDelegate: FlutterAppDelegate {
       NSApp.activate(ignoringOtherApps: true)
     }
     updateWindowlessActivity()
+  }
+
+  /// 改原生标题栏的文字（Dart 侧 `WindowTitleHost` 在版本解析出来后调一次）。
+  ///
+  /// 取窗口的口径与 [showMainWindow] / [hideMainWindow] 一致
+  /// （`retainedWindow ?? mainFlutterWindow`）：`mainFlutterWindow` 是 weak 的
+  /// IBOutlet，窗口藏起来之后它可能已经变 nil，而标题要一直对到退出为止。
+  private func setWindowTitle(_ title: String) {
+    guard let window = retainedWindow ?? mainFlutterWindow else { return }
+    retainedWindow = window
+    window.title = title
   }
 
   @objc private func quit() {

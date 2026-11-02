@@ -40,6 +40,12 @@ flutter build linux              # 需在 Linux 上
 
 `android/app/google-services.json` **不在仓库里**，也不影响构建 —— `android/app/build.gradle.kts` 会检测它是否存在，不存在就跳过 Google 服务插件并打一行提示。没有推送，其他功能都正常。
 
+## 版本号与更新检查
+
+版本号不用手工改：版本名取最近的 git tag（去掉 `v`），**build 号 = git 提交数**（`git rev-list --count HEAD`，每提交一次自动 +1），构建时用 `--dart-define` 注入。要发出去的包走 `dart tool/build.dart <flutter build 参数>`；直接 `flutter run` / 裸 `flutter build` 也能用，只是没有注入值，退回 `pubspec.yaml` 里的 `0.1.0+1`。关于页与桌面窗口标题显示当前版本（`0.1.0+131`）。
+
+App 启动时会拉一次官网的静态版本清单（默认一天最多一次），有新版本就在关于页给出下载入口。只请求 `cirro.zenkee.com` 上的一个静态 JSON，不带账号、邮件或设备信息；可以用 `--dart-define=APP_UPDATE_MANIFEST=`（空串）彻底关掉，或在关于页关掉自动检查。清单字段、发版时怎么改清单（`mail-site/scripts/app-version.mjs`）、平台下载回退规则，见 [`docs/app-update.md`](docs/app-update.md)。
+
 ## 包名 / Bundle ID
 
 包名是 `com.zenkee.mailapp`。**Firebase 控制台里填的包名必须与之逐字一致**，否则 `google-services.json` 放进去也不生效（Android 会**直接构建失败**并报 `No matching client found for package name`；Apple 侧则是运行时找不到默认 app）：

@@ -21,6 +21,13 @@ struct _MyApplication {
   // 不会被回收，轮询和推送登记照常跑。
   GtkWindow* window;
 
+  // GNOME 下用的是带 `GtkHeaderBar` 的自绘标题栏（`my_application_activate`
+  // 里 `use_header_bar` 那一支）。这种窗口的标题**不在** `GtkWindow` 上 ——
+  // 只调 `gtk_window_set_title` 的话，用户在标题栏里什么都看不到。所以留一份
+  // 指针，Dart 改标题时两处一起改（见 [window_method_call_cb]）。
+  // 走传统标题栏的分支里它是 nullptr。
+  GtkHeaderBar* header_bar;
+
   // 顶栏里那个图标。**第一次关窗时才建** —— 一个还开着窗口的 App 不该再占
   // 一格，这条和 Windows 那边一致（macOS 是反过来：启动就挂菜单栏图标）。
   TrayIcon* tray;
@@ -127,6 +134,26 @@ static void window_method_call_cb(FlMethodChannel* channel,
     // [my_application_hide_to_tray]。
     my_application_hide_to_tray(self);
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(fl_method_call_get_name(method_call), "setWindowTitle") == 0) {
+    // 与另外两个无参方法不同，这条的参数是 map（`{"title": ...}`）。
+    FlValue* args = fl_method_call_get_args(method_call);
+    const gchar* title = nullptr;
+    if (args != nullptr && fl_value_get_type(args) == FL_VALUE_TYPE_MAP) {
+      FlValue* value = fl_value_lookup_string(args, "title");
+      if (value != nullptr && fl_value_get_type(value) == FL_VALUE_TYPE_STRING) {
+        title = fl_value_get_string(value);
+      }
+    }
+    if (title != nullptr && title[0] != '\0' && self->window != nullptr) {
+      // 两处都设：GNOME 下用户看到的是 header bar 的标题，但传统标题栏、以及
+      // 任务栏 / 窗口列表读的是 `GtkWindow` 的 title —— 只改一处会在另一半
+      // 场景里悄悄失效。`header_bar` 为 nullptr 时那条分支不会执行。
+      gtk_window_set_title(self->window, title);
+      if (self->header_bar != nullptr) {
+        gtk_header_bar_set_title(self->header_bar, title);
+      }
+    }
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   }
@@ -178,6 +205,8 @@ static void my_application_activate(GApplication* application) {
     gtk_header_bar_set_title(header_bar, "Cirro Mail");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
+    // 记下来给 `setWindowTitle` 用（见 [window_method_call_cb]）。
+    self->header_bar = header_bar;
   } else {
     gtk_window_set_title(window, "Cirro Mail");
   }

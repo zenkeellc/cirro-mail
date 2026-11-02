@@ -36,6 +36,27 @@ abstract final class WindowChannel {
     }
   }
 
+  /// 改主窗口的**原生标题栏**文字（三个桌面平台各一处 runner 实现）。
+  ///
+  /// 为什么要绕到原生侧：Flutter 自己的 `MaterialApp.title` 只影响任务切换器 /
+  /// 窗口列表里那份由引擎上报的名字，**碰不到** macOS 的 NSWindow 标题栏、
+  /// Windows 的 `SetWindowTextW` 和非 GNOME 下的 GTK 窗口标题，也不会改
+  /// GNOME 的 `GtkHeaderBar`。用户说的「标题栏」就是这些地方。
+  ///
+  /// 与 [show] / [hide] 一样是**静默空操作**：非桌面平台、旧构建、通道没接上
+  /// 都不抛 —— 标题少显示一个版本号不值得把启动路径带崩（何况调用点就在
+  /// 首帧之后）。
+  static Future<void> setTitle(String title) async {
+    if (kIsWeb || !_isDesktop) return;
+    try {
+      await _channel.invokeMethod<void>('setWindowTitle', <String, Object?>{
+        'title': title,
+      });
+    } catch (_) {
+      // 同上：旧构建的原生侧没有这个方法，`MissingPluginException` 吞掉即可。
+    }
+  }
+
   /// 把主窗口藏起来，App 留在菜单栏 / 托盘里继续收信（`Cmd/Ctrl+W`）。
   ///
   /// ## 为什么是「藏起来」而不是「退出」

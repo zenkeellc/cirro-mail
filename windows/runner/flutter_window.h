@@ -6,6 +6,7 @@
 #include <flutter/method_channel.h>
 
 #include <memory>
+#include <string>
 
 #include "tray_icon.h"
 #include "win32_window.h"
@@ -36,6 +37,10 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  // 改原生标题栏的文字（Dart 侧 `WindowTitleHost` 在版本解析出来后调一次）。
+  // UTF-8 → UTF-16 的转换在 `utils.cpp` 的 `Utf16FromUtf8`。
+  void SetWindowTitle(const std::string& title);
+
   // 「关窗」的真正动作：藏起窗口、确保通知区里有图标。见 [MessageHandler]
   // 里那段关于为什么必须拦 `WM_CLOSE` 的注释。
   void HideToTray();
