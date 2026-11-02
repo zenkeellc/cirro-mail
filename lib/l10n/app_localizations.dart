@@ -1544,6 +1544,24 @@ abstract class AppLocalizations {
   /// **'Last sync'**
   String get lastSyncedAt;
 
+  /// No description provided for @sessionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Session'**
+  String get sessionTitle;
+
+  /// No description provided for @sessionExpiresAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Expires around'**
+  String get sessionExpiresAt;
+
+  /// No description provided for @sessionExpiringSoon.
+  ///
+  /// In en, this message translates to:
+  /// **'The server extends a session only while it is used: any authenticated request within 30 days resets the 30-day window. If this instance sends no request for 30 days (or the same account signs in from a 12th device), its token is dropped and you have to enter the password again.'**
+  String get sessionExpiringSoon;
+
   /// No description provided for @domainList.
   ///
   /// In en, this message translates to:

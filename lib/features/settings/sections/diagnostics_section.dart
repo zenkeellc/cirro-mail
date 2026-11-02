@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_defaults.dart';
+import '../../../core/config/session_expiry.dart';
 import '../../../core/network/endpoints.dart';
 import '../../../data/models/instance_capabilities.dart';
 import '../../../data/models/mailbox_account.dart';
@@ -75,6 +76,14 @@ class _ProfileDiagnostics extends ConsumerWidget {
     }
 
     final domains = config?.domainList ?? caps.domainList;
+
+    // 会话到期只能估算：token 里没有 `exp`，服务端那份记录是「用一次续
+    // 30 天」的滑动窗口（见 `SessionExpiry`）。
+    final session = SessionExpiry.estimate(
+      isLoggedIn: profile.isLoggedIn,
+      lastActiveAt: profile.lastActiveAt,
+      lastSyncAt: profile.lastSyncAt,
+    );
 
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -150,6 +159,25 @@ class _ProfileDiagnostics extends ConsumerWidget {
               keyText: l10n.lastSyncedAt,
               value: _stamp(profile.lastSyncAt?.toLocal()) ?? '-',
             ),
+
+            const SizedBox(height: 12),
+            _GroupTitle(title: l10n.sessionTitle),
+            _KeyValue(
+              keyText: l10n.sessionExpiresAt,
+              value: _stamp(session.expiresAt?.toLocal()) ?? '-',
+            ),
+            // 服务端是「用一次续 30 天」的滑动过期：真的连续 30 天没请求，
+            // token 会被 KV 清掉，只能重新输密码。提前提示一句，用户打开
+            // 收一次信就续上了 —— 比到期当天突然被踢回登录页好得多。
+            if (session.shouldWarn)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  l10n.sessionExpiringSoon,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.error),
+                ),
+              ),
 
             const SizedBox(height: 12),
             _GroupTitle(title: l10n.mailbox),

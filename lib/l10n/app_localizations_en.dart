@@ -836,6 +836,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lastSyncedAt => 'Last sync';
 
   @override
+  String get sessionTitle => 'Session';
+
+  @override
+  String get sessionExpiresAt => 'Expires around';
+
+  @override
+  String get sessionExpiringSoon =>
+      'The server extends a session only while it is used: any authenticated request within 30 days resets the 30-day window. If this instance sends no request for 30 days (or the same account signs in from a 12th device), its token is dropped and you have to enter the password again.';
+
+  @override
   String get domainList => 'Domains';
 
   @override

@@ -221,6 +221,11 @@ Future<bool> _runBackgroundSync() async {
       // 每次请求都 401 的收件箱里跳不出去。**这个回调比前台那份更要紧** ——
       // 后台正是最容易撞上「token 被别的设备挤掉」的地方。
       onAuthExpired: (id) => unawaited(profiles.markNeedsLogin(id)),
+      // 与前台同一套：401 之后复验一次，虚惊一场就把 `needs_login` 撤掉。
+      // 后台 isolate 跑完就死，复验是 `unawaited` 的 —— 它自己会吞异常
+      // （见 `RuntimeRegistry._revalidateSession` 的兜底），所以哪怕库先关了，
+      // 最坏也只是这一次没翻案，钥匙串里的 token 仍然留着给下次冷启动。
+      onSessionRecovered: (id) => profiles.markNeedsLogin(id, needsLogin: false),
     );
 
     final capabilities = CapabilityRepository(db);

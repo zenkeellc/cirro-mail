@@ -127,6 +127,25 @@ class TokenStore {
     return null;
   }
 
+  /// 只把 token 从内存缓存里摘掉，**钥匙串里那一份留着**。
+  ///
+  /// 401 的第一步该走这里而不是 [delete]：一次 401 未必是真的失效（服务端刚
+  /// 换过 `jwt_secret`、KV 跨 colo 还没同步、或者被别的设备挤了出去），
+  /// 而 [delete] 是**不可逆**的 —— 删掉之后手里就没有任何东西可以拿去复验，
+  /// 用户只能重新输密码。留着钥匙串那份，复验成功就能原地恢复登录态；
+  /// 只有复验**也**回 401 时才 [delete]（见 `RuntimeRegistry` 的 401 复验）。
+  ///
+  /// 摘掉缓存是为了让后续请求**不再带上这个 token**：继续带着它打请求，
+  /// 只会一直吃 401、一直触发同一套处理。同时记一笔 [_refreshWanted]，
+  /// 让 `ProfileRuntime.warmUp`（[read] → [readFresh]）能重新从钥匙串把它
+  /// 捞回来 —— 否则 `_loaded` 里那条「读过就是没有」会把复验路径一起挡死。
+  void invalidateMemory(String profileId) {
+    if (profileId.isEmpty) return;
+    _cache.remove(profileId);
+    _loaded.add(profileId);
+    _refreshWanted.add(profileId);
+  }
+
   /// [read] 读不到时，把「以后也许还得再问一次钥匙串」的 profileId 记在这儿。
   ///
   /// 为什么要有它：[read] 读到「不存在」会在 `_loaded` 里记一笔，之后永远返回

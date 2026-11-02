@@ -143,6 +143,13 @@ final Provider<RuntimeRegistry> runtimeRegistryProvider =
       onAuthExpired: (String profileId) {
         unawaited(profiles.markNeedsLogin(profileId));
       },
+      // 401 复验成功 → 撤销落库的 `needs_login`。与上面那条成对：那边置上，
+      // 这边在「其实没坏」的时刻摘掉（见 `RuntimeRegistry._revalidateSession`）。
+      //
+      // 这里**不抄** scheduler 那条 `isDegraded` 闸门：能走到这里，说明刚刚
+      // 用钥匙串里的 token 换回了一个 200 —— 存储显然是好的。
+      onSessionRecovered: (String profileId) =>
+          profiles.markNeedsLogin(profileId, needsLogin: false),
     );
     ref.onDispose(registry.dispose);
     return registry;

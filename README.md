@@ -561,9 +561,12 @@ there is no Web target now, but this line keeps a future PWA from requiring a fu
   JSON as the file.
 - `createTime` is a UTC time with no timezone marker; `DateTime.parse` treats it as local, so
   it must be parsed explicitly as UTC.
-- The login JWT **has no `exp`**; the server validates against a list of at most 10 tokens in
-  KV — **the 11th login evicts the oldest session**. So do not silently re-login on 401, as
-  that keeps evicting. The app explains this in Settings.
+- The login JWT **has no `exp`**; the server validates against a list of at most 11 tokens in
+  KV (`if (tokens.length > 10) shift()` before pushing, so the old "at most 10 / the 11th
+  login" wording was off by one) — **the 12th login evicts the oldest session**. So do not
+  silently re-login on 401, as that keeps evicting. And a 401 does not necessarily mean a dead
+  token: the app first re-probes with the keychain copy and only signs the user out when the
+  probe also returns 401. The app explains this in Settings.
 - The server **has no unread-count endpoint** and no single-message detail endpoint. The unread
   badge is computed from the local database (showing "syncing" rather than a wrong 0 before the
   first sync completes); a notification deep link must page back to find that message (at most

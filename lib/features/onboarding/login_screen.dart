@@ -18,8 +18,8 @@ import '../../router.dart' as app_router;
 /// 2. **成功后不是 `context.go` 到聚合页就完事**：还要把 userId 写回库，
 ///    否则 `Profile.isLoggedIn` 仍为 false，`redirect` 会立刻把用户弹回登录页
 ///    （形成「登录成功又回到登录页」的诡异循环）。所以先 `completeSignIn` 再导航。
-/// 3. **401 的文案要提到「可能被其他设备挤掉」**：服务端同一账号只保留 10 个
-///    token，第 11 次登录会把最老的顶下去（见 `AuthApi` 的注释）。
+/// 3. **401 的文案要提到「可能被其他设备挤掉」**：服务端同一账号只保留 11 个
+///    token，第 12 次登录会把最老的顶下去（见 `AuthApi` 的注释）。
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key, required this.profileId});
 
@@ -213,8 +213,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                // 服务端同一账号最多 10 个 token，第 11 次登录会挤掉最老的。
-                '同一账号最多保留 10 个登录会话，多设备登录会互相顶掉最旧的那个。',
+                // 服务端同一账号最多 11 个 token，第 12 次登录会挤掉最老的
+                // （`if (tokens.length > 10) shift()` 再 push，差一）。
+                '同一账号最多保留 11 个登录会话，多设备登录会互相顶掉最旧的那个。',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall
                     ?.copyWith(color: theme.colorScheme.outline),

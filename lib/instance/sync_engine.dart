@@ -200,6 +200,9 @@ class SyncEngine {
     _nextRunAt = DateTime.now().toUtc();
     _failCount = 0;
     _lastError = null;
+    // 手动刷新要连邮箱列表一起重新问一次：用户按下这颗按钮时的期待是
+    // 「现在，按服务器上的真实状态来」，而不是「用十分钟前的缓存」。
+    _mailboxesRefreshedAt = null;
   }
 
   /// 跑一轮。
@@ -225,8 +228,9 @@ class SyncEngine {
       // 确保 token 在缓存里 —— 它是同步读的，没预热过首个请求会 401。
       await runtime.warmUp();
 
-      // 邮箱列表先刷一次（新装的实例、或用户在 Web 端加了邮箱）。
-      // 失败不影响收信：降级到本地已有的邮箱集合。
+      // 邮箱列表：本地为空或过了 TTL 才问一次 `/account/list`
+      // （新装的实例、或用户在 Web 端加了邮箱）。失败不影响收信：
+      // 降级到本地已有的邮箱集合。TTL 见 [_mailboxes]。
       final mailboxes = await _mailboxes();
 
       if (mailboxes.isEmpty) {
@@ -307,10 +311,32 @@ class SyncEngine {
     return fresh;
   }
 
+  /// 上一次真的问过 `/account/list` 的时刻（UTC）。`null` = 还没问过。
+  DateTime? _mailboxesRefreshedAt;
+
+  /// 拿邮箱列表：**本地有、且还没过 TTL 就不发请求**。
+  ///
+  /// 以前这里每轮同步都刷一次。`/account/list` 在服务端的 `requirePerms`
+  /// 名单里，一次调用 = 1 次 KV 读（鉴权）+ 一次四表权限 JOIN；按默认
+  /// 5 分钟轮询，一天就是 288 次。而邮箱列表的变化频率比邮件低一个量级，
+  /// 10 分钟的新鲜度绰绰有余（`AppDefaults.mailboxRefreshTtl`）。
+  ///
+  /// 本地为空时**一定**要问：新装的实例、换服务器之后都靠这一下才能拿到
+  /// 主邮箱。用户手动「立即同步」会把这个 TTL 作废（见 [requestNow]）。
   Future<List<MailboxAccount>> _mailboxes() async {
     final local = await accounts.of(profile.id);
+    final refreshedAt = _mailboxesRefreshedAt;
+    if (local.isNotEmpty &&
+        refreshedAt != null &&
+        DateTime.now().toUtc().difference(refreshedAt) <
+            AppDefaults.mailboxRefreshTtl) {
+      return local;
+    }
+
     try {
-      return await accounts.refresh(profile);
+      final fetched = await accounts.refresh(profile);
+      _mailboxesRefreshedAt = DateTime.now().toUtc();
+      return fetched;
     } on AppException {
       // 降级：用本地已有的邮箱继续收信，别让一次邮箱列表失败打断同步。
       return local;

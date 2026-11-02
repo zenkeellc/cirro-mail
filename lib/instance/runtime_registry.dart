@@ -29,6 +29,7 @@ class RuntimeRegistry {
     required this.tokens,
     required this.prefs,
     this.onAuthExpired,
+    this.onSessionRecovered,
     this.enableLog = false,
     this.buildDownloadDio,
     this.buildApiDio,
@@ -52,6 +53,18 @@ class RuntimeRegistry {
   /// 坏 token 在杀掉重启之后又变回「已登录」，用户卡在一个每次请求都 401 的
   /// 收件箱里，还跳不回登录页。
   final void Function(String profileId)? onAuthExpired;
+
+  /// 「401 之后复验发现其实是虚惊一场」的出口：把这台实例落库的
+  /// `needs_login` 撤掉。
+  ///
+  /// 与 [onAuthExpired] 是一对。复验走 [probeSession]：token 没有 `exp`，
+  /// 客户端验不了签名，唯一能问的地方就是服务端，所以**必须**有一次真请求
+  /// 才能翻案；翻案成功之后只撤内存标记是不够的 —— 标记是落库的，
+  /// 不撤库的话下次冷启动又会把用户挡在登录页外面。
+  ///
+  /// 返回值是 `Future`：调用方（401 复验）会 await 它，好让「复验结束」
+  /// 这件事有一个确定的时刻，后台 isolate 里也才来得及在关库前写完。
+  final Future<void> Function(String profileId)? onSessionRecovered;
 
   final bool enableLog;
 
@@ -139,6 +152,7 @@ class RuntimeRegistry {
     runtime?.dispose();
     _needsLoginMessages.remove(profileId);
     _probedAt.remove(profileId);
+    _revalidating.remove(profileId);
     if (!_invalidated.isClosed) _invalidated.add(profileId);
   }
 
@@ -172,7 +186,7 @@ class RuntimeRegistry {
   ///
   /// 存在的理由：「需要重登」这个标记是**落库的、跨重启的**，而它当初的
   /// 唯一依据是一次 401 —— 那一次完全可能是虚惊（服务端刚换过 `jwt_secret`
-  /// 让所有旧 token 当场作废、KV 抖动、或者恰恰被第 11 台设备挤了出去）。
+  /// 让所有旧 token 当场作废、KV 抖动、或者恰恰被第 12 台设备挤了出去）。
   /// 只信那个标记的话，一个明明还能登录的实例就永远翻不了身，用户看到的
   /// 是「账户好好的，可这个实例再也不自己收信了」。
   ///
@@ -188,7 +202,6 @@ class RuntimeRegistry {
   }) async {
     final runtime = _runtimes[profile.id];
     if (runtime == null || runtime.isDisposed) return SessionProbe.unknown;
-    if (!runtime.hasToken) return SessionProbe.expired;
 
     final now = DateTime.now().toUtc();
     if (!force) {
@@ -198,6 +211,17 @@ class RuntimeRegistry {
       }
     }
     _probedAt[profile.id] = now;
+
+    // 缓存里没有 token 时**先问一次钥匙串**：401 的处理只摘了内存缓存，
+    // 钥匙串那份是刻意留着的（见 `TokenStore.invalidateMemory`）。
+    // 少了这一步，复验在「本次运行内」永远拿不到 token，只能等重启 ——
+    // 而需要复验的恰恰就是「刚刚吃了 401」这一刻。
+    //
+    // 放在冷却判断之后：冷却期内的重复调用不该为此去碰两次平台通道。
+    if (!runtime.hasToken) {
+      await runtime.warmUp();
+      if (!runtime.hasToken) return SessionProbe.expired;
+    }
 
     try {
       await runtime.myApi.loginUserInfo();
@@ -213,17 +237,27 @@ class RuntimeRegistry {
 
   /// 401 的唯一落点。
   ///
-  /// 做四件事，**顺序不能反**：
+  /// 做五件事，**顺序不能反**：
   /// 1. 停掉该实例的在途请求；
-  /// 2. 清掉密钥库里的 token（否则下一轮请求又会带上这个废 token 再吃一次 401）；
+  /// 2. 把 token 从**内存缓存**里摘掉（后续请求先别带着它吃 401）——
+  ///    但钥匙串里那一份**先留着**，见下面的复验（复验无结论时它会回到
+  ///    内存缓存，那是下一次再验的凭据）；
   /// 3. 记下「需要重登」——**不删 profile**，用户重登即可，
   ///    而且此时 `email` 还在，登录页能预填；
   /// 4. **落库**（`onAuthExpired`）—— 内存标记活不过重启，而 `redirect`
-  ///    看的是 `Profile.isLoggedIn`，不落库就会出现「重启后又像是登录着的」。
+  ///    看的是 `Profile.isLoggedIn`，不落库就会出现「重启后又像是登录着的」；
+  /// 5. **复验一次**（[_revalidateSession]）：一次 401 未必是 token 真的废了，
+  ///    拿钥匙串里那份再问一次服务端，虚惊一场就撤销标记、恢复登录态。
+  ///
+  /// 第 2 步为什么不再直接 [TokenStore.delete]：删掉是**不可逆**的。以前就是
+  /// 这个顺序 —— 先删再想救，于是 `probeSession` 里那句
+  /// 「`hasToken == false` 就是过期」把唯一的翻案路径也一起判死了，
+  /// 一次瞬时 401（KV 跨 colo 还没同步、被别的设备顶掉、服务端抖动）
+  /// 就能把一个其实还有效的登录态永久打死。
   void _onAuthExpired(AuthExpiredEvent event) {
     final runtime = _runtimes[event.profileId];
     runtime?.cancelAll();
-    unawaited(tokens.delete(event.profileId));
+    tokens.invalidateMemory(event.profileId);
     _needsLoginMessages[event.profileId] = event.message;
     if (!_invalidated.isClosed) _invalidated.add(event.profileId);
 
@@ -236,6 +270,73 @@ class RuntimeRegistry {
         debugPrint('标记 needsLogin 失败（${event.profileId}）：$error\n$stack');
       }
     }
+
+    unawaited(_revalidateSession(event.profileId));
+  }
+
+  /// 正在复验的实例。**防重入**用。
+  ///
+  /// 复验自己也会发请求：如果那一次也回 401，`_onAuthExpired` 会被**再**
+  /// 触发一遍，然后又排一次复验 —— 没有这道闸就是一条无限递归。
+  /// 闸门只挡「再排一轮复验」：复验期间来的 401 事件本身照常处理
+  /// （标记、落库都是幂等的），但结论由正在跑的那一轮统一给出 ——
+  /// 它要么是复验本身的那一次，要么是复验期间别的在途请求。
+  final Set<String> _revalidating = <String>{};
+
+  /// 拿钥匙串里那份 token 再问一次服务端，决定「真失效」还是「虚惊一场」。
+  ///
+  /// 三种结论分开处理：
+  /// - `valid`：撤销内存标记 + 落库撤标记（[onSessionRecovered]），token
+  ///   已经被 `warmUp` 写回缓存，登录态原地恢复；
+  /// - `expired`：这时才 [TokenStore.delete]，标记保持（用户重登）；
+  /// - `unknown`：网络/服务端 5xx，**不下结论** —— 钥匙串那份继续留着，
+  ///   标记也继续留着。复验时 `warmUp` 已经把它读回了缓存，所以它同时也是
+  ///   「下一次再验」的凭据；下一次冷启动（或用户手动重试）时调度器那条
+  ///   既有的「验活」路径会拿它再问一次，问通了就翻案。
+  Future<void> _revalidateSession(String profileId) async {
+    if (!_revalidating.add(profileId)) return;
+    try {
+      final runtime = _runtimes[profileId];
+      if (runtime == null || runtime.isDisposed) return;
+
+      final probe = await probeSession(runtime.profile, force: true);
+      switch (probe) {
+        case SessionProbe.valid:
+          await _recoverSession(profileId);
+        case SessionProbe.expired:
+          // 到这里才是真的废了：撤掉钥匙串那份，免得下次冷启动又把
+          // 一个确定无效的 token 读回来、白跑一轮 401。
+          await tokens.delete(profileId);
+        case SessionProbe.unknown:
+          DiagLog.log('registry', '401 复验无结论，保留钥匙串 token（$profileId）');
+      }
+    } catch (error, stack) {
+      // 复验是**补救**路径，绝不能反过来把 401 的处理拖垮。
+      debugPrint('401 复验异常（$profileId）：$error\n$stack');
+    } finally {
+      _revalidating.remove(profileId);
+    }
+  }
+
+  /// 复验成功：撤销「需要重登」，并落库。
+  Future<void> _recoverSession(String profileId) async {
+    final wasFlagged = _needsLoginMessages.remove(profileId) != null;
+    // 探测的冷却一起撤：下一次 `start` 不该被上一次探测的结论挡住。
+    _probedAt.remove(profileId);
+
+    final persist = onSessionRecovered;
+    if (persist != null) {
+      try {
+        await persist(profileId);
+      } catch (error, stack) {
+        debugPrint('撤销 needsLogin 失败（$profileId）：$error\n$stack');
+      }
+    }
+
+    // **落库之后**再通知监听者：先通知的话，调度器重建时读到的还是
+    // `needs_login = 1`，会拿刚验过的 token 再打一次「验活」请求 ——
+    // 白跑一趟，而且结论和刚做过的这次一样。
+    if (wasFlagged && !_invalidated.isClosed) _invalidated.add(profileId);
   }
 
   Future<void> dispose() async {

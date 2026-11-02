@@ -789,6 +789,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lastSyncedAt => '上次同步';
 
   @override
+  String get sessionTitle => '会话';
+
+  @override
+  String get sessionExpiresAt => '预计到期';
+
+  @override
+  String get sessionExpiringSoon =>
+      '服务端只在「用」的时候续期：30 天内有任意一次鉴权请求，30 天窗口就会被重置。这台实例若连续 30 天没有任何请求（或同一账号从第 12 台设备登录），token 会被丢掉，需要重新输密码。';
+
+  @override
   String get domainList => '域名单';
 
   @override

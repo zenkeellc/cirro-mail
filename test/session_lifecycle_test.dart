@@ -1,9 +1,15 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/core/db/database.dart';
 import 'package:mail_app/core/network/auth_events.dart';
+import 'package:mail_app/core/network/interceptors/auth_interceptor.dart';
+import 'package:mail_app/core/network/interceptors/envelope_interceptor.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/core/storage/token_store.dart';
 import 'package:mail_app/data/models/profile.dart';
@@ -12,16 +18,16 @@ import 'package:mail_app/instance/runtime_registry.dart';
 import 'package:mail_app/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 会话生命周期：**401 → 落库 → 重启后仍跳回登录页**。
+/// 会话生命周期：**401 → 落库 → 重启后仍跳回登录页**，以及
+/// **401 之后的那次复验**（虚惊一场要能翻案，真失效才删 token）。
 ///
-/// 这一条链上有两个容易断的地方，它们都不会在编译期报错：
+/// 这一条链上有几个容易断的地方，它们都不会在编译期报错：
 /// 1. `RuntimeRegistry` 只在内存里记 `_needsLoginMessages`，**没写进库** ——
 ///    于是杀掉重启后 `Profile.isLoggedIn` 又是 true，用户被困在一个每次
 ///    请求都 401 的收件箱里；
-/// 2. `redirect` 的例外分支写错，掉线的实例登不回去（或被立刻弹走）。
-///
-/// 所以这里既验状态（`Profile.needsLogin` 真的落到了库里），
-/// 也把 `resolveRedirect` 的判断矩阵钉住。
+/// 2. `redirect` 的例外分支写错，掉线的实例登不回去（或被立刻弹走）；
+/// 3. 401 处理如果**先删钥匙串 token 再想复验**，那条翻案路径永远走不通
+///    （`probeSession` 一见 `hasToken == false` 就判定过期）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -38,7 +44,7 @@ void main() {
         profileId: profile.id,
         message: '登录已过期',
       );
-      // 事件经 broadcast Stream 投递，是异步的 —— 等一拍再断言。
+      // 事件经 broadcast Stream 投递，是异步的 —— 等复验也走完再断言。
       await pumpEventQueue();
 
       expect(harness.registry.needsLoginMessage(profile.id), '登录已过期');
@@ -46,6 +52,11 @@ void main() {
         harness.tokens.readCached(profile.id),
         isNull,
         reason: '废 token 必须从缓存里清掉，否则下一轮又带着它吃一次 401',
+      );
+      expect(
+        await harness.tokens.readFresh(profile.id),
+        isNull,
+        reason: '复验也回了 401 —— 这一次是真的废了，钥匙串那份要删掉',
       );
 
       final after = (await harness.profiles.find(profile.id))!;
@@ -73,6 +84,94 @@ void main() {
       // 内存标记与 token 清理照常完成 —— 磁盘的毛病不该带走整条链路。
       expect(harness.registry.needsLoginMessage(profile.id), '登录已过期');
       expect(harness.tokens.readCached(profile.id), isNull);
+    });
+  });
+
+  group('401 之后的复验', () {
+    test('复验通过：登录态原地恢复，needs_login 被撤掉', () async {
+      // 探针打的服务端「认这个 token」—— 模拟一次虚惊（KV 跨 colo 抖动、
+      // 或服务端刚换 jwt_secret 之后的半秒）。
+      final harness = await _Harness.create(
+        reply: (options) => const <String, Object?>{
+          'code': 200,
+          'data': <String, Object?>{'userId': 42, 'email': 'c@example.net'},
+        },
+      );
+      final profile = await harness.seedLoggedIn(email: 'c@example.net');
+      await harness.registry.ensure(profile).warmUp();
+
+      harness.authEvents.emitAuthExpired(
+        profileId: profile.id,
+        message: '登录已过期',
+      );
+      await pumpEventQueue();
+
+      // 探针请求带上的必须是**钥匙串里那一份** —— 复验的全部意义就在这里。
+      expect(harness.adapter.authHeaders, <String?>['fake-jwt-token']);
+
+      expect(harness.registry.needsLoginMessage(profile.id), isNull);
+      expect(
+        harness.tokens.readCached(profile.id),
+        'fake-jwt-token',
+        reason: '复验成功后 token 要回到缓存，后续请求才能重新带上它',
+      );
+      expect(
+        (await harness.profiles.find(profile.id))!.needsLogin,
+        isFalse,
+        reason: '标记是落库的，光撤内存不够（否则重启又进登录页）',
+      );
+      expect((await harness.profiles.find(profile.id))!.isLoggedIn, isTrue);
+    });
+
+    test('复验问不出结论：钥匙串里的 token 保留，等下一次再翻案', () async {
+      // 断网 / 服务端 5xx —— 既不能判死，也不能翻案。
+      final harness = await _Harness.create(
+        reply: (options) => throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+          message: '网络不可用',
+        ),
+      );
+      final profile = await harness.seedLoggedIn(email: 'd@example.net');
+      await harness.registry.ensure(profile).warmUp();
+
+      harness.authEvents.emitAuthExpired(
+        profileId: profile.id,
+        message: '登录已过期',
+      );
+      await pumpEventQueue();
+
+      expect(harness.registry.needsLoginMessage(profile.id), '登录已过期');
+      expect(
+        harness.tokens.readCached(profile.id),
+        'fake-jwt-token',
+        reason: '复验刚用它打过请求，所以它回到了缓存 —— 这是下一次再验的凭据；'
+            '真失效的话上一轮就已经判 expired 并删掉了',
+      );
+      expect(
+        await harness.tokens.readFresh(profile.id),
+        'fake-jwt-token',
+        reason: '钥匙串那份必须留着：冷启动时 warmUp 把它读回来，调度器那条'
+            '「验活」路径才有东西可验',
+      );
+      expect((await harness.profiles.find(profile.id))!.needsLogin, isTrue);
+    });
+
+    test('复验不会自己打转：401 只补一次探针请求', () async {
+      final harness = await _Harness.create();
+      final profile = await harness.seedLoggedIn(email: 'e@example.net');
+      await harness.registry.ensure(profile).warmUp();
+      harness.adapter.authHeaders.clear();
+
+      harness.authEvents.emitAuthExpired(
+        profileId: profile.id,
+        message: '登录已过期',
+      );
+      await pumpEventQueue();
+
+      // 一次探针就够：探针自己回 401 会重新触发 `_onAuthExpired`，那里必须
+      // 被防重入闸挡住，否则每台掉线实例都会按「事件次数」放大请求。
+      expect(harness.adapter.authHeaders, hasLength(1));
     });
   });
 
@@ -191,7 +290,11 @@ Profile _profile({
       needsLogin: needsLogin,
     );
 
-/// 一套内存版的依赖：内存 SQLite + 假密钥库 + 假 prefs。
+/// 一套内存版的依赖：内存 SQLite + 假密钥库 + 假 prefs + 假 HTTP 适配器。
+///
+/// 假适配器是给**复验**用的：401 之后 `RuntimeRegistry` 会拿钥匙串里那份
+/// token 再打一次 `/my/loginUserInfo`，不接管这条连接的话，测试会真的往
+/// `mail.example.net` 发请求（慢、且结果不确定）。
 class _Harness {
   _Harness._({
     required this.db,
@@ -199,10 +302,14 @@ class _Harness {
     required this.tokens,
     required this.prefs,
     required this.authEvents,
+    required this.adapter,
     required this.registry,
   });
 
-  static Future<_Harness> create({bool onAuthExpiredThrows = false}) async {
+  static Future<_Harness> create({
+    bool onAuthExpiredThrows = false,
+    Object? Function(RequestOptions options)? reply,
+  }) async {
     // 平台通道在测试里没有实现，两个包都提供了官方的内存替身。
     FlutterSecureStorage.setMockInitialValues(<String, String>{});
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -212,6 +319,12 @@ class _Harness {
     final prefs = PrefsStore(await SharedPreferences.getInstance());
     final authEvents = AuthEvents();
     final profiles = ProfileRepository(db: db, tokens: tokens, prefs: prefs);
+    // 默认回 401：复验的结论是「确实废了」，与改 401 处理之前的行为一致。
+    // 想验「虚惊一场」的用例自己传一个 200 的 reply。
+    final adapter = _FakeAdapter(
+      reply ??
+          (_) => const <String, Object?>{'code': 401, 'message': '登录已过期'},
+    );
 
     final harness = _Harness._(
       db: db,
@@ -219,6 +332,7 @@ class _Harness {
       tokens: tokens,
       prefs: prefs,
       authEvents: authEvents,
+      adapter: adapter,
       registry: RuntimeRegistry(
         authEvents: authEvents,
         tokens: tokens,
@@ -228,10 +342,50 @@ class _Harness {
           // 与 core_providers 里的接法一致（那边是 fire-and-forget）。
           profiles.markNeedsLogin(profileId);
         },
+        onSessionRecovered: (String profileId) =>
+            profiles.markNeedsLogin(profileId, needsLogin: false),
+        buildApiDio: (Profile profile) => _buildApiDio(
+          profile: profile,
+          authEvents: authEvents,
+          tokens: tokens,
+          adapter: adapter,
+        ),
       ),
     );
     addTearDown(harness.dispose);
     return harness;
+  }
+
+  /// 与 `DioFactory.build` 同一条拦截器链（只是换了适配器）：复验请求
+  /// 必须真的带上 `Authorization`，否则「用的哪一份 token」就验不了。
+  static Dio _buildApiDio({
+    required Profile profile,
+    required AuthEvents authEvents,
+    required TokenStore tokens,
+    required _FakeAdapter adapter,
+  }) {
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: profile.baseUrl,
+        contentType: Headers.jsonContentType,
+        responseType: ResponseType.json,
+        // 服务端 HTTP 状态恒 200，真实状态在信封里 —— 与线上一致。
+        validateStatus: (_) => true,
+      ),
+    );
+    dio.httpClientAdapter = adapter;
+    dio.interceptors.add(
+      AuthInterceptor(readToken: () => tokens.readCached(profile.id)),
+    );
+    dio.interceptors.add(
+      EnvelopeInterceptor(
+        onUnauthorized: (message) => authEvents.emitAuthExpired(
+          profileId: profile.id,
+          message: message,
+        ),
+      ),
+    );
+    return dio;
   }
 
   final AppDatabase db;
@@ -239,6 +393,7 @@ class _Harness {
   final TokenStore tokens;
   final PrefsStore prefs;
   final AuthEvents authEvents;
+  final _FakeAdapter adapter;
   final RuntimeRegistry registry;
 
   /// 建一个「已登录」的实例：库里有 userId/email，密钥库里有 token。
@@ -267,4 +422,33 @@ class _Harness {
     await authEvents.dispose();
     await db.close();
   }
+}
+
+/// 记录每次请求带上的 `Authorization`，然后按 [reply] 回包。
+class _FakeAdapter implements HttpClientAdapter {
+  _FakeAdapter(this.reply);
+
+  final Object? Function(RequestOptions options) reply;
+
+  /// 每个请求实际带出去的 `Authorization`（null = 没带）。
+  final List<String?> authHeaders = <String?>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    authHeaders.add(options.headers['Authorization']?.toString());
+    return ResponseBody.fromString(
+      jsonEncode(reply(options)),
+      200,
+      headers: <String, List<String>>{
+        Headers.contentTypeHeader: <String>[Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

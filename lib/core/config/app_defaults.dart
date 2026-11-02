@@ -128,6 +128,29 @@ class AppDefaults {
   /// 邮箱的实例每展开一次就打几十个请求 —— 而用户往往只是滑过那一眼。
   static const Duration mailboxTotalTtl = Duration(minutes: 10);
 
+  /// 邮箱列表（`/account/list`）多久算过期，见 `SyncEngine._mailboxes`。
+  ///
+  /// 以前每轮同步都刷一次：`/account/list` 在服务端的 `requirePerms` 名单里，
+  /// 一次调用 = 1 次 KV 读（鉴权）+ 一次四表权限 JOIN，而按默认 5 分钟轮询
+  /// 一天就是 288 次。邮箱列表变化的频率远低于邮件，10 分钟足够新，
+  /// 省下来的请求是实打实的。用户手动「立即同步」会绕过这个 TTL。
+  static const Duration mailboxRefreshTtl = Duration(minutes: 10);
+
+  /// 服务端「登录会话」的生存期。
+  ///
+  /// 对应 worker 的 `constant.TOKEN_EXPIRE`（30 天）。要特别说明的是它是
+  /// **滑动**的：任意一次通过鉴权的请求（每用户每天最多触发一次写）
+  /// 都会把 KV 里那份记录再续 30 天。所以真正会过期的只有「连续 30 天
+  /// 一次请求都没有」的实例 —— 客户端拿不到 `exp`，只能按这个窗口估算
+  /// 并提前提示（见诊断页的「会话」一组）。
+  static const Duration sessionTtl = Duration(days: 30);
+
+  /// 离会话估算到期还有多久开始提示。
+  ///
+  /// 留一周的前置量：用户看到提示后，只要打开 App 收一次信就会自动续期，
+  /// 所以提示得早一点才有意义（真到期的前一天才提示，等于告诉他「去重登」）。
+  static const Duration sessionWarnBefore = Duration(days: 7);
+
   /// 探测一个实例里各邮箱总数时的并发上限。
   ///
   /// 批内并发，实例之间串行：同一个实例的邮箱共用一条连接，串行发就等于
