@@ -296,6 +296,41 @@ void main() {
     });
   });
 
+  group('平台包版本名（--build-name 只能数字）', () {
+    test('正式版：平台包版本名与版本名一致', () {
+      expect(_sampleVersion().bundleVersionName, '0.1.0');
+    });
+
+    test('预发布标识不进 --build-name，但完整版本名仍走 dart-define', () {
+      // 商业版的 tag 形如 v0.1.0-pro.1：CFBundleShortVersionString 只允许数字
+      // 与点，Windows 的 CMake 也要按 . 拆成整数的 major/minor/patch。
+      final pro = _sampleVersion(versionName: '0.1.0-pro.1');
+      expect(pro.bundleVersionName, '0.1.0');
+      // 关于页 / 窗口标题 / 更新检查读的是完整版本名，不能被这里抹掉。
+      expect(pro.dartDefines['APP_VERSION_NAME'], '0.1.0-pro.1');
+      expect(pro.display, '0.1.0-pro.1+24');
+      expect(buildArgsText(pro), contains('--build-name=0.1.0'));
+      expect(
+        buildArgsText(pro),
+        contains('--dart-define=APP_VERSION_NAME=0.1.0-pro.1'),
+      );
+      expect(
+        withVersionArgs(<String>['macos'], pro),
+        contains('--build-name=0.1.0'),
+      );
+    });
+
+    test('一段 / 两段的版本名也认，缺的段不补', () {
+      expect(_sampleVersion(versionName: '1.2').bundleVersionName, '1.2');
+      expect(_sampleVersion(versionName: '2').bundleVersionName, '2');
+      expect(_sampleVersion(versionName: '1.2.3+45').bundleVersionName, '1.2.3');
+    });
+
+    test('认不出来的版本名原样用，不凭空造号', () {
+      expect(_sampleVersion(versionName: 'dev').bundleVersionName, 'dev');
+    });
+  });
+
   group('withVersionArgs（注入时不打架）', () {
     test('用户没传版本参数时全部补上，原有参数顺序不变', () {
       final result = withVersionArgs(

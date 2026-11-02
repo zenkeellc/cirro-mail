@@ -73,6 +73,24 @@ class BuildVersion {
   /// 关于页那一行 `0.1.0+24` 的样子。与运行期 `AppVersion.display` 同形。
   String get display => '$versionName+$buildNumber';
 
+  /// 给平台包用的版本名（`--build-name`）：**只留数字主体**（`0.1.0`）。
+  ///
+  /// 为什么不能把 `versionName` 原样塞进 `--build-name`：
+  ///
+  /// - Apple 的 `CFBundleShortVersionString` 规范只允许数字与点，商业版的 tag
+  ///   是 `0.1.0-pro.1`，原样写进去会被 App Store 校验打回（Developer ID 分发
+  ///   目前不卡，但 Apple 的校验规则不值得赌）；
+  /// - Windows 的 CMake 模板会把 `--build-name` 按 `.` 拆成 major/minor/patch
+  ///   填进 `Runner.rc` 的版本资源，`0.1.0-pro.1` 拆出来的 patch 段不是数字。
+  ///
+  /// 完整版本名（含 `-pro.N`）仍然通过 `APP_VERSION_NAME` 注入，关于页、窗口
+  /// 标题与更新检查读的都是**完整**的那一个 —— 这里丢掉的只是平台包元数据里
+  /// 的预发布标识，那是 semver 进包元数据时的通行做法。
+  ///
+  /// 抽不出数字主体（比如版本名是分支名）时退回完整版本名：宁可让平台包里的
+  /// 版本串怪一点，也不要凭空造一个和 tag 无关的号。
+  String get bundleVersionName => _numericVersionCore(versionName) ?? versionName;
+
   /// 注入给 Dart 侧的 `--dart-define`，名字与 `app_defaults.dart` 一一对应。
   ///
   /// 顺序是固定的（Map 字面量保序）：同一次构建跑两次输出逐字节相同，
@@ -91,7 +109,7 @@ class BuildVersion {
   ///
   /// 两者都得有：只给前者，关于页还是显示 pubspec 里那个 `0.1.0+1`。
   List<String> get flutterArgs => <String>[
-        '--build-name=$versionName',
+        '--build-name=$bundleVersionName',
         '--build-number=$buildNumber',
         for (final entry in dartDefines.entries)
           '--dart-define=${entry.key}=${entry.value}',
@@ -391,6 +409,16 @@ String jsonText(BuildVersion version) {
   });
 }
 
+/// 版本名里的数字主体（`0.1.0-pro.1` → `0.1.0`）；认不出来返回 null。
+///
+/// 允许 1~3 段数字：tag 写成 `v1` / `v1.2` 时也认，缺的段不补（平台包元数据
+/// 对段数没有要求，补 0 反而会和 tag 里写的对不上）。
+String? _numericVersionCore(String name) {
+  final match = RegExp(r'^(\d+(?:\.\d+){0,2})(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$')
+      .firstMatch(name.trim());
+  return match?.group(1);
+}
+
 /// 一行 `flutter build` 参数串（给 shell 里 `$VERSION_ARGS` 那种用法）。
 String buildArgsText(BuildVersion version) => version.flutterArgs.join(' ');
 
@@ -403,7 +431,7 @@ List<String> withVersionArgs(List<String> flutterArgs, BuildVersion version) {
   final result = <String>[...flutterArgs];
   final presentDefines = dartDefineNames(flutterArgs);
   if (!hasFlutterOption(flutterArgs, '--build-name')) {
-    result.add('--build-name=${version.versionName}');
+    result.add('--build-name=${version.bundleVersionName}');
   }
   if (!hasFlutterOption(flutterArgs, '--build-number')) {
     result.add('--build-number=${version.buildNumber}');

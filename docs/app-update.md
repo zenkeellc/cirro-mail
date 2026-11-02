@@ -22,6 +22,8 @@ App 怎么知道「自己是什么版本」、怎么知道「有没有新版」�
 
 ⚠️ **CI 里 checkout 必须 `fetch-depth: 0`**（完整历史）。浅克隆算出来的 `git rev-list --count HEAD` 永远是 1 —— 工具会为此在 stderr 打一条警告，但出来的包 build 号就是错的，而且不容易发现。
 
+**平台包的版本字段只写数字主体**：`--build-name` 用的是版本名去掉预发布标识之后的 `0.1.0`（`0.1.0-pro.1` → `0.1.0`）。原因是平台各有硬性规则 —— Apple 的 `CFBundleShortVersionString` 只允许数字与点，Windows 的 CMake 还要按 `.` 把它拆成整数的 major/minor/patch。完整版本名（含 `-pro.N`）只走 `APP_VERSION_NAME`，所以关于页、窗口标题、更新检查看到的仍是 `0.1.0-pro.1+131`。`dart tool/version.dart --format=build-args` 的输出里能同时看到这两种形态。
+
 这些值在编译期用 `--dart-define` 注入。**没注入时**（直接 `flutter run`、或没走包装脚本的 `flutter build`）App 退回 `PackageInfo`，也就是 `pubspec.yaml` 里那个 `0.1.0+1` —— 能跑、能显示，但 build 号不会随提交走。所以**要发出去的包一律走第三节的包装脚本**。
 
 界面上版本串的格式是 `0.1.0+131`（版本名 + build 号）：关于页与桌面窗口标题都用它（窗口标题多了应用名，见 `window_title.dart` 的 `Cirro Mail v0.1.0+131`）。build 号为 0（不知道）时只显示版本名。
