@@ -190,6 +190,30 @@ curl -s -X POST https://push.example.com/admin/instances \
 
 ---
 
+### 把三条值内置进客户端（可选）
+
+不想让用户手填，可以在构建时把三条值编进客户端。两条路：
+
+1. **构建参数**（任何检出都能用）：
+
+   ```bash
+   flutter build macos --release \
+     --dart-define-from-file=path/to/push_defaults.json
+   ```
+
+   JSON 里三个键：`PUSH_RELAY_URL` / `PUSH_INSTANCE_ID` / `PUSH_PAIRING_CODE`
+   （值见上面「开一个实例位」）。注意它**只对 CLI 构建有效** —— 从 IDE / Xcode
+   直接点运行的那次构建读不到它，三个框还是空的。
+
+2. **扩展钩子**（`packages/cirro_mail_ext` 的 `AppExtension.pushDefaults`）：
+   扩展把三条值编进自己的包里，核心在「设置 → 后台推送」首次进页时预填。
+   这条路**任何构建都自带** —— CLI 打包、Xcode 里点运行、IDE 调试都一样，
+   不依赖打包命令带没带参数。
+
+两者同时存在时**逐字段**取值：构建参数有值就用构建参数，否则用扩展给的。
+预填只填空字段，用户手填过的值不会被盖掉；配对码存进钥匙串（`TokenStore`），
+不落明文 prefs。内置的只能是**设备配对码**，`webhookSecret` 绝不进客户端。
+
 ## 五、五条限制（值得提前知道）
 
 1. **只覆盖外部来信。** 站内互发、发信、已读、删除都不触发推送 —— 那些只能靠 App 轮询。
