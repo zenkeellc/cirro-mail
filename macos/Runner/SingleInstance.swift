@@ -64,7 +64,7 @@ enum SingleInstance {
   /// （`windows/runner/single_instance.cpp`）取同一个字符串 —— 两边指的是
   /// 同一件事，名字一致方便对读。
   static let showWindowNotification = NSNotification.Name(
-    "com.zenkee.mailapp.show-window")
+    "com.zenkee.cirromail.show-window")
 
   /// 抢「第一个实例」的名分，顺手把「该唤醒谁」办掉。
   ///
@@ -108,7 +108,7 @@ enum SingleInstance {
   /// 打开（必要时创建）锁文件，返回 fd。
   ///
   /// 路径取 `~/Library/Application Support/`：在沙箱里它落在
-  /// `~/Library/Containers/com.zenkee.mailapp/Data/...`，天然按用户隔离，
+  /// `~/Library/Containers/com.zenkee.cirromail/Data/...`，天然按用户隔离，
   /// 也不需要任何 entitlement。**刻意不用 `/tmp`** —— 那会变成「全机器共用」，
   /// 同一台机器上另一个用户会话会被挡在外面（和 Windows 那条用 `Local\`
   /// 而不是 `Global\` 的理由一样）。

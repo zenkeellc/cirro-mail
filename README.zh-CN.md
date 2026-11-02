@@ -48,19 +48,19 @@ App 启动时会拉一次官网的静态版本清单（默认一天最多一次�
 
 ## 包名 / Bundle ID
 
-包名是 `com.zenkee.mailapp`。**Firebase 控制台里填的包名必须与之逐字一致**，否则 `google-services.json` 放进去也不生效（Android 会**直接构建失败**并报 `No matching client found for package name`；Apple 侧则是运行时找不到默认 app）：
+包名是 `com.zenkee.cirromail`。**Firebase 控制台里填的包名必须与之逐字一致**，否则 `google-services.json` 放进去也不生效（Android 会**直接构建失败**并报 `No matching client found for package name`；Apple 侧则是运行时找不到默认 app）：
 
 | 平台 | 标识符 | 改在哪 |
 |---|---|---|
-| Android | `com.zenkee.mailapp` | `android/app/build.gradle.kts` 的 `applicationId` / `namespace`；源码在 `android/app/src/main/kotlin/com/zenkee/mailapp/` |
-| iOS | `com.zenkee.mailapp` | `ios/Runner.xcodeproj/project.pbxproj` |
-| macOS | `com.zenkee.mailapp` | `macos/Runner/Configs/AppInfo.xcconfig` |
-| Linux | `com.zenkee.mailapp` | `linux/CMakeLists.txt` 的 `APPLICATION_ID` |
-| Windows | `com.zenkee.mailapp` | `windows/runner/Runner.rc` 的 `CompanyName`（版权行的持有人是公司名 ZENKEE LLC） |
+| Android | `com.zenkee.cirromail` | `android/app/build.gradle.kts` 的 `applicationId` / `namespace`；源码在 `android/app/src/main/kotlin/com/zenkee/cirromail/` |
+| iOS | `com.zenkee.cirromail` | `ios/Runner.xcodeproj/project.pbxproj` |
+| macOS | `com.zenkee.cirromail` | `macos/Runner/Configs/AppInfo.xcconfig` |
+| Linux | `com.zenkee.cirromail` | `linux/CMakeLists.txt` 的 `APPLICATION_ID` |
+| Windows | `com.zenkee.cirromail` | `windows/runner/Runner.rc` 的 `CompanyName`（版权行的持有人是公司名 ZENKEE LLC） |
 
-五个平台一律 `com.zenkee.mailapp`。**Apple 不允许 bundle ID 带下划线** —— 注册 App ID / App Store Connect 只接受字母、数字、连字符和点，写 `ke.dong.mail_app` 会被直接拒（Xcode 本地构建也会打 `invalid character in Bundle Identifier`），所以是连写而不是 `mail_app`。
+五个平台一律 `com.zenkee.cirromail`。**Apple 不允许 bundle ID 带下划线** —— 注册 App ID / App Store Connect 只接受字母、数字、连字符和点，写 `ke.dong.mail_app` 会被直接拒（Xcode 本地构建也会打 `invalid character in Bundle Identifier`），所以是连写而不是 `mail_app`。
 
-`-RunnerTests` 那几处（`com.zenkee.mailapp.RunnerTests`）是测试 target 的 bundle id，跟着一起改了。
+`-RunnerTests` 那几处（`com.zenkee.cirromail.RunnerTests`）是测试 target 的 bundle id，跟着一起改了。
 
 ⚠️ **`pubspec.yaml` 顶上的 `name: mail_app` 不是包名，别动它。** 那是 Dart package 名，所有 `import 'package:mail_app/...'` 都靠它，与应用标识符完全无关。
 
@@ -74,9 +74,9 @@ App 启动时会拉一次官网的静态版本清单（默认一天最多一次�
 | iOS | `GoogleService-Info.plist` | `ios/Runner/`，**已登记进 Xcode 工程** | `firebase_core` 在启动时从 bundle 里找 |
 | macOS | `GoogleService-Info.plist` | `macos/Runner/`，**已登记进 Xcode 工程** | 同上 —— macOS 用的**就是** iOS 的那份 plist（`BUNDLE_ID` 与 macOS bundle id 相同，所以不需要单独的 macOS 应用） |
 
-三份文件里的 `BUNDLE_ID` / `package_name` 都必须是 `com.zenkee.mailapp`，Firebase 控制台里建应用时填的也必须是这个。三份都提交进了仓库 —— 它们是可公开的客户端标识（FCM 就是这么设计的，密级与 `google_app_id` 相同），但换 Firebase 项目时要三个平台一起换。
+三份文件里的 `BUNDLE_ID` / `package_name` 都必须是 `com.zenkee.cirromail`，Firebase 控制台里建应用时填的也必须是这个。三份都提交进了仓库 —— 它们是可公开的客户端标识（FCM 就是这么设计的，密级与 `google_app_id` 相同），但换 Firebase 项目时要三个平台一起换。
 
-⚠️ **从 Firebase 控制台下载 iOS 的 plist 后要检查 `BUNDLE_ID`。** 本项目的这份下载下来是 `con.zenkee.mailapp`（少了 m），已手工改正。
+⚠️ **从 Firebase 控制台下载 iOS 的 plist 后要检查 `BUNDLE_ID`。** 本项目的这份下载下来是 `con.zenkee.cirromail`（少了 m），已手工改正。
 
 **光把 plist 放进目录是不够的** —— 它必须出现在 target 的 **Copy Bundle Resources** 构建阶段里才会被打进 `.app`，否则 `Firebase.initializeApp()` 在运行时报 `could not find default app`。这一步目前是靠手改 `project.pbxproj`（登记 4 处：`PBXBuildFile`、`PBXFileReference`、所在 group、Resources 阶段）完成的，不是 Xcode 点的。
 
@@ -94,9 +94,9 @@ App 启动时会拉一次官网的静态版本清单（默认一天最多一次�
 ### 仍然只能在 Xcode / Apple 开发者后台里做的
 
 - **iOS 的 Push Notifications capability**：`aps-environment` entitlement 已经写进 `ios/Runner/Runner.entitlements` 并接到三个构建配置上了，但这条权利要生效得有匹配的 provisioning profile（**来自你自己的 Apple 开发者账号 —— 换成你的 Team ID**）。第一次真机跑时 Xcode 会去申请一份带 APS 的 —— 需要账号已登录、且 App ID 上开过推送。
-- **macOS 的 Push Notifications capability**：和 iOS **不是同一套键名**。macOS 要 `com.apple.developer.aps-environment`（带 `com.apple.developer.` 前缀，写在 `macos/Runner/DebugProfile.entitlements` 与 `Release.entitlements` 里，Debug 用 `development`、Release 用 `production`）；iOS 那份写的裸 `aps-environment` 在原生 mac App 上会被 codesign 忽略。同样需要带推送的 **Mac** 描述文件 —— App ID 勾上开关后，Xcode 自动签名会自己申请一份 `Mac Team Provisioning Profile: com.zenkee.mailapp`（落在 `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`）。缺描述文件时构建直接失败：`Provisioning profile ... doesn't include the Push Notifications capability`；缺 entitlement 时构建能过，但 `getToken()` 抛 `apns-token-not-set` —— **与通知权限无关**，别去系统设置里找。
+- **macOS 的 Push Notifications capability**：和 iOS **不是同一套键名**。macOS 要 `com.apple.developer.aps-environment`（带 `com.apple.developer.` 前缀，写在 `macos/Runner/DebugProfile.entitlements` 与 `Release.entitlements` 里，Debug 用 `development`、Release 用 `production`）；iOS 那份写的裸 `aps-environment` 在原生 mac App 上会被 codesign 忽略。同样需要带推送的 **Mac** 描述文件 —— App ID 勾上开关后，Xcode 自动签名会自己申请一份 `Mac Team Provisioning Profile: com.zenkee.cirromail`（落在 `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`）。缺描述文件时构建直接失败：`Provisioning profile ... doesn't include the Push Notifications capability`；缺 entitlement 时构建能过，但 `getToken()` 抛 `apns-token-not-set` —— **与通知权限无关**，别去系统设置里找。
 - **Firebase 控制台里 iOS 应用要上传 APNs 密钥/证书**（项目设置 → 云消息 → APNs 身份验证密钥）。上传 Firebase 服务账号解决的是「中转端能否调 FCM」，这一条解决的是「FCM 能否把消息投给 APNs」，是两件事。
-- **Apple 开发者后台打开 App ID 的 Push Notifications 开关**（`com.zenkee.mailapp` 这个 App ID —— iOS 与 macOS 共用同一个）。
+- **Apple 开发者后台打开 App ID 的 Push Notifications 开关**（`com.zenkee.cirromail` 这个 App ID —— iOS 与 macOS 共用同一个）。
 - **分发的 macOS 构建还需要一份 Developer ID 描述文件**。现在 `Release.entitlements` 写的是 `production`，而**本机只有那一份 development 的 Mac 描述文件，所以实测产物里嵌的仍是 `development`**（`codesign -d --entitlements -` 看得到）—— 能构建、能注册，但那是开发环境的 APNs，本机跑 Release 没问题、发给别人用就投不到。外发/上架之前去后台建一份 Developer ID provisioning profile，那时产物才会真的变成 `production`。
 
 ### macOS 签名：`CODE_SIGN_IDENTITY` 得跟着 team 一起改
@@ -138,7 +138,7 @@ macOS 上点红叉**不是退出**。`applicationShouldTerminateAfterLastWindowC
 
 Dart 这一侧对应的一条：`SyncController` 的 `_onPause` 在桌面端**直接返回**，什么都不做。不这样做的话，关窗会产生 `AppLifecycleState.hidden`，而下一轮同步成功又一定会写 `profiles` 表的 `lastSyncAt` → 触发 `build()` 重算 → 走到停调度器那一支。**窗口一关，收信就静默地死了**，菜单栏图标还亮着，用户只会以为它在后台跑。这条回归钉在 `test/desktop_sync_keepalive_test.dart`（同时钉住 Android 那条不被顺手改坏）。
 
-还有一条只能手动验的路：点系统通知时，系统会激活 App 但**不像 iOS 那样自带「打开哪封信」的语义**，屏幕上什么都没发生。原生的 `applicationShouldHandleReopen`（点 Dock）与 `applicationDidBecomeActive`（App 被激活）都覆盖不到这条，因为导航在 Dart 手里。所以加了一条 `com.zenkee.mailapp/window` 通道（`lib/core/storage/window_channel.dart` ↔ `AppDelegate.setUpWindowChannel`），Dart 在跳转前先把窗口叫起来。
+还有一条只能手动验的路：点系统通知时，系统会激活 App 但**不像 iOS 那样自带「打开哪封信」的语义**，屏幕上什么都没发生。原生的 `applicationShouldHandleReopen`（点 Dock）与 `applicationDidBecomeActive`（App 被激活）都覆盖不到这条，因为导航在 Dart 手里。所以加了一条 `com.zenkee.cirromail/window` 通道（`lib/core/storage/window_channel.dart` ↔ `AppDelegate.setUpWindowChannel`），Dart 在跳转前先把窗口叫起来。
 
 **只跑一个进程**。理由和上面 Windows 那条一模一样（关窗之后屏幕上找不到 App，用户再启动一次完全合理），但 macOS 这边的入口比 Windows 多、也比它藏得住 —— 这里要**两件套**，缺一个就从某个入口漏出第二个进程（`macos/Runner/SingleInstance.swift` 的文件头把取舍写全了）：
 
@@ -156,7 +156,7 @@ Dart 这一侧对应的一条：`SyncController` 的 `_onPause` 在桌面端**�
 - **关窗不是退出**。点窗口的关闭按钮走的是 `WM_CLOSE`，在 `windows/runner/flutter_window.cpp` 里被截住，改成 `ShowWindow(SW_HIDE)`：窗口藏起来但**不销毁**，`FlutterViewController`（也就是引擎）继续活着，轮询和推送登记都照常。
 - **图标是关窗那一刻才建的**。窗口还开着的时候通知区里没有它 —— 一个看得见的 App 不需要再占一格。图标旁边是右键菜单：「打开主窗口 / 退出 Cirro Mail」；左键直接打开窗口（桌面上这是个很难猜错的约定）。
 - **「退出」走的是另一条路**：托盘菜单那一条会摘掉图标并 `DestroyWindow`，窗口真没了才触发 `PostQuitMessage` 退出进程。这是用户唯一的退出方式（任务栏上已经没有窗口可以右键了）。
-- **只跑一个进程**。关窗之后任务栏上看不见 App，用户从开始菜单再点一次完全合理 —— 所以启动时先抢一个具名互斥体（`Local\com.zenkee.mailapp.single-instance`），没抢到就广播一条 `RegisterWindowMessage` 消息请那个已经在跑的实例把窗口摆到前面，然后自己退出。没有这一步的话两个进程会抢同一个 SQLite 库、各自登记一份 FCM token、同一封信弹两遍。
+- **只跑一个进程**。关窗之后任务栏上看不见 App，用户从开始菜单再点一次完全合理 —— 所以启动时先抢一个具名互斥体（`Local\com.zenkee.cirromail.single-instance`），没抢到就广播一条 `RegisterWindowMessage` 消息请那个已经在跑的实例把窗口摆到前面，然后自己退出。没有这一步的话两个进程会抢同一个 SQLite 库、各自登记一份 FCM token、同一封信弹两遍。
 
 实现上几个不那么显然的地方（都在代码注释里）：
 
@@ -325,7 +325,7 @@ flutter test
 
 附件预览那一轮把 OOXML / CSV 的解析器做成了**纯函数**，所以能整块单测（`docx_codec_test.dart` / `xlsx_codec_test.dart` / `pptx_codec_test.dart` / `csv_codec_test.dart` / `text_decode_test.dart`，含各自的「坏 zip / 缺文件 / 超限」容错用例）。文件夹样本**不往仓库里提交二进制**：`test/support/ooxml_fixture.dart` 在测试里用 `archive` 的 `ZipEncoder` 现搭最小包，顺带也验了「自己写的 zip 能被自己读回来」。`xlsx_codec_test.dart` 里单钉了一条日期序列号：epoch 是 1899-12-30（Lotus 1-2-3 兼容），序列号 60 那个历史上的一天偏差也钉住了。音频那侧靠注入假 `AudioPlayback` 测控件层（拖动时位置回调不许把滑块拽走、放完再点要先 seek 回 0），视频那侧只测「文件不在了 / 超限」这两条**跑在插件之前**的路径 —— 播放本身在 `flutter_tester` 里没有实现，测不了，如实写在文件头。
 
-详情页那一轮（正文可选 + 右键菜单）三条：`mail_detail_selection_test.dart` 里，正文拖选之后 `RenderParagraph.selections` 非空（**必须给 `PointerDeviceKind.mouse`**，触屏走的是另一套识别器）、`Ctrl+A` + `Ctrl+C` 发出去的文本里**同时**有正文与主题（钉住 `SelectionArea` 包的是 `ListView` 而不是只包正文）、右键菜单里「删除」点完库里那一行真没了且内嵌形态的 `onClose` 被调用。`mail_shortcuts_system_test.dart` 挂 `com.zenkee.mailapp/window` 那条原生通道，验 `Cmd+W` 真的打到 `hideMainWindow` 上、`Cmd+,` 真的落到 `/settings`。
+详情页那一轮（正文可选 + 右键菜单）三条：`mail_detail_selection_test.dart` 里，正文拖选之后 `RenderParagraph.selections` 非空（**必须给 `PointerDeviceKind.mouse`**，触屏走的是另一套识别器）、`Ctrl+A` + `Ctrl+C` 发出去的文本里**同时**有正文与主题（钉住 `SelectionArea` 包的是 `ListView` 而不是只包正文）、右键菜单里「删除」点完库里那一行真没了且内嵌形态的 `onClose` 被调用。`mail_shortcuts_system_test.dart` 挂 `com.zenkee.cirromail/window` 那条原生通道，验 `Cmd+W` 真的打到 `hideMainWindow` 上、`Cmd+,` 真的落到 `/settings`。
 
 ## 已知未完成
 

@@ -104,8 +104,8 @@ void main() {
     });
 
     test('发送方与接收方共用同一个通知名常量（各写一份字符串迟早漂）', () {
-      expect(singleInstance, contains('com.zenkee.mailapp.show-window'));
-      expect(appDelegate, isNot(contains('com.zenkee.mailapp.show-window')));
+      expect(singleInstance, contains('com.zenkee.cirromail.show-window'));
+      expect(appDelegate, isNot(contains('com.zenkee.cirromail.show-window')));
     });
 
     test('唤醒还走了 NSRunningApplication.activate 这条主路（对面不在前台时只有它管用）', () {

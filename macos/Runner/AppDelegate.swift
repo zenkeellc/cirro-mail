@@ -220,7 +220,7 @@ class AppDelegate: FlutterAppDelegate {
       let controller = window.contentViewController as? FlutterViewController
     else { return }
     let channel = FlutterMethodChannel(
-      name: "com.zenkee.mailapp/window",
+      name: "com.zenkee.cirromail/window",
       binaryMessenger: controller.engine.binaryMessenger
     )
     channel.setMethodCallHandler { [weak self] call, result in

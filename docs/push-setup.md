@@ -156,8 +156,8 @@ npx wrangler deploy
 
 中转端通过 FCM 投递，需要一个 Firebase 项目的服务账号 JSON（上面第 3 步）。同时**把 App 的包名登记进去**，否则手机上收不到：
 
-- Android：包名 `com.zenkee.mailapp`
-- iOS / macOS：bundle id `com.zenkee.mailapp`
+- Android：包名 `com.zenkee.cirromail`
+- iOS / macOS：bundle id `com.zenkee.cirromail`
 
 按你的构建方式把 `google-services.json` / `GoogleService-Info.plist` 放进对应目录。没有配置文件时 App 里会明说「这份构建里没有 Firebase 配置」，而不是让你配完一整套才发现收不到。
 

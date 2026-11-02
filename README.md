@@ -84,7 +84,7 @@ manifest (`mail-site/scripts/app-version.mjs`), and the per-platform download fa
 
 ## Package name / Bundle ID
 
-The package name is `com.zenkee.mailapp`. **The package name you enter in the Firebase
+The package name is `com.zenkee.cirromail`. **The package name you enter in the Firebase
 console must match it character for character**, otherwise dropping in
 `google-services.json` still won't take effect (Android will **fail the build outright**
 with `No matching client found for package name`; on the Apple side it fails at runtime with
@@ -92,18 +92,18 @@ no default app):
 
 | Platform | Identifier | Where to change it |
 |---|---|---|
-| Android | `com.zenkee.mailapp` | `android/app/build.gradle.kts` `applicationId` / `namespace`; sources under `android/app/src/main/kotlin/com/zenkee/mailapp/` |
-| iOS | `com.zenkee.mailapp` | `ios/Runner.xcodeproj/project.pbxproj` |
-| macOS | `com.zenkee.mailapp` | `macos/Runner/Configs/AppInfo.xcconfig` |
-| Linux | `com.zenkee.mailapp` | `linux/CMakeLists.txt` `APPLICATION_ID` |
-| Windows | `com.zenkee.mailapp` | `windows/runner/Runner.rc` `CompanyName` (the copyright holder is the company name ZENKEE LLC) |
+| Android | `com.zenkee.cirromail` | `android/app/build.gradle.kts` `applicationId` / `namespace`; sources under `android/app/src/main/kotlin/com/zenkee/cirromail/` |
+| iOS | `com.zenkee.cirromail` | `ios/Runner.xcodeproj/project.pbxproj` |
+| macOS | `com.zenkee.cirromail` | `macos/Runner/Configs/AppInfo.xcconfig` |
+| Linux | `com.zenkee.cirromail` | `linux/CMakeLists.txt` `APPLICATION_ID` |
+| Windows | `com.zenkee.cirromail` | `windows/runner/Runner.rc` `CompanyName` (the copyright holder is the company name ZENKEE LLC) |
 
-All five platforms use `com.zenkee.mailapp`. **Apple does not allow underscores in bundle
+All five platforms use `com.zenkee.cirromail`. **Apple does not allow underscores in bundle
 IDs** — registering an App ID / App Store Connect accepts only letters, digits, hyphens and
 dots, so `ke.dong.mail_app` is rejected outright (a local Xcode build also prints
 `invalid character in Bundle Identifier`); hence the concatenated form rather than `mail_app`.
 
-The `-RunnerTests` occurrences (`com.zenkee.mailapp.RunnerTests`) are the test target's
+The `-RunnerTests` occurrences (`com.zenkee.cirromail.RunnerTests`) are the test target's
 bundle ID and were changed along with the rest.
 
 ⚠️ **`name: mail_app` at the top of `pubspec.yaml` is not the package name — leave it
@@ -124,14 +124,14 @@ deliberately left alone** — it is just an identifier, not something exposed ex
 | iOS | `GoogleService-Info.plist` | `ios/Runner/`, **already registered in the Xcode project** | `firebase_core` looks it up in the bundle at startup |
 | macOS | `GoogleService-Info.plist` | `macos/Runner/`, **already registered in the Xcode project** | Same as above — macOS uses **the same** plist as iOS (its `BUNDLE_ID` matches the macOS bundle ID, so no separate macOS app is needed) |
 
-The `BUNDLE_ID` / `package_name` in all three files must be `com.zenkee.mailapp`, and that
+The `BUNDLE_ID` / `package_name` in all three files must be `com.zenkee.cirromail`, and that
 is also what you must enter when creating the app in the Firebase console. All three are
 committed to the repository — they are publicly embeddable client identifiers (this is by
 FCM's design, with the same secrecy level as `google_app_id`), but when switching Firebase
 projects you must swap all three platforms together.
 
 ⚠️ **After downloading the iOS plist from the Firebase console, check `BUNDLE_ID`.** This
-project's copy downloaded as `con.zenkee.mailapp` (missing the m) and was corrected by hand.
+project's copy downloaded as `con.zenkee.cirromail` (missing the m) and was corrected by hand.
 
 **Dropping the plist into the directory is not enough** — it must appear in the target's
 **Copy Bundle Resources** build phase to be packed into the `.app`, otherwise
@@ -182,7 +182,7 @@ None of this can live in code; each is an external configuration:
   for Debug and `production` for Release); the bare `aps-environment` in the iOS file is
   ignored by codesign on a native Mac app. You also need a **Mac** provisioning profile with
   push — once the App ID toggle is on, Xcode automatic signing requests a
-  `Mac Team Provisioning Profile: com.zenkee.mailapp` itself (under
+  `Mac Team Provisioning Profile: com.zenkee.cirromail` itself (under
   `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`). Missing the profile fails the
   build outright: `Provisioning profile ... doesn't include the Push Notifications capability`;
   missing the entitlement lets the build pass, but `getToken()` throws `apns-token-not-set`
@@ -192,7 +192,7 @@ None of this can live in code; each is an external configuration:
   account solves "can the relay call FCM"; this one solves "can FCM deliver to APNs" — two
   different things.
 - **Turn on the Push Notifications switch for the App ID in the Apple developer portal**
-  (the `com.zenkee.mailapp` App ID — iOS and macOS share it).
+  (the `com.zenkee.cirromail` App ID — iOS and macOS share it).
 - **A distributed macOS build also needs a Developer ID provisioning profile.** Right now
   `Release.entitlements` says `production`, but **this machine only has the development Mac
   profile, so the built artifact still embeds `development`** (visible via
@@ -288,7 +288,7 @@ One more path that can only be verified by hand: when you tap a system notificat
 system activates the app but **does not carry iOS's "which message" semantics**, so nothing
 happens on screen. The native `applicationShouldHandleReopen` (Dock click) and
 `applicationDidBecomeActive` (app activated) cannot cover this because navigation lives in
-Dart. So a `com.zenkee.mailapp/window` channel was added
+Dart. So a `com.zenkee.cirromail/window` channel was added
 (`lib/core/storage/window_channel.dart` ↔ `AppDelegate.setUpWindowChannel`), and Dart wakes
 the window before navigating.
 
@@ -356,7 +356,7 @@ once more from the Start menu **opens a new process**, so a single-instance step
   right-click in the taskbar).
 - **Only one process runs.** After closing the window the app is invisible in the taskbar,
   so clicking it again from the Start menu is perfectly reasonable — so at startup it grabs a
-  named mutex (`Local\com.zenkee.mailapp.single-instance`), and on failure broadcasts a
+  named mutex (`Local\com.zenkee.cirromail.single-instance`), and on failure broadcasts a
   `RegisterWindowMessage` message asking the already-running instance to bring its window to
   the front, then exits. Without this, two processes would fight over the same SQLite
   database, each register its own FCM token, and pop up the same message twice.
@@ -689,7 +689,7 @@ touch goes through a different recognizer); the text emitted by `Ctrl+A` + `Ctrl
 **both** the body and the subject (pinning that `SelectionArea` wraps the `ListView`, not just
 the body); and after clicking "delete" in the context menu the row really is gone from the
 database and the embedded form's `onClose` was called. `mail_shortcuts_system_test.dart`
-mounts the native `com.zenkee.mailapp/window` channel and verifies that `Cmd+W` really hits
+mounts the native `com.zenkee.cirromail/window` channel and verifies that `Cmd+W` really hits
 `hideMainWindow` and `Cmd+,` really lands on `/settings`.
 
 ## Known unfinished work

@@ -19,11 +19,11 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 
 // Dart 那边用来「把窗口叫回来」的通道。
 //
-// 和 macOS 的 `com.zenkee.mailapp/window` **同名同方法**，Dart 侧因此只需要
+// 和 macOS 的 `com.zenkee.cirromail/window` **同名同方法**，Dart 侧因此只需要
 // 一份代码（`lib/core/storage/window_channel.dart` 里那个平台判断）。
 // Windows 上需要它的是**点通知**那条路：系统弹的是 toast，点它并不会把
 // 「藏在通知区里」的窗口带出来，导航又在 Dart 手里。
-constexpr char kWindowChannelName[] = "com.zenkee.mailapp/window";
+constexpr char kWindowChannelName[] = "com.zenkee.cirromail/window";
 
 // 冒烟自检用：设了这个环境变量时，启动就直接跳到「关窗之后」的状态
 // （藏起窗口、挂上通知区图标），让没写鼠标、没有 Windows 的自动化也能验一遍

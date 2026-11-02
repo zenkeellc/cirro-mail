@@ -30,7 +30,7 @@ void main() {
   /// 「叫窗口」那条原生通道。通道名与三个 runner 注册的逐字一致
   /// （`macos/Runner/AppDelegate.swift`、`windows/runner/flutter_window.cpp`、
   /// `linux/runner/my_application.cc`）—— 换掉这个名字就是三个平台一起哑掉。
-  const windowChannel = MethodChannel('com.zenkee.mailapp/window');
+  const windowChannel = MethodChannel('com.zenkee.cirromail/window');
 
   /// 记下原生侧收到的每一个方法名。
   List<String> captureWindowCalls(WidgetTester tester) {

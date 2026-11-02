@@ -31,7 +31,7 @@ if (file("google-services.json").exists()) {
 }
 
 android {
-    namespace = "com.zenkee.mailapp"
+    namespace = "com.zenkee.cirromail"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -51,7 +51,7 @@ android {
     defaultConfig {
         // 包名一旦发布就不能再改（改包名 = 另一个应用，升级装不上），
         // 同时它必须与 Firebase 控制台里「添加 Android 应用」填的那个**一字不差**。
-        applicationId = "com.zenkee.mailapp"
+        applicationId = "com.zenkee.cirromail"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

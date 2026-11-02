@@ -89,7 +89,7 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.zenkee.mailapp" "\0"
+            VALUE "CompanyName", "com.zenkee.cirromail" "\0"
             VALUE "FileDescription", "Cirro Mail" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "mail_app" "\0"

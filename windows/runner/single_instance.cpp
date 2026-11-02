@@ -10,11 +10,11 @@ namespace {
 // 字符串里带上 App 标识，免得和别的程序撞 —— 同时也是个提醒：换包名的时候
 // 这里要跟着改。
 constexpr const wchar_t kMutexName[] =
-    L"Local\\com.zenkee.mailapp.single-instance";
+    L"Local\\com.zenkee.cirromail.single-instance";
 
 // 广播消息的名字。`RegisterWindowMessage` 保证同一个字符串在任何进程里都
 // 拿到同一个编号，这就是「进程之间对暗号」的全部机制。
-constexpr const wchar_t kShowMessageName[] = L"com.zenkee.mailapp.show-window";
+constexpr const wchar_t kShowMessageName[] = L"com.zenkee.cirromail.show-window";
 
 // 互斥体句柄。**故意不关**：句柄一旦关掉、又没有别人持有，这个具名对象就
 // 被销毁了，紧接着启动的下一份会顺理成章地把自己当成第一个实例。进程退出

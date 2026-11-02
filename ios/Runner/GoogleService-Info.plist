@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.zenkee.mailapp</string>
+	<string>com.zenkee.cirromail</string>
 	<key>PROJECT_ID</key>
 	<string>voltaic-psyche-462808-q2</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:287514373935:ios:2d2bfb2aff6c61517efbda</string>
+	<string>1:287514373935:ios:f62aded533c1b99d7efbda</string>
 </dict>
 </plist>

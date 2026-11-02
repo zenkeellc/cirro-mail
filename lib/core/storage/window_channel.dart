@@ -15,7 +15,7 @@ import 'package:flutter/services.dart';
 /// 而用户真正想看到的是**点开的那封信**，导航只有 Dart 侧知道。所以点通知这
 /// 条路上，Dart 先把这个调用打过去把窗口拉起来，再 `router.go(...)`。
 ///
-/// 反向域名用的就是 bundle id（`com.zenkee.mailapp`），和原生侧注册的那个
+/// 反向域名用的就是 bundle id（`com.zenkee.cirromail`），和原生侧注册的那个
 /// 字符串必须逐字一致 —— macOS 在 `macos/Runner/AppDelegate.swift`，Windows 在
 /// `windows/runner/flutter_window.cpp`，Linux 在
 /// `linux/runner/my_application.cc`。
@@ -24,7 +24,7 @@ import 'package:flutter/services.dart';
 /// 窗口起不来是小事，因为「叫窗口」失败而把导航也带崩才是大事。
 abstract final class WindowChannel {
   static const MethodChannel _channel =
-      MethodChannel('com.zenkee.mailapp/window');
+      MethodChannel('com.zenkee.cirromail/window');
 
   /// 把主窗口显示出来并抢到前台。窗口本来就开着时是幂等的。
   static Future<void> show() async {
