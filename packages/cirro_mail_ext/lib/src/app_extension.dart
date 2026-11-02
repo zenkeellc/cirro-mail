@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import 'notification_policy.dart';
+import 'push_defaults.dart';
 import 'settings_section.dart';
 
 /// 一个扩展模块（商业版、第三方插件、内部实验功能……）。
@@ -23,6 +24,7 @@ import 'settings_section.dart';
 /// | [aboutExtras] | `about_section.dart` 的「关于」页 |
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
+/// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
 /// | [allowsNotification] | `NotificationGate.select` / `countNotifiable` |
 /// | [onBootstrap] | `main.dart`，`runApp` 之前，**不 await** |
@@ -116,6 +118,26 @@ abstract class AppExtension {
   /// 现选 —— 核心的 ARB 是公开仓库的资产，不会为扩展加词条。
   List<SettingsSection> settingsSections(BuildContext context) =>
       const <SettingsSection>[];
+
+  /// 构建期内置的「后台推送」三条值（中转地址 / 实例位 / 设备配对码）。
+  ///
+  /// 核心在「设置 → 后台推送」首次进页时用它预填输入框，**只在字段为空时补**
+  /// —— 用户手填过的值不会被盖掉。返回 `null` 即「不提供」（公开版的既有
+  /// 行为：三条值留空，由用户或 `--dart-define-from-file` 提供）。
+  ///
+  /// ## 为什么是扩展钩子，而不是构建参数
+  ///
+  /// 这份值原本只能靠 `--dart-define-from-file` 在打包那一刻注入，于是
+  /// **从 IDE / Xcode 直接点运行**的调试构建是空的、忘了带参数的构建也是空的。
+  /// 做成扩展之后，值就是编译进包里的常量 —— 怎么启动都自带。构建期
+  /// `--dart-define` 仍然优先（临时覆盖不用改包），这里是兜底。
+  ///
+  /// ## 只许放设备配对码，不许放 webhookSecret
+  ///
+  /// 设备配对码是 App 自己的凭证（只够登记设备、只看得到自己订阅过的邮箱），
+  /// 可以公开、可以编进客户端；能伪造 webhook 的 `webhookSecret` **绝不**从
+  /// 这里进来（它在实例后台那一侧）。见 [PushDefaults] 的注释。
+  PushDefaults? get pushDefaults => null;
 
   /// 把通知规则的**内存快照**准备好（读一次配置，之后 [allowsNotification]
   /// 就只查内存）。

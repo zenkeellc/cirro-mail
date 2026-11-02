@@ -25,6 +25,7 @@ export 'src/app_extension_registry.dart' show AppExtensionRegistry;
 export 'src/mail_store.dart'
     show LocalMail, MailDeleted, MailStore, MailStoreEvent, MailStoreReset, MailUpserted;
 export 'src/notification_policy.dart' show NotificationCandidate;
+export 'src/push_defaults.dart' show PushDefaults;
 export 'src/settings_section.dart' show SettingsSection;
 
 /// 扩展往 UI 里插一块内容时的统一入口签名（「关于」页的附加块用它）。

@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_defaults.dart';
 import '../../../core/error/app_exception.dart';
+import '../../../core/extensions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/core_providers.dart';
 import '../../../providers/notification_providers.dart';
@@ -334,38 +336,44 @@ class _PushSectionState extends ConsumerState<PushSection> {
     setState(() => _deviceId = value);
   }
 
-  /// 用构建期注入的默认值补空字段（部署者拿自己的包时 `--dart-define` 进来的）。
+  /// 用**内置默认值**补空字段。
+  ///
+  /// 两个来源，优先级见 [resolveBuiltInPushDefaults]：
+  /// 构建期 `--dart-define` 注入的 [`AppDefaults`] 优先，扩展的
+  /// [AppExtension.pushDefaults] 兜底 —— 后者是商业版把三条值编进包里的那条
+  /// 路，好处是**从 IDE / Xcode 直接跑的构建也自带**，不依赖打包命令。
   ///
   /// 三条的落点**刻意不同**：
   /// - 中转地址、实例位 → 存 prefs（它们不是秘密，设置页本来就明文显示）；
   /// - 设备配对码 → 只存 `TokenStore`，**不写 prefs**：它虽然是可公开的
   ///   App 侧凭证，但仍是「这个实例位上这台设备」的身份，不该躺在无加密的
-  ///   配置里。构建期注入的 `PUSH_PAIRING_CODE` 语义就是它（见
-  ///   `AppDefaults.pushPairingCode`），webhookSecret **不从这里进来**。
+  ///   配置里。内置的 `PUSH_PAIRING_CODE` / [AppExtension.pushDefaults] 的
+  ///   `pairingCode` 语义就是它，webhookSecret **不从这里进来**。
   ///
   /// 只在字段**为空**时补：默认值是用来省掉首次配置的，用户手填过的值
   /// （哪怕跟默认值不一样）绝不能被构建期的常量盖掉。
   Future<void> _prefillFromBuild(PushService push, AppLocalizations l10n) async {
     final prefs = ref.read(prefsStoreProvider);
+    final builtIn = resolveBuiltInPushDefaults(kAppExtensions);
     var applied = false;
-    if (_relay.text.trim().isEmpty && AppDefaults.pushRelayUrl.isNotEmpty) {
-      _relay.text = AppDefaults.pushRelayUrl;
-      await prefs.setPushRelayUrl(AppDefaults.pushRelayUrl);
+    if (_relay.text.trim().isEmpty && builtIn.relayUrl.isNotEmpty) {
+      _relay.text = builtIn.relayUrl;
+      await prefs.setPushRelayUrl(builtIn.relayUrl);
       applied = true;
     }
-    if (_instanceId.text.trim().isEmpty && AppDefaults.pushInstanceId.isNotEmpty) {
-      _instanceId.text = AppDefaults.pushInstanceId;
-      await prefs.setPushInstanceId(AppDefaults.pushInstanceId);
+    if (_instanceId.text.trim().isEmpty && builtIn.instanceId.isNotEmpty) {
+      _instanceId.text = builtIn.instanceId;
+      await prefs.setPushInstanceId(builtIn.instanceId);
       applied = true;
     }
-    if (_code.text.trim().isEmpty && AppDefaults.pushPairingCode.isNotEmpty) {
-      _code.text = AppDefaults.pushPairingCode;
+    if (_code.text.trim().isEmpty && builtIn.pairingCode.isNotEmpty) {
+      _code.text = builtIn.pairingCode;
       // 存进**刚落盘的实例位**，不是构建期的常量：只注入了
       // `PUSH_PAIRING_CODE` 而没注入 `PUSH_INSTANCE_ID` 时，后者是空串，
       // 配对码会被写到一个空 key 下 —— 读的时候永远读不回来。
       await ref
           .read(tokenStoreProvider)
-          .writePushToken(_instanceId.text.trim(), AppDefaults.pushPairingCode);
+          .writePushToken(_instanceId.text.trim(), builtIn.pairingCode);
       applied = true;
     }
     if (applied) {
@@ -1814,4 +1822,36 @@ class _PushSectionState extends ConsumerState<PushSection> {
       ],
     );
   }
+}
+
+/// 有效的「内置推送默认值」：构建期 `--dart-define` 优先，
+/// [AppExtension.pushDefaults] 兜底。
+///
+/// 优先级是**逐字段**的，不是整组二选一 —— 只有这样，「构建时只覆盖了配对码」
+/// 这种部分注入才成立（`--dart-define` 给一个字段，扩展补齐另外两个）。
+///
+/// 只认**第一个**返回非 null 的扩展：多个扩展同时提供内置值属于配置错误，
+/// 与其猜哪组对，不如按注册顺序认第一个（注册顺序就是 `kAppExtensions` 的
+/// 顺序）。
+///
+/// 公开版没有扩展，于是结果恒等于 [`AppDefaults`] 的三个值 —— 与加接缝之前
+/// 逐字节一致。
+@visibleForTesting
+PushDefaults resolveBuiltInPushDefaults(List<AppExtension> extensions) {
+  var relayUrl = AppDefaults.pushRelayUrl;
+  var instanceId = AppDefaults.pushInstanceId;
+  var pairingCode = AppDefaults.pushPairingCode;
+  for (final extension in extensions) {
+    final builtIn = extension.pushDefaults;
+    if (builtIn == null) continue;
+    if (relayUrl.isEmpty) relayUrl = builtIn.relayUrl;
+    if (instanceId.isEmpty) instanceId = builtIn.instanceId;
+    if (pairingCode.isEmpty) pairingCode = builtIn.pairingCode;
+    break;
+  }
+  return PushDefaults(
+    relayUrl: relayUrl,
+    instanceId: instanceId,
+    pairingCode: pairingCode,
+  );
 }
