@@ -23,44 +23,6 @@
           "other_platform_oauth_client": []
         }
       }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:287514373935:android:a407670b73822b1a7efbda",
-        "android_client_info": {
-          "package_name": "com.zenkee.cirromailpro"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyBS7RHsxiMCJf_MU7_RutFTAOi6qBjLcTY"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:287514373935:android:f78d95fdea7d63127efbda",
-        "android_client_info": {
-          "package_name": "com.zenkee.mailapp"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyBS7RHsxiMCJf_MU7_RutFTAOi6qBjLcTY"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
     }
   ],
   "configuration_version": "1"
