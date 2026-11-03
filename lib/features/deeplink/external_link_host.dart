@@ -4,6 +4,7 @@ import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/storage/window_channel.dart';
 import '../../router.dart';
 
 /// 把「外部进来的 URI」接到路由器上的那一层。
@@ -40,6 +41,8 @@ import '../../router.dart';
 ///   [AppExtension.rewriteExternalResourceUrl] 同一口径，按注册顺序问；
 /// - 没人认领的链接只 `debugPrint` 一行，**不弹 UI**：来路太杂，为它打断
 ///   用户不值；
+/// - 认领之后先 [WindowChannel.show]（桌面端把藏在菜单栏 / 托盘里的窗口叫
+///   回来）再 `go`：链接到达时系统只激活 App，藏起来的窗口不会自己回来；
 /// - 流上的错误只 `debugPrint`：启动期一条坏链接不该把 App 打红；
 /// - 订阅持续到这一层被拆掉为止（`dispose` 里逐个取消）。
 class ExternalLinkHost extends ConsumerStatefulWidget {
@@ -98,6 +101,13 @@ class _ExternalLinkHostState extends ConsumerState<ExternalLinkHost> {
       debugPrint('没有扩展认领这条外部链接：$uri');
       return;
     }
+    // 桌面端先**把窗口叫回来**再导航：三个桌面平台的窗口都可以藏进菜单栏 /
+    // 托盘（关窗不退出，见 `WindowChannel.hide`），而外部链接到达时系统只会
+    // 把 App 激活 —— 藏起来的窗口不会自己回来。少了这一句，用户点完链接看到
+    // 的依然是「什么都没发生」，尽管路由已经跳了。与点通知那条路径同一手法
+    // （`notification_host.dart` 的 `WindowChannel.show()`）。非桌面平台 /
+    // 旧构建里它是静默空操作。
+    unawaited(WindowChannel.show());
     // 用 `go` 而不是 `push`：外部链接送来的是一个**地址**，不是「从当前页再
     // 压一页」。用户可能正停在任意页面，返回键该回到 App 的常规层级，而不是
     // 回一条他刚点过的链接 —— 与 `search_action.dart`、通知那条同一口径。
