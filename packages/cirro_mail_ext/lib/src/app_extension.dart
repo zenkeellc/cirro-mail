@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
@@ -32,6 +34,7 @@ import 'settings_section.dart';
 /// | [autoLoadExternalResources] / [rewriteExternalResourceUrl] | `external_resource_banner.dart#_HtmlBodyViewState` / `html_body_view.dart`（读信页外联资源） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
 /// | [allowsNotification] | `NotificationGate.select` / `countNotifiable` |
+/// | [externalUriStream] / [routeForExternalUri] | `external_link_host.dart`（App 根，`MaterialApp.router` 的 `builder` 里） |
 /// | [onBootstrap] | `main.dart`，`runApp` 之前，**不 await** |
 abstract class AppExtension {
   const AppExtension();
@@ -256,6 +259,37 @@ abstract class AppExtension {
   ///
   /// 多个扩展都返回非 null 时，注册表按注册顺序取**第一个**。
   String? rewriteExternalResourceUrl(String url) => null;
+
+  // ---- 入站外部链接（自定义 scheme 深链） ----
+
+  /// 外部进来的 URI 流（自定义 scheme 深链、「在 App 里打开」……）。
+  ///
+  /// 核心在 UI 起来之后把**每一个**扩展的这条流都订阅一次（`external_link_host.dart`），
+  /// 收到 URI 就问 [routeForExternalUri] 「这条该去哪」，非 null 就
+  /// `GoRouter.go` 过去。核心自己不认识任何 scheme —— 注册与解析全在扩展里。
+  ///
+  /// ## 契约
+  ///
+  /// - **公开版（空注册表）这条流是空的**，也就是行为逐字节不变；
+  /// - 订阅只发生一次、持续到进程结束，可以返回 broadcast 流；
+  /// - **冷启动那一条必须补发**：App 没在跑时被链接拉起，链接往往早于这里被
+  ///   订阅（引擎在 `application:openURLs:` 那一刻就收到了）。用 `app_links`
+  ///   的实现天然满足 —— `uriLinkStream` 会把 initial link 补给第一个监听者。
+  ///   自己写平台通道的扩展要自己做这层缓存，别指望核心轮询。
+  /// - 流上**不要**抛未捕获的错误：那是启动期，一条坏链接不该把 App 打红。
+  Stream<Uri> externalUriStream() => const Stream.empty();
+
+  /// 一条外部 URI 该落到哪个地址（`/activate-subscription?code=…` 这样带前导
+  /// 斜杠的地址，参数由扩展自己编码）。
+  ///
+  /// 核心按注册顺序问，**第一个非 null 的赢**（与 [appDisplayName] 同一口径），
+  /// 然后原样交给 `GoRouter.go` —— 所以这个地址必须在
+  /// [routes] 或核心路由里真实存在，否则 go_router 会抛 `no routes for location`。
+  ///
+  /// 返回 `null` = 这条链接不归本扩展管（别的扩展还有机会）；所有扩展都返回
+  /// null 时核心只写一行 `debugPrint`，不弹 UI —— 协议不认识的链接来路太杂，
+  /// 为它打断用户不值。
+  String? routeForExternalUri(Uri uri) => null;
 
   /// 启动时调一次。核心**不 await**：扩展的初始化不该拖慢首帧；真需要等待的
   /// 扩展自己在内部排队。

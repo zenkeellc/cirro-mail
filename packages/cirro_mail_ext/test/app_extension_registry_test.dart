@@ -476,6 +476,36 @@ void main() {
     });
   });
 
+  group('入站外部链接（深链）', () {
+    /// 默认实现是「两条都是空的」：没有流、也不认领任何 URI。
+    ///
+    /// 这不是「还没实现」，而是**公开版的既定行为**：核心的
+    /// `external_link_host.dart` 因此一个流都不订阅、一条链接都跳不了 ——
+    /// 空注册表 ⇒ 行为逐字节不变。真正的 scheme 注册与 URI 解析全在扩展里，
+    /// 核心**不认识任何一个 scheme**（见 `AppExtension.externalUriStream`
+    /// 那段文档）。
+    test('默认实现：流是空的，且不认领任何 URI（公开版空行为）', () async {
+      AppExtensionRegistry.instance
+          .registerAll(<AppExtension>[_FakeExt('plain')]);
+      final extension = AppExtensionRegistry.instance.extensions.single;
+
+      // `const Stream.empty()` 订阅后立刻结束 —— 这里用 `toList()` 同时钉住
+      // 「没有事件」与「流会正常收尾（不会把监听者挂住）」。
+      expect(await extension.externalUriStream().toList(), isEmpty);
+      expect(
+        extension.routeForExternalUri(
+          Uri.parse('example-app://activate?code=ABC'),
+        ),
+        isNull,
+      );
+      // 普通 http(s) 链接同样不归扩展管：默认实现返回 null 而不是自己乱猜。
+      expect(
+        extension.routeForExternalUri(Uri.parse('https://mail.example.com/')),
+        isNull,
+      );
+    });
+  });
+
   group('产品名', () {
     test('空注册表：null —— 核心回落到自己的默认名（公开版行为不变）', () {
       expect(AppExtensionRegistry.instance.appDisplayName, isNull);
