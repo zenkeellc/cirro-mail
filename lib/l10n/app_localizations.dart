@@ -1118,6 +1118,12 @@ abstract class AppLocalizations {
   /// **'Couldn\'t open the GitHub page'**
   String get githubOpenFailed;
 
+  /// No description provided for @linkOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the link'**
+  String get linkOpenFailed;
+
   /// No description provided for @syncing.
   ///
   /// In en, this message translates to:

@@ -65,6 +65,13 @@ class PrefsStore {
   /// 存版本串而不是 bool：下个版本发布时它跟当前清单对不上，提示自然重新
   /// 出现，不需要额外的「清标记」逻辑。
   static const String _kUpdateLastNotified = 'cm_update_last_notified';
+  /// 用户在「关于」页关掉的那个**通用推广位**的 URL（空串 = 没关过）。
+  ///
+  /// 存 URL 而不是 bool：推广位是构建期注入的（见
+  /// `core/config/promo_defaults.dart`），换活动就是换链接 —— 布尔值会让新
+  /// 卡片永远不出现；「同一个 URL 不再出现、URL 变了重新出现」用相等判断
+  /// 自然成立。
+  static const String _kPromoDismissedUrl = 'cm_promo_dismissed_url';
 
   // ---- 当前实例 ----
   String? get activeProfileId => _prefs.getString(_kActiveProfile);
@@ -506,6 +513,23 @@ class PrefsStore {
       await _prefs.remove(_kUpdateLastNotified);
     } else {
       await _prefs.setString(_kUpdateLastNotified, version);
+    }
+  }
+
+  // ---- 「关于」页的通用推广位 ----
+
+  /// 用户上次关掉的推广位 URL。空串 = 没关过（或关掉的是别的链接）。
+  String get promoDismissedUrl => _prefs.getString(_kPromoDismissedUrl) ?? '';
+
+  /// 记住「这个 URL 的推广位被关掉了」。
+  ///
+  /// 传空串等于清掉记录（目前没有调用方这么用，但让 setter 的语义对称，
+  /// 免得将来要「重新启用」时再补一个方法）。
+  Future<void> dismissPromo(String url) async {
+    if (url.isEmpty) {
+      await _prefs.remove(_kPromoDismissedUrl);
+    } else {
+      await _prefs.setString(_kPromoDismissedUrl, url);
     }
   }
 }

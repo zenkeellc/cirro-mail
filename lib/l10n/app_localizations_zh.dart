@@ -560,6 +560,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get githubOpenFailed => '打不开 GitHub 页面';
 
   @override
+  String get linkOpenFailed => '打不开这个链接';
+
+  @override
   String get syncing => '正在同步';
 
   @override

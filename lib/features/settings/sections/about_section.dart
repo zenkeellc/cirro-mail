@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/branding/app_brand.dart';
+import '../../../core/config/promo_defaults.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../core/update/update_service.dart';
 import '../../../core/util/time_utils.dart';
@@ -12,6 +15,7 @@ import '../../../core/version/app_version.dart';
 import '../../../core/version/version_info.dart';
 import '../../../core/widgets/github_star_card.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../providers/core_providers.dart';
 import '../../../providers/settings_providers.dart';
 
 /// 设置 → 关于。
@@ -31,7 +35,13 @@ import '../../../providers/settings_providers.dart';
 /// 4. **更新**分组：检查更新状态 + 自动检查开关（清单地址为空时整组隐藏）；
 /// 5. **开源项目**分组：仓库地址 + 「去 GitHub 点个 Star」。卡片与行为跟
 ///    右栏空白预览页（`NoSelectionPane`）**是同一套**（见
-///    `core/widgets/github_star_card.dart`），不是另写一份。
+///    `core/widgets/github_star_card.dart`），不是另写一份；
+/// 6. **通用推广位**（整页最末，构建期注入时才出现）：一张可关闭的卡 —— 标题
+///    + 最多两行正文 + 一个按钮 + 右上角「×」。文案 / 链接 / 显隐全部来自
+///    构建期 `--dart-define-from-file`（见 `core/config/promo_defaults.dart`
+///    的 [PromoConfig]），**核心只留位置、不写内容**。公开仓库没有那份注入
+///    文件 → 卡片不存在，这一页与从前一样；关掉后按 URL 记进 prefs，同一个
+///    链接不再出现、换链接（换活动）会重新出现。
 ///
 /// 扩展块直接铺在同一个 `ListView` 的 children 里，**不要**给它们套滚动容器
 /// （见 `AppExtension.aboutExtras` 的约定）。公开版没有扩展，所以这一页在
@@ -49,13 +59,24 @@ import '../../../providers/settings_providers.dart';
 /// 版本未知时控制器不做新旧判断，见 `UpdateController.check`）。页面不因此
 /// 打不开 —— 关于页是兜底信息页，不该成为另一处故障点。
 class AboutSection extends ConsumerWidget {
-  const AboutSection({super.key, this.openUrl = openInBrowser});
+  const AboutSection({
+    super.key,
+    this.openUrl = openInBrowser,
+    this.promo = PromoConfig.injected,
+  });
 
-  /// 打开开源仓库那一步。默认系统浏览器（见 [openInBrowser]）；
+  /// 打开外链那一步。默认系统浏览器（见 [openInBrowser]）；
   /// 测试注入假实现，才能钉住「点下去开的是哪个地址 / 开不成有没有回执」——
   /// `flutter_tester` 里真调一次 `url_launcher` 的 Future **永远不返回**。
+  ///
+  /// 开源仓库卡片与页末的通用推广位共用这一个注入点，两处都不碰全局单例。
   @visibleForTesting
   final UrlOpener openUrl;
+
+  /// 页末通用推广位的配置。默认是构建期注入的那一份（公开仓为「全空」）；
+  /// 测试传一份假的，就能钉住「注入后长什么样 / 关掉之后还出不出现」。
+  @visibleForTesting
+  final PromoConfig promo;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -88,6 +109,8 @@ class AboutSection extends ConsumerWidget {
             children: const <Widget>[_UpdateSection()],
           ),
         _OpenSourceGroup(openUrl: openUrl),
+        // 页末的通用推广位：位置在这里，内容全看构建期注入（公开仓不显示）。
+        _PromoSlot(config: promo, openUrl: openUrl),
       ],
     );
   }
@@ -443,5 +466,149 @@ class _UpdateSection extends ConsumerWidget {
     messenger?.showSnackBar(
       SnackBar(content: Text(l10n.updateOpenFailed)),
     );
+  }
+}
+
+/// 页末的**通用推广位**：构建期注入了内容才出现的一张卡（设计稿 §7.1）。
+///
+/// ## 为什么是 `ConsumerStatefulWidget`
+///
+/// 显隐有两个来源：构建期注入（[PromoConfig]）+ 用户关掉过（[PrefsStore]）。
+/// 后者在点「×」的瞬间要**立刻**生效 —— 不能等下一轮 provider 重建，所以本地
+/// 记下刚关掉的那个 URL；同时把「被关掉的 URL」写进 prefs，下次进页时从
+/// prefs 读回来。两边都按 **URL 相等** 判断：同一个链接不再出现，换活动换了
+/// 链接就重新出现。
+///
+/// ## 内容与样式
+///
+/// 标题一行（粗体）+ 正文最多两行 + 一个主按钮 + 右上角「×」。样式跟「开源
+/// 项目」那张卡同一套：`Card` + `surfaceContainerLow` + `outlineVariant` 描边，
+/// 颜色全取主题，深浅色都对。**不显示价格、不弹窗、没有红点** —— 一个安静的
+/// 静态入口，关掉就不再打扰。
+class _PromoSlot extends ConsumerStatefulWidget {
+  const _PromoSlot({required this.config, required this.openUrl});
+
+  final PromoConfig config;
+  final UrlOpener openUrl;
+
+  @override
+  ConsumerState<_PromoSlot> createState() => _PromoSlotState();
+}
+
+class _PromoSlotState extends ConsumerState<_PromoSlot> {
+  /// 本次会话里刚点掉的那个 URL。prefs 写入是异步的，但界面上要立刻消失。
+  ///
+  /// 记 URL 而不是 bool：换活动换了链接时（`config.url` 变了）这张卡要重新
+  /// 出现 —— 与 prefs 里的相等判断同一个语义。
+  String? _dismissedUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = widget.config;
+    final locale = Localizations.localeOf(context);
+    // 没注入 / 当前语言文案不全 / URL 不是 http(s)：这一项不存在。
+    if (!config.visibleFor(locale)) return const SizedBox.shrink();
+
+    final url = config.url.trim();
+    final persisted = ref.watch(prefsStoreProvider).promoDismissedUrl;
+    if (_dismissedUrl == url || persisted == url) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Card(
+        key: const ValueKey<String>('about-promo'),
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: scheme.surfaceContainerLow,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+        ),
+        child: Stack(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Padding(
+                    // 给右上角的「×」留出位置，标题再长也不会钻到它下面。
+                    padding: const EdgeInsets.only(right: 28),
+                    child: Text(
+                      config.titleFor(locale)!,
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    config.bodyFor(locale)!,
+                    key: const ValueKey<String>('about-promo-body'),
+                    // 正文最多两行：注入方写多了也不许把关于页撑长。
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonal(
+                      key: const ValueKey<String>('about-promo-cta'),
+                      onPressed: _open,
+                      child: Text(config.ctaFor(locale)!),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: IconButton(
+                key: const ValueKey<String>('about-promo-dismiss'),
+                // 用 Material 自带的「关闭」文案，不往公开 ARB 里加词。
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: _dismiss,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 「×」：立刻消失 + 记住这个 URL。写 prefs 不挡界面收起来。
+  void _dismiss() {
+    setState(() => _dismissedUrl = widget.config.url.trim());
+    unawaited(
+      ref.read(prefsStoreProvider).dismissPromo(widget.config.url.trim()),
+    );
+  }
+
+  /// 主按钮：只开系统浏览器；打不开弹一句回执，不冒泡。
+  Future<void> _open() async {
+    final uri = Uri.tryParse(widget.config.url.trim());
+    if (uri == null) return;
+    // await 之后 context 可能已经不在树上：messenger / 文案先取好。
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final l10n = AppLocalizations.of(context);
+    var opened = false;
+    try {
+      opened = await widget.openUrl(uri);
+    } catch (error) {
+      // 平台实现缺失 / 系统没浏览器都走这里；打不开只是打不开。
+      debugPrint('打不开推广链接 $uri：$error');
+    }
+    if (opened || !context.mounted) return;
+    messenger?.showSnackBar(SnackBar(content: Text(l10n.linkOpenFailed)));
   }
 }

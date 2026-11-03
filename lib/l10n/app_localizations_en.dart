@@ -597,6 +597,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get githubOpenFailed => 'Couldn\'t open the GitHub page';
 
   @override
+  String get linkOpenFailed => 'Couldn\'t open the link';
+
+  @override
   String get syncing => 'Syncing';
 
   @override

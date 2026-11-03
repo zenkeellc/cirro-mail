@@ -270,6 +270,7 @@
   "noSelectionPraise": "Praise for Cirro is meant to be said out loud.",
   "starOnGithub": "Star on GitHub",
   "githubOpenFailed": "Couldn't open the GitHub page",
+  "linkOpenFailed": "Couldn't open the link",
   "syncing": "Syncing",
   "lastSync": "Last sync {time}",
   "@lastSync": {
