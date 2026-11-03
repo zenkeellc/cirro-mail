@@ -2118,6 +2118,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get versionChannel => 'Channel';
 
   @override
+  String get aboutGroupVersion => 'Version';
+
+  @override
+  String get aboutGroupUpdate => 'Updates';
+
+  @override
+  String get aboutGroupOpenSource => 'Open source';
+
+  @override
+  String get aboutOpenSourceHint =>
+      'This app is open source — the code lives on GitHub. If it saves you time, drop the project a star.';
+
+  @override
   String get checkForUpdates => 'Check for updates';
 
   @override

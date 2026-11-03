@@ -1,20 +1,22 @@
 // 「设置 → 关于」页的扩展接缝（`AppExtension.aboutExtras`）。
 //
 // 这一条是**商业版功能的公开面护栏**：商业代码不能改核心，只能往注册表里
-// 放扩展；核心在关于页把它铺出来。所以这里要钉住两件事：
+// 放扩展；核心在关于页把它铺出来。所以这里要钉住三件事：
 //
 // 1. **空注册表时这一页没有扩展内容** —— 公开版不能因为多了接缝而多出
 //    扩展块（商业版是同一份核心代码，接缝必须对公开版是零影响）；
-// 2. 注册一个扩展后，它的块**真的**出现在这一页内置内容**之后**，而且
-//    **没有多套一层滚动容器**（套了就是两层滚动 —— 页面滚不动或者滚两次）。
+// 2. 注册一个扩展后，它的块**真的**出现在这一页、位置固定
+//    （紧跟主标识、在版本信息 / 更新分组之前 —— 扩展块属于「这个产品是谁」
+//    这一层，商业版的 logo / 商业版徽章 / 授权归属就挂在主标识下面）；
+// 3. **没有多套一层滚动容器**（套了就是两层滚动 —— 页面滚不动或者滚两次）。
 //
 // ## 基线为什么变了（2026-11）
 //
-// 以前这一页只有「App 名 + 版本号」一行，所以空注册表的断言是
-// 「只有一个 ListTile」。加了版本自动升级之后，关于页多了内置的版本明细与
-// 检查更新块（状态行 + 自动检查开关），空注册表**不再只有一个 ListTile**。
-// 于是基线改为：App 名那一行仍然在最前、检查更新块在它之后、扩展块在最后、
-// 整页仍然只有一个 ListView。**本意一点没变**，只是内置内容变多了。
+// 以前这一页是一串平铺的 `ListTile`（App 名行 + 版本明细 + 更新块），
+// 空注册表的断言是「只有一个 ListTile」。现在关于页按信息字段分了组：
+// 主标识不再是 `ListTile`（改成标题 + 版本行的头部块），版本明细与更新各进
+// 一张卡片。于是基线改为「App 名那一行仍然在最前、扩展块紧跟它、更新分组
+// 在扩展之后、整页仍然只有一个 ListView」。**本意一点没变**，只是布局变了。
 //
 // 容器搭建照 `settings_compose_section_test.dart`（prefs 塞 mock 初值）。
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
@@ -48,10 +50,10 @@ void main() {
   setUp(AppExtensionRegistry.instance.reset);
   tearDown(AppExtensionRegistry.instance.reset);
 
-  /// 内置内容（不带任何扩展）在关于页画出来的 ListTile 数：
-  /// App 名行 + 检查更新状态行 + 自动检查开关（`SwitchListTile` 内部
-  /// 也是一个 `ListTile`）。版本未知时没有明细行。
-  const int builtInTiles = 3;
+  /// 内置内容（不带任何扩展）在关于页画出来的 ListTile 数：检查更新状态行 +
+  /// 自动检查开关（`SwitchListTile` 内部也是一个 `ListTile`）。版本未知时
+  /// 没有版本信息分组；主标识是头部块不是 ListTile；开源仓库卡片也不是。
+  const int builtInTiles = 2;
 
   /// 刻意**不写 `const`**：`AboutSection` 是 const 构造的，写成
   /// `const Scaffold(body: AboutSection())` 每次 `pumpWidget` 传进去的是
@@ -90,7 +92,7 @@ void main() {
     expect(find.byKey(const ValueKey<String>('about-version')), findsOneWidget);
   });
 
-  testWidgets('注册后：扩展的块追加在内置内容之后，没有第二层滚动', (tester) async {
+  testWidgets('注册后：扩展的块紧跟主标识，没有第二层滚动', (tester) async {
     AppExtensionRegistry.instance.registerAll(const <AppExtension>[_AboutExt()]);
     await pump(tester);
 
@@ -99,22 +101,22 @@ void main() {
     expect(find.byType(ListView), findsOneWidget);
     expect(find.byType(ListTile), findsNWidgets(builtInTiles + 1));
 
-    // 顺序：内置内容全部在前，商业版卡片在最后。
+    // 顺序：主标识 → 扩展块（商业版标识）→ 内置的版本/更新分组。
     final appTile =
         tester.getTopLeft(find.byKey(const ValueKey<String>('about-version')));
+    final proCard = tester.getTopLeft(find.byKey(const ValueKey('pro-card')));
     final statusTile = tester.getTopLeft(
       find.byKey(const ValueKey<String>('about-update-status')),
     );
-    final proCard = tester.getTopLeft(find.byKey(const ValueKey('pro-card')));
-    expect(
-      statusTile.dy,
-      greaterThan(appTile.dy),
-      reason: '检查更新块排在「App 名 + 版本号」之后',
-    );
     expect(
       proCard.dy,
-      greaterThan(statusTile.dy),
-      reason: '扩展块必须排在内置内容之后，插到前面会顶掉主标识',
+      greaterThan(appTile.dy),
+      reason: '扩展块必须排在主标识之后，插到前面会顶掉主标识',
+    );
+    expect(
+      statusTile.dy,
+      greaterThan(proCard.dy),
+      reason: '扩展块属于「产品是谁」那一层，排在版本/更新分组之前',
     );
   });
 

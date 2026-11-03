@@ -7,7 +7,8 @@
 //    —— 只测 widget 本身看不出它有没有被接上；
 // 2. **三样内容都在**：大号 👍、夸赞文案、仓库地址与「点个 Star」按钮，外加
 //    那张 GitHub 标志（是 `Image`，不是 Material 图标）；
-// 3. **地址只有一处**：卡片上显示的地址与按钮打开的目标是同一个常量，
+// 3. **地址只有一处**：卡片上显示的地址与按钮打开的目标是同一个常量
+//    （`GithubRepo`，与「设置 → 关于」页的「开源项目」分组共用），
 //    不会改一处忘另一处；
 // 4. **点下去真的去开那个地址，开不成只弹 SnackBar**：`flutter_tester` 里
 //    没有 `url_launcher` 的平台实现（真调会一直挂着、既不返回也不抛），
@@ -16,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
+import 'package:mail_app/core/widgets/github_star_card.dart';
 import 'package:mail_app/features/mail_list/mail_panes.dart';
 import 'package:mail_app/features/mail_list/no_selection_pane.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
@@ -52,7 +54,7 @@ void main() {
 
     expect(find.text('👍'), findsOneWidget);
     expect(find.text(zh.noSelectionPraise), findsOneWidget);
-    expect(find.text(NoSelectionPane.displayUrl), findsOneWidget);
+    expect(find.text(GithubRepo.displayUrl), findsOneWidget);
     expect(find.text(zh.starOnGithub), findsOneWidget);
     // GitHub 标志必须是**一张图**：Material 图标里没有 GitHub 的牌，
     // 换成某个近似图标（`Icons.code` 之类）在视觉上就不是那个意思了。
@@ -60,13 +62,10 @@ void main() {
   });
 
   testWidgets('仓库地址只有一处：卡片显示与按钮目标是同一个常量', (tester) async {
-    expect(NoSelectionPane.repoUrl, 'https://github.com/zenkeellc/cirro-mail');
-    expect(NoSelectionPane.displayUrl, 'github.com/zenkeellc/cirro-mail');
+    expect(GithubRepo.url, 'https://github.com/zenkeellc/cirro-mail');
+    expect(GithubRepo.displayUrl, 'github.com/zenkeellc/cirro-mail');
     // 显示形式就是常量去掉协议，两处不可能各写一份写歪。
-    expect(
-      NoSelectionPane.displayUrl,
-      NoSelectionPane.repoUrl.split('//').last,
-    );
+    expect(GithubRepo.displayUrl, GithubRepo.url.split('//').last);
   });
 
   testWidgets('点「点个 Star」打开的就是仓库地址（整张卡片也是同一个动作）', (tester) async {
@@ -81,12 +80,12 @@ void main() {
 
     await tester.tap(find.text(zh.starOnGithub));
     await tester.pump();
-    expect(opened, <Uri>[Uri.parse(NoSelectionPane.repoUrl)]);
+    expect(opened, <Uri>[Uri.parse(GithubRepo.url)]);
     // 打开成功就不该再弹「打不开」。
     expect(find.text(zh.githubOpenFailed), findsNothing);
 
     // 地址那一行（信息量小、目标是它旁边的按钮）同样把用户送过去。
-    await tester.tap(find.text(NoSelectionPane.displayUrl));
+    await tester.tap(find.text(GithubRepo.displayUrl));
     await tester.pump();
     expect(opened.length, 2);
   });

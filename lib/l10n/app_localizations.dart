@@ -3692,6 +3692,30 @@ abstract class AppLocalizations {
   /// **'Channel'**
   String get versionChannel;
 
+  /// settings > about: group header for the build / channel / commit / build-time fields
+  ///
+  /// In en, this message translates to:
+  /// **'Version'**
+  String get aboutGroupVersion;
+
+  /// settings > about: group header for the update check row and the auto-check switch
+  ///
+  /// In en, this message translates to:
+  /// **'Updates'**
+  String get aboutGroupUpdate;
+
+  /// settings > about: group header for the repository card
+  ///
+  /// In en, this message translates to:
+  /// **'Open source'**
+  String get aboutGroupOpenSource;
+
+  /// settings > about: one line above the GitHub star card asking for a star
+  ///
+  /// In en, this message translates to:
+  /// **'This app is open source — the code lives on GitHub. If it saves you time, drop the project a star.'**
+  String get aboutOpenSourceHint;
+
   /// No description provided for @checkForUpdates.
   ///
   /// In en, this message translates to:

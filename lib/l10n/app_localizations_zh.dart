@@ -2003,6 +2003,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get versionChannel => '渠道';
 
   @override
+  String get aboutGroupVersion => '版本信息';
+
+  @override
+  String get aboutGroupUpdate => '更新';
+
+  @override
+  String get aboutGroupOpenSource => '开源项目';
+
+  @override
+  String get aboutOpenSourceHint =>
+      '这个 App 是开源的，代码就在 GitHub 上。要是省了你的时间，去给项目点个 Star 吧。';
+
+  @override
   String get checkForUpdates => '检查更新';
 
   @override

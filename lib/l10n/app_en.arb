@@ -1504,6 +1504,22 @@
   "versionCommit": "Commit",
   "versionBuiltAt": "Built at",
   "versionChannel": "Channel",
+  "aboutGroupVersion": "Version",
+  "@aboutGroupVersion": {
+    "description": "settings > about: group header for the build / channel / commit / build-time fields"
+  },
+  "aboutGroupUpdate": "Updates",
+  "@aboutGroupUpdate": {
+    "description": "settings > about: group header for the update check row and the auto-check switch"
+  },
+  "aboutGroupOpenSource": "Open source",
+  "@aboutGroupOpenSource": {
+    "description": "settings > about: group header for the repository card"
+  },
+  "aboutOpenSourceHint": "This app is open source — the code lives on GitHub. If it saves you time, drop the project a star.",
+  "@aboutOpenSourceHint": {
+    "description": "settings > about: one line above the GitHub star card asking for a star"
+  },
   "checkForUpdates": "Check for updates",
   "updateCheckNow": "Check",
   "updateRetry": "Retry",
