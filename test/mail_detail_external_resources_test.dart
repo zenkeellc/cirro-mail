@@ -263,4 +263,24 @@ void main() {
     expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
     expect(find.textContaining('其中 1 个当前已加载'), findsOneWidget);
   });
+
+  testWidgets('1×1 写在 <style> 的 class 里也能触发追踪像素警告', (tester) async {
+    await pumpBody(
+      tester,
+      '<style>.px{width:1px;height:1px}</style>'
+          '<img class="px" src="https://tracker.example.com/p.gif">',
+    );
+
+    expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
+    expect(find.textContaining('来源：tracker.example.com'), findsOneWidget);
+  });
+
+  testWidgets('只写一个方向的 1px 追踪图也提醒', (tester) async {
+    await pumpBody(
+      tester,
+      '<img src="https://tracker.example.com/p.gif" height="1">',
+    );
+
+    expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
+  });
 }

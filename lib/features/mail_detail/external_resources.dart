@@ -65,10 +65,15 @@ class ExternalResource {
   /// `<img alt>` 之类的可读标签，可能为空。
   final String? label;
 
-  /// 是否像追踪像素：外链 `<img>`，且宽高都读得到、都 ≤ 2。
+  /// 是否像追踪像素（1×1 / 2×2 的透明图）。
   ///
-  /// 1×1 的透明图不会显示任何东西，唯一用途就是「邮件被打开时通知发件人」。
-  /// 读不到尺寸的图片不猜（正常小图标不计入），宁可漏报也不误报。
+  /// 尺寸按 CSS 层叠取值：**行内 style > `<style>` 里的 class/id/标签 >
+  /// HTML 属性**。两个方向都读得到时要求都 ≤ 2；只读得到一个方向时，只要它
+  /// ≤ 2 也算（`<img height="1">` 是常见的追踪图写法）。两个方向都读不到时
+  /// 不猜 —— 那会把所有图片都算成可疑。
+  ///
+  /// 注意：**这不影响拦截**。所有外联资源都按 URL 默认拦截，尺寸只决定
+  /// 「要不要额外提醒用户这可能是在追踪」。
   final bool trackingPixel;
 
   /// 这一类资源是否有可能被「启用」。
@@ -178,16 +183,58 @@ ExternalResourceScan scanExternalResources(
     );
   }
 
-  for (final element in fragment.querySelectorAll('*')) {
-    final tag = (element.localName ?? '').toLowerCase();
+  final allElements = fragment.querySelectorAll('*');
 
-    // 行内 style / background 属性对任何元素都可能带图。
-    final style = element.attributes['style'];
-    if (style != null && style.isNotEmpty) {
-      _scanCss(style, (url, kind) => add(url, kind));
+  // 先把 `<style>` 里的规则解析出来：`<img class="pixel">` 这类把 1×1 写在
+  // 样式表里的写法，只靠属性是看不到的。
+  final styleRules = <dom.Element, List<_CssRule>>{};
+  for (final element in allElements) {
+    if ((element.localName ?? '').toLowerCase() == 'style') {
+      styleRules[element] = _parseCssRules(element.text);
     }
+  }
+  final cssRules =
+      styleRules.values.expand((rules) => rules).toList(growable: false);
+
+  // 每个元素的层叠结果与尺寸只算一次：把样式表里的背景图升级成追踪像素时
+  // 也要读同一份结果。
+  final cssCache = <dom.Element, Map<String, String>>{};
+  final sizeCache = <dom.Element, (double?, double?)>{};
+  final selectorCache = <String, _ParsedSelector?>{};
+  Map<String, String> cssOf(dom.Element element) => cssCache.putIfAbsent(
+        element,
+        () => cssRules.isEmpty
+            ? const <String, String>{}
+            : _computeCssDeclarations(element, cssRules, selectorCache),
+      );
+  (double?, double?) sizeOf(dom.Element element) => sizeCache.putIfAbsent(
+        element,
+        () => _elementSize(element, cssOf(element)),
+      );
+
+  for (final element in allElements) {
+    final tag = (element.localName ?? '').toLowerCase();
+    final style = element.attributes['style'];
     final background = element.attributes['background'];
-    if (background != null) add(background, ExternalResourceKind.cssImage);
+
+    // 尺寸只为「可能是追踪像素」的元素算：图片、带背景的元素。逐个元素都
+    // 跑一遍样式表匹配的话，上千个元素 × 上百条规则会明显拖慢读信页。
+    final needsSize = tag == 'img' ||
+        background != null ||
+        (style != null &&
+            (style.contains('background') || style.contains('url(')));
+    final size = needsSize ? sizeOf(element) : null;
+    final tiny =
+        size != null && _looksLikeTrackingPixel(size.$1, size.$2);
+
+    // 行内 style / background 属性对任何元素都可能带图；如果这个元素本身
+    // 就是 1×1 尺寸，背景图同样可能是追踪像素（1×1 透明 GIF 当背景）。
+    if (style != null && style.isNotEmpty) {
+      _scanCss(style, (url, kind) => add(url, kind, trackingPixel: tiny));
+    }
+    if (background != null) {
+      add(background, ExternalResourceKind.cssImage, trackingPixel: tiny);
+    }
 
     switch (tag) {
       case 'img':
@@ -195,7 +242,7 @@ ExternalResourceScan scanExternalResources(
           element.attributes['src'],
           ExternalResourceKind.image,
           label: element.attributes['alt'],
-          trackingPixel: _isTrackingPixel(element),
+          trackingPixel: tiny,
         );
       // `srcset` 不收集：fwfh 根本不读它，不渲染就没有风险。
       case 'link':
@@ -217,6 +264,13 @@ ExternalResourceScan scanExternalResources(
         add(element.attributes['src'], ExternalResourceKind.frame);
       case 'style':
         _scanCss(element.text, (url, kind) => add(url, kind));
+        _upgradeCssBackgrounds(
+          styleRules[element] ?? const <_CssRule>[],
+          allElements,
+          sizeOf,
+          selectorCache,
+          add,
+        );
     }
   }
 
@@ -316,29 +370,35 @@ class ExternalResourcePolicy {
   return (normalized.toString(), normalized);
 }
 
-/// 1×1 / 2×2 的外链图片 —— 典型的追踪像素。
+/// 1×1 / 2×2 的图片 —— 典型的追踪像素。
 ///
-/// 尺寸来源只认 `width` / `height` 属性与**行内** `style` 里的 px 值；不解析
-/// `<style>` 里的类选择器（那需要真 CSS 引擎，而且追踪像素几乎都写在行内）。
-/// 两个方向都必须读得到才判定，避免把「宽 1px 的装饰线」误当成追踪器。
-bool _isTrackingPixel(dom.Element element) {
-  final width = _dimension(element, 'width');
-  final height = _dimension(element, 'height');
-  return width != null && height != null && width <= 2 && height <= 2;
+/// 尺寸来源按 CSS 的层叠顺序取值：行内 style > 样式表（class/id/标签）>
+/// HTML 属性。两个方向都读得到时要求都 ≤ 2；只读得到一个方向时，只要它 ≤ 2
+/// 也当作「疑似追踪像素」—— 这是为了覆盖 `<img src="..." height="1">` 这种
+/// 只写一个方向的追踪图。完全不写尺寸的外链图不判定（那会把所有图片都算成
+/// 可疑），但它们仍然会被默认策略拦截。
+bool _looksLikeTrackingPixel(double? width, double? height) {
+  if (width != null && height != null) return width <= 2 && height <= 2;
+  if (width != null) return width <= 2;
+  if (height != null) return height <= 2;
+  return false;
 }
 
-/// 读一个方向上的尺寸（px）。小数、`px` 后缀都接受；百分比/`auto` 等返回 null。
-double? _dimension(dom.Element element, String name) {
-  final fromAttr = _pxValue(element.attributes[name]);
-  if (fromAttr != null) return fromAttr;
+/// 元素的有效尺寸（width/height，单位 px）。读不到（百分比/auto/em）返回 null。
+(double?, double?) _elementSize(
+  dom.Element element,
+  Map<String, String> css,
+) {
+  final inline = _parseDeclarations(element.attributes['style'] ?? '');
+  double? side(String name) {
+    final fromInline = _cssLength(inline[name]);
+    if (fromInline != null) return fromInline;
+    final fromCss = _cssLength(css[name]);
+    if (fromCss != null) return fromCss;
+    return _pxValue(element.attributes[name]);
+  }
 
-  final style = element.attributes['style'];
-  if (style == null || style.isEmpty) return null;
-  final match = RegExp(
-    '(?:^|;)\\s*${RegExp.escape(name)}\\s*:\\s*([0-9]*\\.?[0-9]+)\\s*(?:px)?\\s*(?=;|!|\$)',
-    caseSensitive: false,
-  ).firstMatch(style);
-  return _pxValue(match?.group(1));
+  return (side('width'), side('height'));
 }
 
 double? _pxValue(String? raw) {
@@ -349,6 +409,361 @@ double? _pxValue(String? raw) {
   ).firstMatch(raw);
   if (match == null) return null;
   return double.tryParse(match.group(1)!);
+}
+
+/// CSS 长度：只认 `Npx` 与 `0`。百分比、`auto`、`em` 等一律返回 null ——
+/// 猜它们会让「1×1 判定」变得不可靠。`!important` 先剥掉。
+double? _cssLength(String? raw) {
+  if (raw == null) return null;
+  final text = raw
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s*!important\s*$'), '');
+  final match = RegExp(r'^(-?[0-9]*\.?[0-9]+)\s*px$').firstMatch(text);
+  if (match != null) return double.tryParse(match.group(1)!);
+  return text == '0' ? 0 : null;
+}
+
+/// 样式表里的背景图升级为追踪像素。
+///
+/// 触发条件（满足其一）：
+/// 1. 规则自己声明了 1×1 尺寸（`.p{width:1px;height:1px;background:url(...)}`）；
+/// 2. 规则命中的某个元素，按层叠结果算出来的尺寸像追踪像素。
+///
+/// 这是「`<style>` 里设置的 1×1 背景图」那条漏检的补丁：扫描器不是 CSS
+/// 引擎，但对追踪像素这种**简单、静态**的写法足够了。
+void _upgradeCssBackgrounds(
+  List<_CssRule> rules,
+  List<dom.Element> elements,
+  (double?, double?) Function(dom.Element) sizeOf,
+  Map<String, _ParsedSelector?> selectorCache,
+  void Function(
+    String? raw,
+    ExternalResourceKind kind, {
+    String? label,
+    bool trackingPixel,
+  }) add,
+) {
+  for (final rule in rules) {
+    final urls = _backgroundUrls(rule.declarations);
+    if (urls.isEmpty) continue;
+
+    var tiny = _looksLikeTrackingPixel(
+      _cssLength(rule.declarations['width']),
+      _cssLength(rule.declarations['height']),
+    );
+    if (!tiny) {
+      for (final element in elements) {
+        if (!_ruleMatches(rule, element, selectorCache)) continue;
+        final size = sizeOf(element);
+        if (_looksLikeTrackingPixel(size.$1, size.$2)) {
+          tiny = true;
+          break;
+        }
+      }
+    }
+
+    for (final url in urls) {
+      add(url, ExternalResourceKind.cssImage, trackingPixel: tiny);
+    }
+  }
+}
+
+// ---- 轻量 CSS 解析 ----
+//
+// 只为一件事服务：把 `<style>` 里 class/id/标签上的 width/height 与
+// background 读出来，补上「1×1 写在样式表里」的漏检。它不是通用 CSS 引擎：
+// 伪类、属性选择器、兄弟选择器一律跳过（宁可漏报，不误报）；媒体查询里的
+// 规则会被当作生效处理（追踪像素不会藏在 media query 里）。
+
+/// 一条已解析的 CSS 规则。
+class _CssRule {
+  _CssRule(this.selectors, this.declarations, this.order);
+
+  final List<String> selectors;
+  final Map<String, String> declarations;
+
+  /// 源码里的顺序，用于同优先级时「后写的赢」。
+  final int order;
+}
+
+/// 解析 `<style>` 文本。只取「选择器 { 声明 }」形式，`@font-face` / `@media`
+/// 这类 at-rule 本身跳过。
+List<_CssRule> _parseCssRules(String css) {
+  if (css.trim().isEmpty) return const <_CssRule>[];
+  // 上限只是防御：正常邮件的 `<style>` 远小于这个规模；超过时宁可不做 CSS
+  // 尺寸推断，也不要让读信页为了解析样式卡住。
+  if (css.length > 128 * 1024) return const <_CssRule>[];
+  final source = css.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
+  final rules = <_CssRule>[];
+  final pattern = RegExp(r'([^{}]+)\{([^{}]*)\}');
+  for (final match in pattern.allMatches(source)) {
+    final selectorText = (match.group(1) ?? '').trim();
+    if (selectorText.isEmpty || selectorText.startsWith('@')) continue;
+    final declarations = _parseDeclarations(match.group(2) ?? '');
+    if (declarations.isEmpty) continue;
+    final selectors = selectorText
+        .split(',')
+        .map((selector) => selector.trim())
+        .where((selector) => selector.isNotEmpty)
+        .toList(growable: false);
+    if (selectors.isEmpty) continue;
+    rules.add(_CssRule(selectors, declarations, rules.length));
+    if (rules.length >= 512) break;
+  }
+  return rules;
+}
+
+/// 解析一段声明文本。`;` 只在括号外、引号外才分割 —— 否则
+/// `url(data:image/png;base64,...)` 会被切成两半。
+Map<String, String> _parseDeclarations(String text) {
+  final parts = <String>[];
+  final current = StringBuffer();
+  var depth = 0;
+  var quote = '';
+  for (var i = 0; i < text.length; i++) {
+    final ch = text[i];
+    if (quote.isNotEmpty) {
+      current.write(ch);
+      if (ch == quote) quote = '';
+      continue;
+    }
+    if (ch == '"' || ch == "'") {
+      quote = ch;
+      current.write(ch);
+      continue;
+    }
+    if (ch == '(') {
+      depth++;
+      current.write(ch);
+      continue;
+    }
+    if (ch == ')') {
+      if (depth > 0) depth--;
+      current.write(ch);
+      continue;
+    }
+    if (ch == ';' && depth == 0) {
+      parts.add(current.toString());
+      current.clear();
+      continue;
+    }
+    current.write(ch);
+  }
+  if (current.isNotEmpty) parts.add(current.toString());
+
+  final result = <String, String>{};
+  for (final part in parts) {
+    final colon = part.indexOf(':');
+    if (colon <= 0) continue;
+    final name = part.substring(0, colon).trim().toLowerCase();
+    final value = part
+        .substring(colon + 1)
+        .trim()
+        .replaceAll(RegExp(r'\s*!important\s*$', caseSensitive: false), '');
+    if (name.isEmpty || value.isEmpty) continue;
+    result[name] = value;
+  }
+  return result;
+}
+
+/// 按层叠算出一个元素最终生效的 CSS 声明（不含行内 style，行内单独覆盖）。
+Map<String, String> _computeCssDeclarations(
+  dom.Element element,
+  List<_CssRule> rules,
+  Map<String, _ParsedSelector?> selectorCache,
+) {
+  final best = <String, ({int specificity, int order, String value})>{};
+  for (final rule in rules) {
+    var specificity = -1;
+    for (final selector in rule.selectors) {
+      final matched =
+          _selectorSpecificity(element, selector, selectorCache);
+      if (matched != null && matched > specificity) specificity = matched;
+    }
+    if (specificity < 0) continue;
+
+    for (final entry in rule.declarations.entries) {
+      final current = best[entry.key];
+      final wins = current == null ||
+          specificity > current.specificity ||
+          (specificity == current.specificity && rule.order >= current.order);
+      if (wins) {
+        best[entry.key] = (
+          specificity: specificity,
+          order: rule.order,
+          value: entry.value,
+        );
+      }
+    }
+  }
+  return <String, String>{
+    for (final entry in best.entries) entry.key: entry.value.value,
+  };
+}
+
+bool _ruleMatches(
+  _CssRule rule,
+  dom.Element element,
+  Map<String, _ParsedSelector?> selectorCache,
+) =>
+    rule.selectors.any(
+      (selector) => _selectorSpecificity(element, selector, selectorCache) != null,
+    );
+
+/// 预解析后的选择器：拆好的复合选择器、组合符与特异度。
+///
+/// 预解析是为了性能：一个元素要跟样式表里的每条规则比，选择器字符串不能
+/// 每次都重新跑正则。解析失败的（伪类/属性/兄弟选择器等）为 null，直接跳过。
+class _ParsedSelector {
+  _ParsedSelector(this.compounds, this.combinators, this.score);
+
+  final List<String> compounds;
+  final List<String> combinators;
+  final int score;
+}
+
+/// 选择器匹配 + 特异度；不支持的选择器返回 null（= 不匹配）。
+int? _selectorSpecificity(
+  dom.Element element,
+  String selector,
+  Map<String, _ParsedSelector?> cache,
+) {
+  final parsed = cache.putIfAbsent(selector, () => _parseSelector(selector));
+  if (parsed == null) return null;
+  return _matchesParsed(element, parsed) ? parsed.score : null;
+}
+
+_ParsedSelector? _parseSelector(String selector) {
+  final trimmed = selector.trim();
+  if (trimmed.isEmpty) return null;
+  // 伪类、属性选择器、兄弟选择器不做部分匹配 —— 跳过它们比误判安全。
+  if (trimmed.contains(':') ||
+      trimmed.contains('[') ||
+      trimmed.contains('+') ||
+      trimmed.contains('~')) {
+    return null;
+  }
+
+  final parts = trimmed
+      .replaceAll(RegExp(r'\s*>\s*'), ' > ')
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList(growable: false);
+  if (parts.isEmpty) return null;
+
+  final compounds = <String>[];
+  final combinators = <String>[];
+  var pending = ' ';
+  for (final part in parts) {
+    if (part == '>') {
+      pending = '>';
+      continue;
+    }
+    if (compounds.isNotEmpty) combinators.add(pending);
+    compounds.add(part);
+    pending = ' ';
+  }
+  if (compounds.isEmpty || combinators.length != compounds.length - 1) {
+    return null;
+  }
+
+  var score = 0;
+  for (final compound in compounds) {
+    score += _compoundSpecificity(compound);
+  }
+  return _ParsedSelector(compounds, combinators, score);
+}
+
+bool _matchesParsed(dom.Element element, _ParsedSelector selector) {
+  final compounds = selector.compounds;
+  final combinators = selector.combinators;
+
+  bool matchAt(dom.Node? node, int index) {
+    if (node is! dom.Element) return false;
+    if (!_compoundMatches(node, compounds[index])) return false;
+    if (index == 0) return true;
+    if (combinators[index - 1] == '>') {
+      return matchAt(node.parent, index - 1);
+    }
+    for (var ancestor = node.parent;
+        ancestor != null;
+        ancestor = ancestor.parent) {
+      if (matchAt(ancestor, index - 1)) return true;
+    }
+    return false;
+  }
+
+  return matchAt(element, compounds.length - 1);
+}
+
+/// 复合选择器（`tag`、`.cls`、`#id`、`tag.cls`、`tag#id.cls`、`*`）。
+bool _compoundMatches(dom.Element element, String compound) {
+  final match = RegExp(
+    r'^([a-zA-Z][a-zA-Z0-9-]*|\*)?((?:[.#][A-Za-z0-9_-]+)*)$',
+  ).firstMatch(compound);
+  if (match == null) return false;
+
+  final tag = match.group(1);
+  if (tag != null && tag != '*') {
+    final actual = (element.localName ?? '').toLowerCase();
+    if (actual != tag.toLowerCase()) return false;
+  }
+
+  var rest = match.group(2) ?? '';
+  final classes = (element.attributes['class'] ?? '')
+      .split(RegExp(r'\s+'))
+      .where((name) => name.isNotEmpty)
+      .toSet();
+  final id = element.attributes['id'];
+
+  while (rest.isNotEmpty) {
+    final kind = rest[0];
+    final nameMatch = RegExp(r'^[A-Za-z0-9_-]+').firstMatch(rest.substring(1));
+    if (nameMatch == null) return false;
+    final name = nameMatch.group(0)!;
+    if (kind == '.') {
+      if (!classes.contains(name)) return false;
+    } else if (kind == '#') {
+      if (id != name) return false;
+    } else {
+      return false;
+    }
+    rest = rest.substring(1 + name.length);
+  }
+  return true;
+}
+
+int _compoundSpecificity(String compound) {
+  var score = 0;
+  if (!compound.startsWith('.') && !compound.startsWith('#')) score += 1;
+  for (var i = 0; i < compound.length; i++) {
+    final ch = compound[i];
+    if (ch == '#') {
+      score += 10000;
+    } else if (ch == '.') {
+      score += 100;
+    }
+  }
+  return score;
+}
+
+/// 从声明里取背景图 URL（只看 `background` / `background-image`）。
+List<String> _backgroundUrls(Map<String, String> declarations) {
+  final urls = <String>[];
+  final pattern = RegExp(
+    r"""url\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]+))\s*\)""",
+    caseSensitive: false,
+  );
+  for (final property in const <String>['background', 'background-image']) {
+    final value = declarations[property];
+    if (value == null) continue;
+    for (final match in pattern.allMatches(value)) {
+      final raw = match.group(1) ?? match.group(2) ?? match.group(3) ?? '';
+      if (raw.trim().isNotEmpty) urls.add(raw);
+    }
+  }
+  return urls;
 }
 
 /// 从一段 CSS 文本里抠出 `url(...)` / `@import`。

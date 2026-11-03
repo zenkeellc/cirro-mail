@@ -457,8 +457,9 @@ class BlockedImageTile extends StatelessWidget {
 /// 邮件」。即使像素已被默认拦截，这个意图本身也值得告诉用户 —— 用户据此
 /// 才会对「要不要点启用」做出知情决定。
 ///
-/// 只统计 `ExternalResource.trackingPixel` 为 true 的外链 `<img>`（宽高都
-/// 读得到且 ≤ 2，见扫描器里的说明）。
+/// 只统计 `ExternalResource.trackingPixel` 为 true 的资源：外链 `<img>` 与
+/// 1×1 元素上的背景图。尺寸来自 HTML 属性、行内 style 或 `<style>` 里的
+/// class/id 规则；只读到一个方向且 ≤ 2 也算（见扫描器里的说明）。
 class TrackingPixelWarning extends StatelessWidget {
   const TrackingPixelWarning({
     super.key,

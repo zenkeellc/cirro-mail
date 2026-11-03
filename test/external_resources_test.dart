@@ -242,10 +242,22 @@ void main() {
       }
     });
 
-    test('正常尺寸 / 只读到一个方向 / 读不到尺寸都不误报', () {
+    test('只写一个方向且 ≤2 也要提醒', () {
+      for (final html in <String>[
+        '<img src="https://tracker.example.com/p.gif" width="1">',
+        '<img src="https://tracker.example.com/p.gif" height="1">',
+        '<img src="https://tracker.example.com/p.gif" style="height:1px">',
+      ]) {
+        final scan = scanExternalResources(html, ossBase: _oss);
+        expect(scan.hasTrackingPixels, isTrue, reason: html);
+      }
+    });
+
+    test('600×1 的间隔图、正常尺寸、读不到尺寸都不误报', () {
       for (final html in <String>[
         '<img src="https://cdn.example.com/a.png" width="600" height="300">',
-        '<img src="https://cdn.example.com/a.png" width="1" height="300">',
+        // 老营销邮件里很常见的 1px 间隔图：两个方向都写了，就不算像素。
+        '<img src="https://cdn.example.com/spacer.gif" width="600" height="1">',
         '<img src="https://cdn.example.com/a.png" width="300">',
         '<img src="https://cdn.example.com/a.png">',
         '<img src="https://cdn.example.com/a.png" '
@@ -275,6 +287,120 @@ void main() {
       );
       expect(scan.isEmpty, isTrue);
       expect(scan.hasTrackingPixels, isFalse);
+    });
+
+    group('样式表里的 1×1', () {
+      test('class 上的 width/height', () {
+        final scan = scanExternalResources(
+          '<style>.pixel{width:1px;height:1px}</style>'
+          '<img class="pixel" src="https://tracker.example.com/p.gif">',
+          ossBase: _oss,
+        );
+        expect(scan.hasTrackingPixels, isTrue);
+      });
+
+      test('id / 后代 / 子选择器都算', () {
+        for (final html in <String>[
+          '<style>#px{width:1px;height:1px}</style>'
+              '<img id="px" src="https://tracker.example.com/p.gif">',
+          '<style>td .p{width:1px;height:1px}</style>'
+              '<table><tr><td><img class="p" '
+              'src="https://tracker.example.com/p.gif"></td></tr></table>',
+          '<style>td > .p{width:1px;height:1px}</style>'
+              '<table><tr><td><img class="p" '
+              'src="https://tracker.example.com/p.gif"></td></tr></table>',
+        ]) {
+          final scan = scanExternalResources(html, ossBase: _oss);
+          expect(scan.hasTrackingPixels, isTrue, reason: html);
+        }
+      });
+
+      test('特异度与顺序：后面的规则覆盖前面，行内覆盖样式表', () {
+        // 同特异度，后写的赢。
+        final laterWins = scanExternalResources(
+          '<style>.p{width:1px;height:1px}.p{width:10px;height:10px}</style>'
+          '<img class="p" src="https://cdn.example.com/a.png">',
+          ossBase: _oss,
+        );
+        expect(laterWins.hasTrackingPixels, isFalse);
+
+        // 行内 style 优先于样式表。
+        final inlineWins = scanExternalResources(
+          '<style>.p{width:1px;height:1px}</style>'
+          '<img class="p" style="width:10px;height:10px" '
+          'src="https://cdn.example.com/a.png">',
+          ossBase: _oss,
+        );
+        expect(inlineWins.hasTrackingPixels, isFalse);
+
+        // id 优先于 class。
+        final idWins = scanExternalResources(
+          '<style>#a{width:1px;height:1px}.b{width:10px;height:10px}</style>'
+          '<img id="a" class="b" src="https://cdn.example.com/a.png">',
+          ossBase: _oss,
+        );
+        expect(idWins.hasTrackingPixels, isTrue);
+      });
+
+      test('!important 与注释不影响解析', () {
+        final scan = scanExternalResources(
+          '<style>/* px */ .p{width:1px !important;height:1px !important}</style>'
+          '<img class="p" src="https://tracker.example.com/p.gif">',
+          ossBase: _oss,
+        );
+        expect(scan.hasTrackingPixels, isTrue);
+      });
+
+      test('不支持的伪类/属性选择器跳过，不误报也不崩', () {
+        final scan = scanExternalResources(
+          '<style>img:hover,.x[data-y]{width:1px;height:1px}</style>'
+          '<img src="https://cdn.example.com/a.png">',
+          ossBase: _oss,
+        );
+        expect(scan.hasTrackingPixels, isFalse);
+        expect(scan.resources.single.trackingPixel, isFalse);
+      });
+    });
+
+    group('背景图', () {
+      test('样式表里 1×1 元素的 background 图', () {
+        final scan = scanExternalResources(
+          '<style>.p{width:1px;height:1px;'
+          'background:url(https://tracker.example.com/p.gif)}</style>'
+          '<div class="p"></div>',
+          ossBase: _oss,
+        );
+        final resource = scan.resources.single;
+        expect(resource.kind, ExternalResourceKind.cssImage);
+        expect(resource.trackingPixel, isTrue);
+      });
+
+      test('行内 style 的 1×1 背景图', () {
+        final scan = scanExternalResources(
+          '<div style="width:1px;height:1px;'
+          'background-image:url(https://tracker.example.com/p.gif)"></div>',
+          ossBase: _oss,
+        );
+        expect(scan.hasTrackingPixels, isTrue);
+      });
+
+      test('background 属性 + width/height 属性', () {
+        final scan = scanExternalResources(
+          '<table><tr><td width="1" height="1" '
+          'background="https://tracker.example.com/p.gif"></td></tr></table>',
+          ossBase: _oss,
+        );
+        expect(scan.hasTrackingPixels, isTrue);
+      });
+
+      test('正常尺寸元素的背景图不算追踪像素', () {
+        final scan = scanExternalResources(
+          '<div style="width:600px;height:300px;'
+          'background:url(https://cdn.example.com/bg.jpg)"></div>',
+          ossBase: _oss,
+        );
+        expect(scan.resources.single.trackingPixel, isFalse);
+      });
     });
   });
 }
