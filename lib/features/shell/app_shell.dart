@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/branding/app_brand.dart';
 import '../../core/theme/breakpoints.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/profile_providers.dart';
@@ -372,8 +373,10 @@ class _SidebarHeader extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // 产品名走接缝（商业版是 `Cirro Mail Pro`），公开版回落 ARB
+              // 里的 `Cirro Mail` —— 见 `AppBrand`。
               Text(
-                l10n.appTitle,
+                AppBrand.displayName(context),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleMedium

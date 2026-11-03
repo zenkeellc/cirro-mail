@@ -1,12 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../config/app_defaults.dart';
+import '../branding/app_brand.dart';
 import '../storage/window_channel.dart';
 import 'app_version.dart';
 import 'version_info.dart';
 
-/// 桌面原生标题栏里那行字：`Cirro Mail v0.1.0+131`。
+/// 桌面原生标题栏里那行字：`Cirro Mail v0.1.0+131`（商业版是
+/// `Cirro Mail Pro v0.1.0+131` —— 名字走 [AppBrand]，不自带默认值）。
 ///
 /// 拆成纯函数是为了能单独钉住格式（见 `test/window_title_test.dart`）：
 ///
@@ -68,7 +69,9 @@ class _WindowTitleHostState extends ConsumerState<WindowTitleHost> {
     if (!version.isKnown) return;
     await WindowChannel.setTitle(
       windowTitleFor(
-        appName: AppDefaults.appDisplayName,
+        // 产品名走接缝（商业版 `Cirro Mail Pro`）；窗口标题拿不到本地化，
+        // 回落的是 `AppDefaults.appDisplayName`（见 `AppBrand.windowName`）。
+        appName: AppBrand.windowName,
         version: version.name,
         buildNumber: version.buildNumber,
       ),

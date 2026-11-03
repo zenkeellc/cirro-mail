@@ -242,8 +242,14 @@ class AppDefaults {
   /// 启动时自动检查的最小间隔：一天一次足够，也避免每次唤醒就打一次网络。
   static const Duration updateCheckInterval = Duration(hours: 24);
 
-  /// 桌面窗口标题里用的应用名。与三个桌面 runner 里的字符串一致
-  /// （`macos/Runner/AppDelegate.swift` / `linux/runner/my_application.cc` /
-  /// `windows/runner/main.cpp`）—— 换名字时要几处一起换。
+  /// 桌面窗口标题里用的应用名 —— **公开版的默认值**。
+  ///
+  /// 实际取值走 `AppBrand.windowName`：有扩展用
+  /// `AppExtension.appDisplayName` 认领名字时以扩展为准（商业版是
+  /// `Cirro Mail Pro`），这里只是没人认领时的回落。
+  ///
+  /// 原生 runner 里还有各自的字符串（`macos/Runner/AppDelegate.swift` /
+  /// `linux/runner/my_application.cc` / `windows/runner/main.cpp`）—— 那是
+  /// 构建配置，Dart 改不到，换名字时要几处一起换。
   static const String appDisplayName = 'Cirro Mail';
 }

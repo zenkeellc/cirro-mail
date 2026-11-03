@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/branding/app_brand.dart';
 import '../../../core/config/app_defaults.dart';
 import '../../../core/error/app_exception.dart';
 import '../../../core/extensions.dart';
@@ -551,7 +552,7 @@ class _PushSectionState extends ConsumerState<PushSection> {
         // 备注名只影响部署者在中转端列表里看到的那一行。用 App 名字而不是
         // 设备号：一个部署者多半会开好几个位，`a1b2c3…` 这种名字对不上
         // 「哪个是我的平板」。
-        name: AppLocalizations.of(context).appTitle,
+        name: AppBrand.displayName(context),
       );
       if (!mounted) return;
       _instanceId.text = inst.instanceId;

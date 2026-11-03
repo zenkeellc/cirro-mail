@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/branding/app_brand.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../core/update/update_service.dart';
 import '../../../core/util/time_utils.dart';
@@ -116,7 +117,8 @@ class _VersionTile extends StatelessWidget {
     return ListTile(
       key: const ValueKey<String>('about-version'),
       leading: const Icon(Icons.info_outline),
-      title: Text(l10n.appTitle),
+      // 产品名走接缝（商业版 `Cirro Mail Pro`），公开版回落 ARB 默认值。
+      title: Text(AppBrand.displayName(context)),
       // 版本号与标题在同一条里（与从前一致）：用户来这一页最先想看的
       // 就是「我装的是哪个版本」。
       subtitle: Text(

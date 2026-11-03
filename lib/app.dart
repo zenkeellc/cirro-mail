@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/branding/app_brand.dart';
 import 'core/theme/app_theme.dart';
 import 'core/version/window_title.dart';
 import 'features/notifications/notification_host.dart';
@@ -28,7 +29,8 @@ class MailApp extends ConsumerWidget {
     final locale = ref.watch(localeProvider);
 
     return MaterialApp.router(
-      onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+      // 任务切换器 / 任务栏那一行名字。与侧栏左上角同源（见 `AppBrand`）。
+      onGenerateTitle: (context) => AppBrand.displayName(context),
       routerConfig: router,
       // 中英双语：`supportedLocales` 由 ARB 生成，加语言时不用改这里。
       // `AppLocalizations.localizationsDelegates` 里已经含

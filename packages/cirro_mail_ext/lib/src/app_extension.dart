@@ -21,6 +21,7 @@ import 'settings_section.dart';
 /// |---|---|
 /// | [routes] | `router.dart` 根部，核心路由**之后** |
 /// | [mailBranchRoutes] | `router.dart` 邮件那一支的末尾（壳**里面**） |
+/// | [appDisplayName] | `AppBrand`（侧栏左上角、窗口标题、关于页、通知渠道名） |
 /// | [aboutExtras] | `about_section.dart` 的「关于」页 |
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
@@ -34,6 +35,30 @@ abstract class AppExtension {
 
   /// 稳定标识，用于去重与日志。约定用反向域名（`com.example.feature`）。
   String get id;
+
+  /// 本扩展代表的**产品名**（整串，例如 `Cirro Mail Pro`）。
+  ///
+  /// 核心在「App 自己叫什么」的每一处先问它：侧栏左上角的标题、桌面窗口
+  /// 标题、关于页那一行、Android 通知渠道名。返回 `null` / 空白 = 不参与
+  /// 命名，回落到核心自己的默认名（ARB 的 `appTitle`、`AppDefaults.appDisplayName`）
+  /// —— 空注册表（公开版）逐字不变。
+  ///
+  /// ## 为什么是整串，而不是「后缀」或「徽章」
+  ///
+  /// `Pro` 是产品名的一部分（`Cirro Mail Pro`），不是可以拆出来挂在名字
+  /// 后面的独立标签。核心**不拼接**、不放大写、不加分隔符：拿到的字符串
+  /// 原样显示。想要一个视觉徽章是 UI 的事，别把品牌名拆碎塞进接口 ——
+  /// 那样每个调用点都得自己拼一遍，拼错一个字就是三个平台上三个不同的名字。
+  ///
+  /// 多个扩展都返回时，注册表按注册顺序取**第一个**（与
+  /// [rewriteExternalResourceUrl] 同一口径）—— 产品名只能有一个。
+  ///
+  /// ## 只管 App 内的名字，管不到包名
+  ///
+  /// 原生侧的显示名（macOS 的 `CFBundleDisplayName`、Android 的
+  /// `app_name`……）在各自的 runner 工程里，Dart 改不到 —— 那是发行方
+  /// 构建配置的事，见商业版自己的说明。
+  String? get appDisplayName => null;
 
   /// 追加进 `GoRouter` 的路由。
   ///

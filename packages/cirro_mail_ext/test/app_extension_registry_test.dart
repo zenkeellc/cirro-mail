@@ -20,6 +20,7 @@ class _FakeExt extends AppExtension {
     this.onPrepare,
     this.autoLoad = false,
     this.rewrite,
+    this.name,
   });
 
   @override
@@ -52,6 +53,12 @@ class _FakeExt extends AppExtension {
 
   /// 外联资源地址改写。
   final String? Function(String url)? rewrite;
+
+  /// 声明的产品名（`AppExtension.appDisplayName`），null = 不参与命名。
+  final String? name;
+
+  @override
+  String? get appDisplayName => name;
 
   @override
   List<Widget> aboutExtras(BuildContext context) =>
@@ -442,6 +449,36 @@ void main() {
             .rewriteExternalResourceUrl('https://cdn.example.com/a.png'),
         'https://proxy.example/?https://cdn.example.com/a.png',
       );
+    });
+  });
+
+  group('产品名', () {
+    test('空注册表：null —— 核心回落到自己的默认名（公开版行为不变）', () {
+      expect(AppExtensionRegistry.instance.appDisplayName, isNull);
+    });
+
+    test('按注册顺序取第一个非空；后来的不覆盖', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a'),
+        _FakeExt('b', name: 'Cirro Mail Pro'),
+        _FakeExt('c', name: 'Another Name'),
+      ]);
+      expect(AppExtensionRegistry.instance.appDisplayName, 'Cirro Mail Pro');
+    });
+
+    test('空白名不算认领，继续往后找', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('blank', name: '   '),
+        _FakeExt('pro', name: 'Cirro Mail Pro'),
+      ]);
+      expect(AppExtensionRegistry.instance.appDisplayName, 'Cirro Mail Pro');
+    });
+
+    test('首尾空白去掉（标题里不该多出空格）', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('pro', name: '  Cirro Mail Pro\n'),
+      ]);
+      expect(AppExtensionRegistry.instance.appDisplayName, 'Cirro Mail Pro');
     });
   });
 }

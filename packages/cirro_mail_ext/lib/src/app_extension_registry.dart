@@ -109,6 +109,20 @@ class AppExtensionRegistry {
         for (final ext in _extensions) ...ext.shellActions(context),
       ];
 
+  /// 扩展声明的产品名（见 [AppExtension.appDisplayName]），注册顺序取第一个
+  /// **非空白**的。没有扩展认领时是 null —— 核心回落到自己的默认名。
+  ///
+  /// 取第一个而不是拼接：产品名只能有一个，`Cirro Mail Pro` 后面再拼上别的
+  /// 扩展的名字只会拼出一个谁都没见过的产品。空白串按「不参与命名」处理，
+  /// 这样扩展即使在构建期把值配空了也不会把 App 名弄成空标题。
+  String? get appDisplayName {
+    for (final ext in _extensions) {
+      final name = ext.appDisplayName?.trim();
+      if (name != null && name.isNotEmpty) return name;
+    }
+    return null;
+  }
+
   /// 所有扩展往「设置」页加的分类，按注册顺序拼接。
   ///
   /// **插在内置分类之后、「关于」之前**这条规矩由调用方
