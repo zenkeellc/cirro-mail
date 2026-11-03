@@ -104,6 +104,14 @@ class AppExtensionRegistry {
         for (final ext in _extensions) ...ext.aboutExtras(context),
       ];
 
+  /// 所有扩展往「设置 → 安全」页加的块，按注册顺序拼接。
+  ///
+  /// 铺在「安全」正文的**末尾**（内置的外联资源白名单之后）—— 位置由调用方
+  /// （`security_section.dart`）落实，注册表只负责按顺序拼平。
+  List<Widget> securityExtras(BuildContext context) => <Widget>[
+        for (final ext in _extensions) ...ext.securityExtras(context),
+      ];
+
   /// 所有扩展往顶栏加的图标按钮，按注册顺序拼接。
   List<Widget> shellActions(BuildContext context) => <Widget>[
         for (final ext in _extensions) ...ext.shellActions(context),
@@ -125,7 +133,7 @@ class AppExtensionRegistry {
 
   /// 所有扩展往「设置」页加的分类，按注册顺序拼接。
   ///
-  /// **插在内置分类之后、「关于」之前**这条规矩由调用方
+  /// **插在内置分类之后、「安全」与「关于」之前**这条规矩由调用方
   /// （`settings_screen.dart`）落实 —— 注册表只负责按顺序拼平。
   List<SettingsSection> settingsSections(BuildContext context) => <SettingsSection>[
         for (final ext in _extensions) ...ext.settingsSections(context),

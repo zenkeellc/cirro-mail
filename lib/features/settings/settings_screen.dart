@@ -21,9 +21,9 @@ import 'sections/security_section.dart';
 ///
 /// 顺序即分类栏里的顺序，也是窄屏列表里的顺序。分工按「用户要解决什么事」
 /// 排，不按代码怎么放：**实例**（我在连哪几台）/ **轮询**（多久收一次、
-/// 发信能后悔多久、要不要提醒）/ **外观** / **安全**（哪些外联资源可以直接
-/// 加载）/ **写邮件**（写信时要用的签名与常用语）/ **AI** / **推送**（App
-/// 不在时怎么收到提醒）/ **诊断**（出问题了）/ **关于**。
+/// 发信能后悔多久、要不要提醒）/ **外观** / **写邮件**（写信时要用的签名与
+/// 常用语）/ **AI** / **推送**（App 不在时怎么收到提醒）/ **诊断**（出问题
+/// 了）/ **安全**（邮件正文里能发生什么）/ **关于**。
 ///
 /// **邮箱**排在实例之后：实例是「一台服务器」，邮箱是「那台服务器下面的
 /// 一个地址」，两者是同一件事的两个层级，挨着最顺（网页端也把它做成独立
@@ -37,23 +37,26 @@ import 'sections/security_section.dart';
 /// 与调色板那种纯表现层的东西并列；而 AI 是「帮忙写」，是外加的助力，
 /// 所以排在它后面。
 ///
-/// 「安全」夹在「外观」与「写邮件」之间：它管的是**邮件正文里能发生什么**
-/// （外联资源放不放行），与「我怎么看这个 App」那组表现层的东西相邻，但
-/// 又先于「我怎么写信」—— 用户找它时不该点进写邮件里翻。
+/// **「安全」排在倒数第二**（「关于」永远是最后一栏）：它管的是**邮件正文里
+/// 能发生什么**（外联资源放不放行、要不要经代理自动加载），属于「平时不必
+/// 翻、想收紧或排查时才来找」的兜底开关 —— 与它上面那些日常要调的分类不是
+/// 一类，所以收在页尾。以前它夹在「外观」与「写邮件」之间，与这两件事都不
+/// 挨着，反而要用户在中段去找一个低频开关。
 ///
 /// **扩展加进来的栏不在这个枚举里**（[AppExtension.settingsSections]）——
-/// 它们在运行时被插到「诊断」之后、「关于」之前。枚举只描述**内置**的那十个，
-/// `test/settings_layout_test.dart` 钉的也是它们十个数目与顺序，与扩展无关。
+/// 它们在运行时被插在「诊断」之后、「安全」之前（「安全」「关于」固定收尾）。
+/// 枚举只描述**内置**的那十个，`test/settings_layout_test.dart` 钉的也是
+/// 它们十个数目与顺序，与扩展无关。
 enum SettingsCategory {
   instances,
   mailboxes,
   polling,
   appearance,
-  security,
   compose,
   ai,
   push,
   diagnostics,
+  security,
   about;
 
   /// 分类栏与窄屏列表里显示的名字。
@@ -258,20 +261,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ref.section?.title ?? ref.category!.label(l10n);
 
   /// 当前要铺出来的分类清单：**十个内置 + N 个扩展**，扩展插在「诊断」之后、
-  /// 「关于」之前。
+  /// 「安全」之前。
   ///
-  /// 「关于」永远收尾这条规矩写在 `SettingsSection` 的文档里 —— 扩展各自
-  /// 决定不了自己该排第几，只能由宿主统一插在一个固定位置。
+  /// 「安全」「关于」固定收尾这条规矩写在 `SettingsSection` 的文档里 ——
+  /// 扩展各自决定不了自己该排第几，只能由宿主统一插在一个固定位置。
+  /// 「关于」永远是最后一栏，`SecuritySection` 是倒数第二栏；扩展排在它俩
+  /// 之前（它们属于「用户自己的功能」，而安全/关于是全局兜底页，放最后）。
   List<_SectionRef> _sections(BuildContext context) {
     final extensions = <_SectionRef>[
       for (final section in AppExtensionRegistry.instance.settingsSections(context))
         _SectionRef.extension(section),
     ];
+    final security = _SectionRef.builtIn(SettingsCategory.security);
     final about = _SectionRef.builtIn(SettingsCategory.about);
     return <_SectionRef>[
       for (final category in SettingsCategory.values)
-        if (category != SettingsCategory.about) _SectionRef.builtIn(category),
+        if (category != SettingsCategory.about &&
+            category != SettingsCategory.security)
+          _SectionRef.builtIn(category),
       ...extensions,
+      security,
       about,
     ];
   }

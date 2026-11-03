@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,9 +9,15 @@ import '../settings_widgets.dart' show SettingsSectionHeader;
 
 /// 设置 → 安全。
 ///
-/// 眼下只有一块：**邮件正文的外联资源白名单**。读信页默认拦截外部图片
+/// 内置只有一块：**邮件正文的外联资源白名单**。读信页默认拦截外部图片
 /// （否则发件人能从你的 IP 知道你什么时候、从哪里打开了邮件），这一页
 /// 让用户按域名放行自己信任的那几个。
+///
+/// 这一页**还是扩展挂载点**（[AppExtension.securityExtras]）：与「正文里能
+/// 发生什么」有关的开关都该合在这里，而不是在分类栏里再占一栏。商业版的
+/// 「外部资源代理」（自动经云代理加载外联图片）就铺在白名单之后 —— 它与
+/// 白名单是同一件事的两半（拦不拦 / 怎么连），以前那个独立分类**并进来了**。
+/// 公开版（空注册表）在末尾什么都不多，逐字不变。
 ///
 /// 外壳（`AppBar` / 分类栏 / 窄屏那一页）由 `SettingsScreen` 给 —— 宽屏
 /// 内嵌进右栏、窄屏在一个分类页里显示。所以这里返回的是 `ListView`，
@@ -169,6 +176,9 @@ class _SecuritySectionState extends ConsumerState<SecuritySection> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           child: Text(l10n.securityExternalResourcesNote, style: secondary),
         ),
+        // 扩展（商业版）往这一页加的块。铺在同一个 `ListView` 里、白名单之后
+        // —— 见 `AppExtension.securityExtras` 的约定（不要自带滚动容器）。
+        ...AppExtensionRegistry.instance.securityExtras(context),
       ],
     );
   }

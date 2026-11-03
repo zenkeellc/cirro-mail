@@ -10,6 +10,7 @@ class _FakeExt extends AppExtension {
   _FakeExt(
     this.id, {
     this.cards = 1,
+    this.securityCards = 0,
     this.extraRoutes = 0,
     this.branchRoutes = 0,
     this.onBoot,
@@ -27,6 +28,9 @@ class _FakeExt extends AppExtension {
   final String id;
 
   final int cards;
+
+  /// 往「设置 → 安全」页末尾插几块。
+  final int securityCards;
   final int extraRoutes;
 
   /// 往**邮件那一支**（壳里）插几条路由。
@@ -63,6 +67,10 @@ class _FakeExt extends AppExtension {
   @override
   List<Widget> aboutExtras(BuildContext context) =>
       <Widget>[for (var i = 0; i < cards; i++) Text('$id#$i')];
+
+  @override
+  List<Widget> securityExtras(BuildContext context) =>
+      <Widget>[for (var i = 0; i < securityCards; i++) Text('sec:$id#$i')];
 
   @override
   List<RouteBase> routes() => <RouteBase>[
@@ -184,6 +192,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       final context = tester.element(find.byType(SizedBox).first);
       expect(AppExtensionRegistry.instance.aboutExtras(context), isEmpty);
+      expect(AppExtensionRegistry.instance.securityExtras(context), isEmpty);
       expect(AppExtensionRegistry.instance.routes(), isEmpty);
       expect(AppExtensionRegistry.instance.mailBranchRoutes(), isEmpty);
       expect(AppExtensionRegistry.instance.shellActions(context), isEmpty);
@@ -204,6 +213,21 @@ void main() {
           .map((t) => t.data)
           .toList();
       expect(texts, <String>['a#0', 'a#1', 'b#0']);
+    });
+
+    testWidgets('securityExtras 按扩展顺序铺平', (tester) async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a', securityCards: 2),
+        _FakeExt('b', securityCards: 1),
+      ]);
+      await tester.pumpWidget(const SizedBox.shrink());
+      final context = tester.element(find.byType(SizedBox).first);
+      final texts = AppExtensionRegistry.instance
+          .securityExtras(context)
+          .cast<Text>()
+          .map((t) => t.data)
+          .toList();
+      expect(texts, <String>['sec:a#0', 'sec:a#1', 'sec:b#0']);
     });
 
     testWidgets('routes 按扩展顺序铺平且路径原样', (tester) async {

@@ -44,9 +44,27 @@ void main() {
       expect(
         SettingsCategory.values.map((c) => c.label(zh)).toList(),
         const <String>[
-          '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '关于',
+          '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
         ],
       );
+    });
+
+    test('「安全」是倒数第二栏，「关于」永远是最后一栏', () {
+      // 用户拍的板（2026-11）：安全这一页管的是「正文里能发生什么」，属于
+      // 平时不必翻、想收紧时才来找的兜底开关，所以收在页尾、紧挨着关于。
+      // 扩展分类（`settingsSections`）插在它俩**之前**，见下面扩展那一组。
+      expect(SettingsCategory.values, <SettingsCategory>[
+        SettingsCategory.instances,
+        SettingsCategory.mailboxes,
+        SettingsCategory.polling,
+        SettingsCategory.appearance,
+        SettingsCategory.compose,
+        SettingsCategory.ai,
+        SettingsCategory.push,
+        SettingsCategory.diagnostics,
+        SettingsCategory.security,
+        SettingsCategory.about,
+      ]);
     });
 
     test('每个分类都有一对图标，选中态与未选态不是同一颗', () {
@@ -183,7 +201,7 @@ void main() {
     // 一进来是**分类列表**：标题「设置」+ 十个入口，而不是某个分类的正文。
     expect(find.text('设置'), findsOneWidget);
     for (final label in <String>[
-      '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '关于',
+      '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
     ]) {
       expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
     }
@@ -269,7 +287,7 @@ void main() {
         );
 
     // 分类栏十个项常驻，且**没有**窄屏那张分类列表。
-    for (final label in <String>['实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '关于']) {
+    for (final label in <String>['实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于']) {
       expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
     }
     expect(find.byType(NavSidebarItem), findsNWidgets(10));
@@ -326,7 +344,7 @@ void main() {
   /// 图标刻意选两颗**不与内置十栏重复**的字形：重复的话「扩展那栏排在第几」
   /// 这条断言会退化成「某个内置图标出现了两次」，而它照样通过。
   group('扩展分类', () {
-    testWidgets('登记之后窄屏多一行，且排在「关于」之前', (tester) async {
+    testWidgets('登记之后窄屏多一行，且排在「安全」「关于」之前', (tester) async {
       AppExtensionRegistry.instance.registerAll(<AppExtension>[
         const _SectionExt(),
       ]);
@@ -334,19 +352,19 @@ void main() {
 
       // 内置十栏原样都在 —— 扩展是**追加**，不是替换。
       for (final label in <String>[
-        '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '关于',
+        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
       ]) {
         expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
       }
       expect(find.widgetWithText(ListTile, '免打扰'), findsOneWidget);
 
-      // 顺序：「诊断」→ 扩展 → 「关于」。「关于」按惯例永远收尾。
+      // 顺序：「诊断」→ 扩展 → 「安全」→「关于」。「安全」「关于」固定收尾。
       final labels = tester
           .widgetList<ListTile>(find.byType(ListTile))
           .map((tile) => (tile.title! as Text).data)
           .toList();
       expect(labels, <String>[
-        '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '免打扰', '关于',
+        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
       ]);
     });
 
@@ -378,7 +396,7 @@ void main() {
             matching: find.text(label),
           );
       for (final label in <String>[
-        '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '免打扰', '关于',
+        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
       ]) {
         expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
       }

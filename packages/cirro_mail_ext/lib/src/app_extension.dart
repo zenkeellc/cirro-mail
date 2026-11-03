@@ -25,6 +25,7 @@ import 'settings_section.dart';
 /// | [aboutExtras] | `about_section.dart` 的「关于」页 |
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
+/// | [securityExtras] | `security_section.dart`（「设置 → 安全」页的正文末尾） |
 /// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
 /// | [autoLoadExternalResources] / [rewriteExternalResourceUrl] | `external_resource_banner.dart#_HtmlBodyViewState` / `html_body_view.dart`（读信页外联资源） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
@@ -138,14 +139,28 @@ abstract class AppExtension {
 
   /// 追加进「设置」页的**分类**。
   ///
-  /// 核心把它们排在**内置九栏之后**、**「关于」之前**（「关于」永远是最后一栏）。
-  /// 载体与内置分类完全相同（宽屏分类栏 + 右栏、窄屏分类列表 + 分类页），
-  /// 所以不要自己搭 `Scaffold`。
+  /// 核心把它们排在**内置分类之后**、**「安全」与「关于」之前** —— 「关于」
+  /// 永远是最后一栏，「安全」是倒数第二栏（见
+  /// `settings_screen.dart#SettingsCategory` 的排序说明）。载体与内置分类完全
+  /// 相同（宽屏分类栏 + 右栏、窄屏分类列表 + 分类页），所以不要自己搭
+  /// `Scaffold`。
   ///
   /// 文案由 [SettingsSection.title] 自带，按 `Localizations.localeOf(context)`
   /// 现选 —— 核心的 ARB 是公开仓库的资产，不会为扩展加词条。
   List<SettingsSection> settingsSections(BuildContext context) =>
       const <SettingsSection>[];
+
+  /// 追加进「设置 → 安全」页的附加块。
+  ///
+  /// 核心会把这些 widget 依次铺在这一页正文的**末尾**、与内置的「外联资源
+  /// 白名单」同一个 `ListView` 里（白名单之后）。这一页管的是「邮件正文里能
+  /// 发生什么」，所以与该主题相关、但只属于某个扩展的开关（例如商业版的
+  /// 「外部资源代理」）该合到这一页，而不是在分类栏里再占一栏。
+  ///
+  /// 与 [aboutExtras] 的约定相同：**不要返回自带滚动容器的 widget** —— 那会
+  /// 套出两层滚动。返回空列表即「什么都不加」—— 公开版（空注册表）的这一页
+  /// 因此逐字不变。
+  List<Widget> securityExtras(BuildContext context) => const <Widget>[];
 
   /// 构建期内置的「后台推送」三条值（中转地址 / 实例位 / 设备配对码）。
   ///
