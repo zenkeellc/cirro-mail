@@ -144,7 +144,9 @@ https://cirro.zenkee.com/app-version.json
 
 **客户端怎么判断「有没有新版」**：先比 `version`（semver；预发布按 semver §11 排序，所以 `0.1.0-beta.1 < 0.1.0`），版本名相同才比 `buildNumber`。**不是**「buildNumber 大就新」——`0.2.0+1` 比 `0.1.0+999` 新。当前运行版本未知时不做判断，按「已是最新」处理、不弹提示。渠道标记不进 `version`（见第一节），所以同一版的两个渠道各自比的是同一个数字、靠 `buildNumber` 分先后。
 
-`channels` 里为什么有两个渠道：同一份构建参数只注入一个 `APP_UPDATE_CHANNEL`，客户端只读自己那个渠道。`public` 是公开仓库发的版本；`pro` 是另一个发行渠道（自己的发布仓库）的版本，两边各自独立比较。
+`channels` 里为什么有两个渠道：同一份构建参数只注入一个 `APP_UPDATE_CHANNEL`，客户端只读自己那个渠道。`public` 是公开仓库发的版本；`pro` 是商业版（私有仓库）发的版本，两边各自独立比较。
+
+**`pro` 渠道的下载地址与公开渠道不同**：安装包不放在公开 release 里，清单也不给直链 —— `downloads` 五个平台一律 `null`，`releaseUrl` 指向官网下载页 `https://cirro.zenkee.com/pro/download/`。用户在那一页用激活码换一个 **5 分钟有效**的签名链接（网关 `mail-ai` 的 `POST /v1/download`，安装包在 R2 私有桶 `cirro-pro`），客户端只负责把 `releaseUrl` 打开（见第七节「先直链、后 release 页」的回退）。细节见 `mail-ai/README.md` 的「Pro 安装包分发」。
 
 ## 五、发布时怎么更新清单
 
@@ -159,6 +161,8 @@ https://cirro.zenkee.com/app-version.json
    ```
 
    从 `assets[].url` 里取 macOS 的 `.dmg`、Linux 的 `.tar.gz`（或 `.deb`）、Windows 的 `.zip` 等；**这个仓库当前只发桌面端，`windows` / `android` / `ios` 没有产物就写 `null`**。
+
+   这一步只适用于 `public` 渠道。`pro` 渠道没有 GitHub 资产（私有仓 release 未登录访问会 404，别往清单里写），安装包由 `mail-ai/tool/upload-pro-downloads.mjs` 传到 R2 私有桶，清单只改版本三件套（见下面的说明）。
 
 3. **改清单**（在父仓库的 `mail-site/` 目录下跑；脚本无第三方依赖）：
 
@@ -189,7 +193,7 @@ https://cirro.zenkee.com/app-version.json
 
 5. **提交并部署**：把 `mail-site/public/app-version.json` 的改动提交、推到 `main`。官网的 GitHub Actions 会在改动落在 `mail-site/**` 时跑构建与测试并部署到 Cloudflare Pages；部署完成后 <https://cirro.zenkee.com/app-version.json> 就是新内容。**不需要重启任何服务**。
 
-> 发 `pro` 渠道就把 `--channel` 换成 `pro`、URL 换成那个发布仓库的资产。清单里两个渠道互不影响，所以「公开版先发、另一个渠道晚一天」也没问题。
+> 发 `pro` 渠道：`--channel pro`，`--release-url https://cirro.zenkee.com/pro/download/`，五个 `--*-url` 全部传空（写成 `null`）；**不要把私有仓库的 release 资产地址写进清单**（未登录 404）。版本名照旧去掉 `-pro.N`（写 `0.1.4` 而不是 `0.1.4-pro.1`，脚本会拒绝后者）。安装包上传走 `mail-ai/tool/upload-pro-downloads.mjs`，由网关按 license 发限时链接。清单里两个渠道互不影响，所以「公开版先发、商业版晚一天」也没问题。
 
 ## 六、隐私与关闭
 
