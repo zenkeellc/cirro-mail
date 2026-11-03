@@ -74,6 +74,9 @@ class GithubStarCard extends StatelessWidget {
   /// 点卡片 / 点按钮时执行的动作。
   final VoidCallback onOpen;
 
+  /// 到这个宽度就并成一行（右栏空态给的是 320，设置页的关于页通常 600+）。
+  static const double _wideBreakpoint = 360;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -88,36 +91,58 @@ class GithubStarCard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Row(
+        // 两个落点宽度差得远：右栏空态最宽 320（竖排），设置页的关于页能到
+        // 700+（横排）。同一种「标志 + 地址 + 按钮」,窄了竖着摞、宽了并成一行 ——
+        // 否则一整张 700 宽的卡片中间只堆着一颗按钮，看着像没画完。
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final mark = GithubMark(size: 20, color: scheme.onSurfaceVariant);
+            final address = Text(
+              GithubRepo.displayUrl,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            );
+            final button = FilledButton.tonalIcon(
+              onPressed: onOpen,
+              icon: const Icon(Icons.star_rounded, size: 18),
+              label: Text(AppLocalizations.of(context).starOnGithub),
+            );
+            if (constraints.maxWidth >= _wideBreakpoint) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+                child: Row(
+                  children: <Widget>[
+                    mark,
+                    const SizedBox(width: 8),
+                    Expanded(child: address),
+                    const SizedBox(width: 12),
+                    button,
+                  ],
+                ),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  GithubMark(size: 20, color: scheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      GithubRepo.displayUrl,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      mark,
+                      const SizedBox(width: 8),
+                      Flexible(child: address),
+                    ],
                   ),
+                  const SizedBox(height: 12),
+                  button,
                 ],
               ),
-              const SizedBox(height: 12),
-              FilledButton.tonalIcon(
-                onPressed: onOpen,
-                icon: const Icon(Icons.star_rounded, size: 18),
-                label: Text(AppLocalizations.of(context).starOnGithub),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

@@ -56,6 +56,12 @@ void main() {
     expect(find.text(zh.noSelectionPraise), findsOneWidget);
     expect(find.text(GithubRepo.displayUrl), findsOneWidget);
     expect(find.text(zh.starOnGithub), findsOneWidget);
+    // 右栏最宽 320：卡片竖排（地址在上、按钮在下），按钮不会被挤成半截。
+    expect(
+      tester.getCenter(find.text(GithubRepo.displayUrl)).dy,
+      lessThan(tester.getCenter(find.text(zh.starOnGithub)).dy),
+      reason: '窄处竖排：地址在上、按钮在下',
+    );
     // GitHub 标志必须是**一张图**：Material 图标里没有 GitHub 的牌，
     // 换成某个近似图标（`Icons.code` 之类）在视觉上就不是那个意思了。
     expect(find.byType(Image), findsOneWidget);

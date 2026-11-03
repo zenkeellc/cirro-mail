@@ -87,6 +87,18 @@ void main() {
     expect(GithubRepo.displayUrl, GithubRepo.url.split('//').last);
   });
 
+  testWidgets('宽了并成一行：地址在左、按钮在右（窄屏另测竖排）', (tester) async {
+    await pump(tester);
+
+    final address = tester.getCenter(find.text(GithubRepo.displayUrl)).dy;
+    final button = tester.getCenter(find.text(l10n.starOnGithub)).dy;
+    expect(
+      (address - button).abs(),
+      lessThan(6),
+      reason: '关于页宽度够（760）时不该还把按钮摞到地址下面',
+    );
+  });
+
   testWidgets('点按钮 / 点整张卡片：打开的都是仓库地址，开成不弹回执', (tester) async {
     final opened = <Uri>[];
     await pump(
