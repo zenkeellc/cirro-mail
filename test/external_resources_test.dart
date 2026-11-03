@@ -73,15 +73,11 @@ void main() {
       );
       expect(scan.resources, hasLength(5));
       expect(
-        scan.resources
-            .firstWhere((r) => r.url.endsWith('a.css'))
-            .kind,
+        scan.resources.firstWhere((r) => r.url.endsWith('a.css')).kind,
         ExternalResourceKind.stylesheet,
       );
       expect(
-        scan.resources
-            .firstWhere((r) => r.url.endsWith('imported.css'))
-            .kind,
+        scan.resources.firstWhere((r) => r.url.endsWith('imported.css')).kind,
         ExternalResourceKind.stylesheet,
       );
       expect(
@@ -133,7 +129,8 @@ void main() {
     });
 
     test('超深正文不解析，返回空扫描', () {
-      final deep = '${'<div>' * 20000}'
+      final deep =
+          '${'<div>' * 20000}'
           '<img src="https://tracker.example.com/p.gif">'
           '${'</div>' * 20000}';
       expect(scanExternalResources(deep, ossBase: _oss).isEmpty, isTrue);
@@ -185,7 +182,10 @@ void main() {
         blockAll: true,
         enabled: <String>{'https://tracker.example.com/p.gif'},
       );
-      expect(shownAgain.isBlocked('https://tracker.example.com/p.gif'), isFalse);
+      expect(
+        shownAgain.isBlocked('https://tracker.example.com/p.gif'),
+        isFalse,
+      );
     });
 
     test('rewrite 只作用于外联资源', () {
@@ -401,6 +401,139 @@ void main() {
         );
         expect(scan.resources.single.trackingPixel, isFalse);
       });
+    });
+  });
+
+  group('域名白名单', () {
+    test('命中的域名默认放行，外联判定不变', () {
+      final policy = ExternalResourcePolicy(
+        ossBase: _oss,
+        allowedHosts: const <String>['*.trusted.example'],
+      );
+
+      expect(policy.isAllowListed('https://img.trusted.example/a.png'), isTrue);
+      expect(policy.isBlocked('https://img.trusted.example/a.png'), isFalse);
+      expect(policy.isLoaded('https://img.trusted.example/a.png'), isTrue);
+      expect(policy.isHostAllowed('img.trusted.example'), isTrue);
+      // 根域名与相似的坏域名都不算命中。
+      expect(policy.isBlocked('https://trusted.example/a.png'), isTrue);
+      expect(policy.isBlocked('https://evil-trusted.example/a.png'), isTrue);
+      // 自家 OSS 仍走自己的规则（本来就不拦）。
+      expect(
+        policy.isBlocked('https://mail.example.com/api/oss/a.png'),
+        isFalse,
+      );
+    });
+
+    test('逐 URL 屏蔽优先于白名单', () {
+      final policy = ExternalResourcePolicy(
+        ossBase: _oss,
+        allowedHosts: const <String>['*.trusted.example'],
+        blocked: <String>{'https://img.trusted.example/a.png'},
+      );
+      expect(policy.isBlocked('https://img.trusted.example/a.png'), isTrue);
+      expect(policy.isBlocked('https://img.trusted.example/b.png'), isFalse);
+    });
+
+    test('白名单优先于「全部屏蔽」与 autoLoad 开关', () {
+      final blockedAll = ExternalResourcePolicy(
+        ossBase: _oss,
+        allowedHosts: const <String>['img.trusted.example'],
+        blockAll: true,
+      );
+      expect(
+        blockedAll.isBlocked('https://img.trusted.example/a.png'),
+        isFalse,
+      );
+      expect(blockedAll.isBlocked('https://other.example.com/a.png'), isTrue);
+
+      final auto = ExternalResourcePolicy(
+        ossBase: _oss,
+        allowedHosts: const <String>['img.trusted.example'],
+        autoLoad: true,
+      );
+      expect(auto.isBlocked('https://img.trusted.example/a.png'), isFalse);
+    });
+
+    test('逐 URL 启用优先于一切（包括白名单里的 URL）', () {
+      final policy = ExternalResourcePolicy(
+        ossBase: _oss,
+        allowedHosts: const <String>['*.trusted.example'],
+        enabled: <String>{'https://img.trusted.example/a.png'},
+      );
+      expect(policy.isBlocked('https://img.trusted.example/a.png'), isFalse);
+    });
+
+    test('构造参数里的白名单会被规范化、去重', () {
+      final policy = ExternalResourcePolicy(
+        ossBase: _oss,
+        allowedHosts: const <String>[
+          'https://*.Trusted.Example/some/path',
+          '*.trusted.example',
+          'cdn.example.com:8443',
+          'bad host',
+          '*',
+        ],
+      );
+      expect(policy.allowedHosts, <String>[
+        '*.trusted.example',
+        'cdn.example.com',
+      ]);
+    });
+
+    test('空白名单不改变默认拒绝', () {
+      final policy = ExternalResourcePolicy(ossBase: _oss);
+      expect(policy.allowedHosts, isEmpty);
+      expect(policy.isAllowListed('https://a.example.com/x.png'), isFalse);
+      expect(policy.isBlocked('https://a.example.com/x.png'), isTrue);
+    });
+  });
+
+  group('按域名分组', () {
+    test('域名按首次出现顺序，组内保持原顺序', () {
+      final scan = scanExternalResources(
+        '<img src="https://b.example.com/1.png">'
+        '<img src="https://a.example.com/2.png">'
+        '<img src="https://b.example.com/3.png">',
+        ossBase: _oss,
+      );
+
+      final groups = scan.byDomain;
+      expect(groups.map((g) => g.host), <String>[
+        'b.example.com',
+        'a.example.com',
+      ]);
+      expect(groups.first.count, 2);
+      expect(groups.first.references, 2);
+      expect(groups.first.resources.map((r) => r.url), <String>[
+        'https://b.example.com/1.png',
+        'https://b.example.com/3.png',
+      ]);
+      // `groupExternalResourcesByDomain` 是同一份规则（Banner 直接用它）。
+      expect(
+        groupExternalResourcesByDomain(scan.resources).length,
+        groups.length,
+      );
+    });
+
+    test('一组多个资源时可以统计追踪像素', () {
+      final scan = scanExternalResources(
+        '<img src="https://tracker.example.com/p.gif" width="1" height="1">'
+        '<img src="https://tracker.example.com/b.png" width="200" height="100">',
+        ossBase: _oss,
+      );
+      final group = scan.byDomain.single;
+      expect(group.count, 2);
+      expect(group.hasTrackingPixels, isTrue);
+      expect(group.references, 2);
+    });
+
+    test('空扫描分组为空', () {
+      expect(ExternalResourceScan.empty.byDomain, isEmpty);
+      expect(
+        groupExternalResourcesByDomain(const <ExternalResource>[]),
+        isEmpty,
+      );
     });
   });
 }

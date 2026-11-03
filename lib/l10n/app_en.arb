@@ -1603,5 +1603,48 @@
         "type": "int"
       }
     }
+  },
+  "externalResourcesGroupItems": "{count} resources",
+  "externalResourcesAllowDomain": "Always allow",
+  "externalResourcesAllowDomainHint": "Add {domain} to the allow list so its resources are never blocked again",
+  "externalResourcesAllowListedTag": "Allow list",
+  "@externalResourcesGroupItems": {
+    "description": "external resources banner: per-domain group header subtitle",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesAllowDomainHint": {
+    "placeholders": {
+      "domain": {
+        "type": "String"
+      }
+    }
+  },
+  "security": "Security",
+  "securityExternalResourcesHeader": "Remote content",
+  "securityExternalResourcesIntro": "Remote images in emails are blocked by default, so senders can't tell when and where you opened a message. Resources from the domains allowed below load automatically.",
+  "securityExternalResourcesEmpty": "No domains are allowed yet.",
+  "securityExternalResourcesAddHint": "e.g. *.example.com",
+  "securityExternalResourcesAdd": "Add",
+  "securityExternalResourcesInvalid": "That doesn't look like a domain. Use * as a wildcard, e.g. *.example.com.",
+  "securityExternalResourcesRemove": "Remove {domain} from the allow list",
+  "securityExternalResourcesAdded": "Added {domain}",
+  "securityExternalResourcesNote": "* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact domain applies to that host only. Scripts and stylesheets are still never run.",
+  "@securityExternalResourcesRemove": {
+    "placeholders": {
+      "domain": {
+        "type": "String"
+      }
+    }
+  },
+  "@securityExternalResourcesAdded": {
+    "placeholders": {
+      "domain": {
+        "type": "String"
+      }
+    }
   }
 }

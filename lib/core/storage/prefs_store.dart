@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // 与 `mail_dao.dart` 同样的方向（core → features）：换来的是筛选值对象
 // 只有一份定义。见 `mail_dao.dart` 顶部那段注释。
 import '../../features/compose/writing_snippets.dart';
+import '../../features/mail_detail/external_allowlist.dart';
 import '../../features/mail_list/mailbox_filter.dart';
 import '../config/app_defaults.dart';
 import '../theme/breakpoints.dart';
@@ -49,6 +50,8 @@ class PrefsStore {
   static const String _kSidebarCollapsed = 'cm_sidebar_collapsed_instances';
   static const String _kAiSettings = 'cm_ai_settings';
   static const String _kAiUsage = 'cm_ai_usage';
+  /// 外联资源的域名白名单（支持 `*` 通配，见 `external_allowlist.dart`）。
+  static const String _kExternalAllowedHosts = 'cm_external_allowed_hosts';
   /// 「启动时自动检查更新」开关（见关于页）。默认由构建参数决定，
   /// 见 `AppDefaults.updateCheckDefault`。
   static const String _kUpdateCheckEnabled = 'cm_update_check_enabled';
@@ -445,6 +448,36 @@ class PrefsStore {
 
   @visibleForTesting
   Future<void> clearAll() => _prefs.clear();
+
+  // ---- 外联资源域名白名单 ----
+
+  /// 读信页里「不过滤」的域名（支持 `*` 通配）。
+  ///
+  /// 存的是**规范化之后**的 pattern（小写、无 scheme/端口/路径），读出来
+  /// 即可直接交给 `DomainAllowList`。写入口在
+  /// [setExternalAllowedHosts] —— 那边会把用户输入的一行行整理干净、
+  /// 丢掉不合法与重复的。
+  ///
+  /// 名字叫 hosts 是口语上的「域名」，实际元素可能是 `*.example.com`
+  /// 这种通配 pattern。
+  List<String> get externalAllowedHosts => List<String>.unmodifiable(
+        _prefs.getStringList(_kExternalAllowedHosts) ?? const <String>[],
+      );
+
+  /// 覆盖写白名单。传入的原始串会逐个规范化；空列表 = 清空（删 key）。
+  Future<void> setExternalAllowedHosts(Iterable<String> patterns) async {
+    final normalized = <String>[];
+    for (final raw in patterns) {
+      final pattern = normalizeDomainPattern(raw);
+      if (pattern == null || normalized.contains(pattern)) continue;
+      normalized.add(pattern);
+    }
+    if (normalized.isEmpty) {
+      await _prefs.remove(_kExternalAllowedHosts);
+    } else {
+      await _prefs.setStringList(_kExternalAllowedHosts, normalized);
+    }
+  }
 
   // ---- 版本 / 更新检查 ----
 

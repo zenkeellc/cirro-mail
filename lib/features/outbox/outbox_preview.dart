@@ -7,6 +7,7 @@ import '../../data/models/send_payload.dart';
 import '../../data/repositories/send_repository.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/profile_providers.dart';
+import '../../providers/settings_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../attachment/attachment_kind.dart'
     show formatAttachmentSize, iconOfName;
@@ -88,6 +89,9 @@ class OutboxPreview extends ConsumerWidget {
     final theme = Theme.of(context);
     final payload = SendRepository.decodePayload(entry.payloadJson);
     final profile = ref.watch(profileByIdProvider(entry.profileId));
+    // 发件箱预览与读信页共用同一份白名单：预审一封邮件时看到的外链图
+    // 应该跟对方收到后你会看到的拦截状态一致。
+    final allowedHosts = ref.watch(externalAllowedHostsProvider);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -183,6 +187,7 @@ class OutboxPreview extends ConsumerWidget {
             // 会点出去 404 的坏链接）。
             ossBase: '',
             shrinkWrap: true,
+            allowedHosts: allowedHosts,
           ),
         ],
       ],

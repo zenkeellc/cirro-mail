@@ -2267,4 +2267,57 @@ class AppLocalizationsEn extends AppLocalizations {
   String trackingPixelWarningLoadedNote(int count) {
     return '$count of them are currently loaded; the sender may already know this email was opened.';
   }
+
+  @override
+  String externalResourcesGroupItems(int count) {
+    return '$count resources';
+  }
+
+  @override
+  String get externalResourcesAllowDomain => 'Always allow';
+
+  @override
+  String externalResourcesAllowDomainHint(String domain) {
+    return 'Add $domain to the allow list so its resources are never blocked again';
+  }
+
+  @override
+  String get externalResourcesAllowListedTag => 'Allow list';
+
+  @override
+  String get security => 'Security';
+
+  @override
+  String get securityExternalResourcesHeader => 'Remote content';
+
+  @override
+  String get securityExternalResourcesIntro =>
+      'Remote images in emails are blocked by default, so senders can\'t tell when and where you opened a message. Resources from the domains allowed below load automatically.';
+
+  @override
+  String get securityExternalResourcesEmpty => 'No domains are allowed yet.';
+
+  @override
+  String get securityExternalResourcesAddHint => 'e.g. *.example.com';
+
+  @override
+  String get securityExternalResourcesAdd => 'Add';
+
+  @override
+  String get securityExternalResourcesInvalid =>
+      'That doesn\'t look like a domain. Use * as a wildcard, e.g. *.example.com.';
+
+  @override
+  String securityExternalResourcesRemove(String domain) {
+    return 'Remove $domain from the allow list';
+  }
+
+  @override
+  String securityExternalResourcesAdded(String domain) {
+    return 'Added $domain';
+  }
+
+  @override
+  String get securityExternalResourcesNote =>
+      '* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact domain applies to that host only. Scripts and stylesheets are still never run.';
 }

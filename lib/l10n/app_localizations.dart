@@ -3949,6 +3949,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} of them are currently loaded; the sender may already know this email was opened.'**
   String trackingPixelWarningLoadedNote(int count);
+
+  /// external resources banner: per-domain group header subtitle
+  ///
+  /// In en, this message translates to:
+  /// **'{count} resources'**
+  String externalResourcesGroupItems(int count);
+
+  /// No description provided for @externalResourcesAllowDomain.
+  ///
+  /// In en, this message translates to:
+  /// **'Always allow'**
+  String get externalResourcesAllowDomain;
+
+  /// No description provided for @externalResourcesAllowDomainHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Add {domain} to the allow list so its resources are never blocked again'**
+  String externalResourcesAllowDomainHint(String domain);
+
+  /// No description provided for @externalResourcesAllowListedTag.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow list'**
+  String get externalResourcesAllowListedTag;
+
+  /// No description provided for @security.
+  ///
+  /// In en, this message translates to:
+  /// **'Security'**
+  String get security;
+
+  /// No description provided for @securityExternalResourcesHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote content'**
+  String get securityExternalResourcesHeader;
+
+  /// No description provided for @securityExternalResourcesIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote images in emails are blocked by default, so senders can\'t tell when and where you opened a message. Resources from the domains allowed below load automatically.'**
+  String get securityExternalResourcesIntro;
+
+  /// No description provided for @securityExternalResourcesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No domains are allowed yet.'**
+  String get securityExternalResourcesEmpty;
+
+  /// No description provided for @securityExternalResourcesAddHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. *.example.com'**
+  String get securityExternalResourcesAddHint;
+
+  /// No description provided for @securityExternalResourcesAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get securityExternalResourcesAdd;
+
+  /// No description provided for @securityExternalResourcesInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'That doesn\'t look like a domain. Use * as a wildcard, e.g. *.example.com.'**
+  String get securityExternalResourcesInvalid;
+
+  /// No description provided for @securityExternalResourcesRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove {domain} from the allow list'**
+  String securityExternalResourcesRemove(String domain);
+
+  /// No description provided for @securityExternalResourcesAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Added {domain}'**
+  String securityExternalResourcesAdded(String domain);
+
+  /// No description provided for @securityExternalResourcesNote.
+  ///
+  /// In en, this message translates to:
+  /// **'* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact domain applies to that host only. Scripts and stylesheets are still never run.'**
+  String get securityExternalResourcesNote;
 }
 
 class _AppLocalizationsDelegate

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/compose/writing_snippets.dart';
+import '../features/mail_detail/external_allowlist.dart';
 import 'core_providers.dart';
 
 /// 主题模式。
@@ -387,4 +388,54 @@ final NotifierProvider<UpdateCheckEnabledController, bool>
     NotifierProvider<UpdateCheckEnabledController, bool>(
   UpdateCheckEnabledController.new,
   name: 'updateCheckEnabled',
+);
+
+/// 外联资源的**域名白名单**（读信页里「不过滤」的域名，支持 `*` 通配）。
+///
+/// 与 [PrefsStore.externalAllowedHosts] 一一对应：直接读同步的 prefs 快照，
+/// 改动即时落盘。读信页 `ref.watch` 它，Banner 上「始终允许」或设置页增删
+/// 之后，下一次 build 就按新名单判定（`HtmlBodyView` 会换 key 重新解析正文）。
+///
+/// 输入统一在这里规范化：`add` 拿到的是用户敲的原始一行（可能带 scheme /
+/// 端口 / 路径 / 大写），不是已规范化的 pattern。
+class ExternalAllowedHostsController extends Notifier<List<String>> {
+  @override
+  List<String> build() => ref.watch(prefsStoreProvider).externalAllowedHosts;
+
+  /// 覆盖写。返回落盘后的实际列表（非法项已被丢掉）。
+  Future<List<String>> setAll(Iterable<String> patterns) async {
+    final store = ref.read(prefsStoreProvider);
+    await store.setExternalAllowedHosts(patterns);
+    state = store.externalAllowedHosts;
+    return state;
+  }
+
+  /// 加一条。返回 false 表示这行输入不是合法域名（调用方据此提示用户）。
+  Future<bool> add(String raw) async {
+    final pattern = normalizeDomainPattern(raw);
+    if (pattern == null) return false;
+    final store = ref.read(prefsStoreProvider);
+    final current = store.externalAllowedHosts;
+    if (!current.contains(pattern)) {
+      await store.setExternalAllowedHosts(<String>[...current, pattern]);
+    }
+    state = store.externalAllowedHosts;
+    return true;
+  }
+
+  Future<void> remove(String pattern) async {
+    final store = ref.read(prefsStoreProvider);
+    final next = store.externalAllowedHosts
+        .where((item) => item != pattern)
+        .toList(growable: false);
+    await store.setExternalAllowedHosts(next);
+    state = store.externalAllowedHosts;
+  }
+}
+
+final NotifierProvider<ExternalAllowedHostsController, List<String>>
+    externalAllowedHostsProvider =
+    NotifierProvider<ExternalAllowedHostsController, List<String>>(
+  ExternalAllowedHostsController.new,
+  name: 'externalAllowedHosts',
 );

@@ -14,6 +14,32 @@ class AppTheme {
   /// 邮件正文里链接的颜色，与 `mail-vue` 的 shadow-html 默认样式一致。
   static const Color bodyLink = Color(0xFF0E70DF);
 
+  /// 「警告」色调（琥珀）。
+  ///
+  /// Material 3 的 [ColorScheme] 没有 warning 语义：拦下外联资源是**提醒**
+  /// 而不是出错，用 `error`（红）会和真正出错（发送失败、退回）混在一起，
+  /// 也和追踪像素那张独立的错误色警告卡分不开。所以这里单独给一档琥珀：
+  ///
+  /// - [warningContainer]：卡片底色；
+  /// - [onWarningContainer]：卡片上的正文/标题；
+  /// - [warningAccent]：图标、边框与可点击文字。
+  ///
+  /// 深浅色各一套，调用方只需要 `Theme.of(context).brightness`。
+  static Color warningContainer(Brightness brightness) =>
+      brightness == Brightness.light
+          ? const Color(0xFFFFF4E0)
+          : const Color(0xFF3A2A0C);
+
+  static Color onWarningContainer(Brightness brightness) =>
+      brightness == Brightness.light
+          ? const Color(0xFF5B3D00)
+          : const Color(0xFFFFE0AE);
+
+  static Color warningAccent(Brightness brightness) =>
+      brightness == Brightness.light
+          ? const Color(0xFFB26A00)
+          : const Color(0xFFFFC46B);
+
   static ThemeData light() => _build(Brightness.light);
 
   static ThemeData dark() => _build(Brightness.dark);

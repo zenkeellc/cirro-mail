@@ -2,6 +2,7 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
 import '../compose/html/html_depth_guard.dart';
+import 'external_allowlist.dart';
 
 /// 邮件正文里的**外联资源**：不在实例自家 OSS 域上、需要客户端发网络请求的
 /// 东西（图片、背景图、外链样式表、脚本、媒体、字体……）。
@@ -98,6 +99,27 @@ class ExternalResource {
       );
 }
 
+/// 同一个域名下的一组外联资源。Banner 按域名分组展示时用它。
+///
+/// 组内顺序 = 正文里的首次出现顺序；组与组之间也按**域名首次出现**的顺序
+/// 排 —— 用户从上往下读邮件时，列表与正文对得上。
+class ExternalResourceDomainGroup {
+  const ExternalResourceDomainGroup(this.host, this.resources);
+
+  final String host;
+  final List<ExternalResource> resources;
+
+  /// 组内去重后的资源条数（与 [ExternalResource.count] 不是一回事：
+  /// 后者是同一个 URL 在正文里被引用的次数）。
+  int get count => resources.length;
+
+  /// 组内所有资源被引用的总次数。
+  int get references =>
+      resources.fold<int>(0, (sum, resource) => sum + resource.count);
+
+  bool get hasTrackingPixels => resources.any((r) => r.trackingPixel);
+}
+
 /// 扫描结果。顺序是正文里的首次出现顺序（用户从上往下读时能对上）。
 class ExternalResourceScan {
   const ExternalResourceScan(this.resources);
@@ -116,6 +138,13 @@ class ExternalResourceScan {
 
   int get domains => resources.map((r) => r.host).toSet().length;
 
+  /// 按域名分组，域名按其首次出现顺序排列。
+  ///
+  /// 扫描结果本身**不去重域名**（同一域名下的多张图是不同资源），
+  /// Banner 需要一个「域名 → 资源列表」的视图，就在这里算一次。
+  List<ExternalResourceDomainGroup> get byDomain =>
+      groupExternalResourcesByDomain(resources);
+
   /// 疑似追踪像素的外链图片（1×1 / 2×2）。见 [ExternalResource.trackingPixel]。
   List<ExternalResource> get trackingPixels =>
       resources.where((r) => r.trackingPixel).toList(growable: false);
@@ -124,6 +153,34 @@ class ExternalResourceScan {
 
   int get trackingPixelCount =>
       resources.where((r) => r.trackingPixel).length;
+}
+
+/// 把一组资源按域名分组；域名按**首次出现**顺序，组内保持原顺序。
+///
+/// 单独抽成函数是因为 Banner 手里只有 `List<ExternalResource>`（它不重新
+/// 扫描正文），而扫描结果那边的 [ExternalResourceScan.byDomain] 也要用同一
+/// 份逻辑 —— 分组规则只该有一份。
+List<ExternalResourceDomainGroup> groupExternalResourcesByDomain(
+  Iterable<ExternalResource> resources,
+) {
+  final order = <String>[];
+  final buckets = <String, List<ExternalResource>>{};
+  for (final resource in resources) {
+    final bucket = buckets[resource.host];
+    if (bucket == null) {
+      order.add(resource.host);
+      buckets[resource.host] = <ExternalResource>[resource];
+    } else {
+      bucket.add(resource);
+    }
+  }
+  return <ExternalResourceDomainGroup>[
+    for (final host in order)
+      ExternalResourceDomainGroup(
+        host,
+        List<ExternalResource>.unmodifiable(buckets[host]!),
+      ),
+  ];
 }
 
 /// 扫描正文里的外联资源。
@@ -279,10 +336,19 @@ ExternalResourceScan scanExternalResources(
 
 /// 外联资源的加载策略。**默认拒绝**。
 ///
-/// - `enabled`：用户显式启用的资源（规范化 URL）；
-/// - `blocked`：用户显式屏蔽的资源 —— 仅用于「自动加载」模式下的单项屏蔽；
-/// - `blockAll`：「全部屏蔽」时置位，优先于 `autoLoad`；
-/// - `autoLoad`：Pro 的「自动加载外部图片（经代理）」设置；
+/// 判定顺序（先命中先返回）：
+///
+/// 1. `enabled`：用户逐项点过「启用」的 URL → 放行；
+/// 2. `blocked`：用户逐项点过「屏蔽」的 URL → 拦截（单个 URL 的显式否决
+///    优先于域名白名单 —— 用户对这一次点击的意图最明确）；
+/// 3. `allowedHosts`：**域名白名单**（支持 `*`，见
+///    `external_allowlist.dart`）命中的 host → 放行。白名单是用户的长期
+///    信任设置，语义就是「这些域名的资源不过滤」，所以它优先于下面两个
+///    一次性开关；
+/// 4. `blockAll`：「全部屏蔽」时置位，优先于 `autoLoad`；
+/// 5. `autoLoad`：Pro 的「自动加载外部图片（经代理）」设置；
+/// 6. 其余一律拦截。
+///
 /// - `rewriteUrl`：扩展提供的地址改写（Pro 的云端代理）。只对外联资源调用。
 class ExternalResourcePolicy {
   ExternalResourcePolicy({
@@ -292,8 +358,10 @@ class ExternalResourcePolicy {
     Set<String>? enabled,
     Set<String>? blocked,
     this.blockAll = false,
+    Iterable<String> allowedHosts = const <String>[],
   })  : enabled = enabled ?? <String>{},
-        blocked = blocked ?? <String>{};
+        blocked = blocked ?? <String>{},
+        allowList = DomainAllowList(allowedHosts);
 
   final String ossBase;
   final bool autoLoad;
@@ -301,6 +369,12 @@ class ExternalResourcePolicy {
   final Set<String> enabled;
   final Set<String> blocked;
   final bool blockAll;
+
+  /// 域名白名单（已规范化 + 编译好的正则）。
+  final DomainAllowList allowList;
+
+  /// 白名单里的 pattern（规范化后的字符串），给 UI 展示用。
+  List<String> get allowedHosts => allowList.patterns;
 
   /// 规范化后的地址；解析不了就返回原串（只用于相等比较）。
   String normalize(String url) {
@@ -318,12 +392,26 @@ class ExternalResourcePolicy {
     return ownHost.isEmpty || host != ownHost;
   }
 
+  /// 这个 host 是否在白名单里。
+  ///
+  /// 只做域名匹配，不问它是不是外联 —— Banner 已经按域名分组，拿着 host
+  /// 直接用；传进来的 host 是空的就返回 false。
+  bool isHostAllowed(String host) => allowList.allows(host);
+
+  /// 这个外联资源是否被白名单放行。
+  bool isAllowListed(String url) {
+    if (allowList.isEmpty) return false;
+    return isHostAllowed(hostOf(url));
+  }
+
   bool isBlocked(String url) {
     if (!isExternal(url)) return false;
     final key = normalize(url);
     // 用户逐项「显示」优先于任何全局开关。
     if (enabled.contains(key)) return false;
     if (blocked.contains(key)) return true;
+    // 域名白名单：长期信任设置，语义就是「不过滤」。
+    if (isAllowListed(url)) return false;
     if (blockAll) return true;
     if (autoLoad) return false;
     return true;

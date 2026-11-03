@@ -15,14 +15,15 @@ import 'sections/instances_section.dart';
 import 'sections/mailboxes_section.dart';
 import 'sections/polling_section.dart';
 import 'sections/push_section.dart';
+import 'sections/security_section.dart';
 
-/// 设置的九个分类。
+/// 设置的十个分类。
 ///
 /// 顺序即分类栏里的顺序，也是窄屏列表里的顺序。分工按「用户要解决什么事」
 /// 排，不按代码怎么放：**实例**（我在连哪几台）/ **轮询**（多久收一次、
-/// 发信能后悔多久、要不要提醒）/ **外观** / **写邮件**（写信时要用的签名与
-/// 常用语）/ **AI** / **推送**（App 不在时怎么收到提醒）/ **诊断**（出问题了）/
-/// **关于**。
+/// 发信能后悔多久、要不要提醒）/ **外观** / **安全**（哪些外联资源可以直接
+/// 加载）/ **写邮件**（写信时要用的签名与常用语）/ **AI** / **推送**（App
+/// 不在时怎么收到提醒）/ **诊断**（出问题了）/ **关于**。
 ///
 /// **邮箱**排在实例之后：实例是「一台服务器」，邮箱是「那台服务器下面的
 /// 一个地址」，两者是同一件事的两个层级，挨着最顺（网页端也把它做成独立
@@ -36,14 +37,19 @@ import 'sections/push_section.dart';
 /// 与调色板那种纯表现层的东西并列；而 AI 是「帮忙写」，是外加的助力，
 /// 所以排在它后面。
 ///
+/// 「安全」夹在「外观」与「写邮件」之间：它管的是**邮件正文里能发生什么**
+/// （外联资源放不放行），与「我怎么看这个 App」那组表现层的东西相邻，但
+/// 又先于「我怎么写信」—— 用户找它时不该点进写邮件里翻。
+///
 /// **扩展加进来的栏不在这个枚举里**（[AppExtension.settingsSections]）——
-/// 它们在运行时被插到「诊断」之后、「关于」之前。枚举只描述**内置**的那九个，
-/// `test/settings_layout_test.dart` 钉的也是它们九个数目与顺序，与扩展无关。
+/// 它们在运行时被插到「诊断」之后、「关于」之前。枚举只描述**内置**的那十个，
+/// `test/settings_layout_test.dart` 钉的也是它们十个数目与顺序，与扩展无关。
 enum SettingsCategory {
   instances,
   mailboxes,
   polling,
   appearance,
+  security,
   compose,
   ai,
   push,
@@ -63,6 +69,7 @@ enum SettingsCategory {
         SettingsCategory.mailboxes => l10n.mailbox,
         SettingsCategory.polling => l10n.polling,
         SettingsCategory.appearance => l10n.appearance,
+        SettingsCategory.security => l10n.security,
         SettingsCategory.compose => l10n.compose,
         SettingsCategory.ai => l10n.aiTitle,
         SettingsCategory.push => l10n.pushShort,
@@ -77,6 +84,7 @@ enum SettingsCategory {
         SettingsCategory.mailboxes => Icons.alternate_email_outlined,
         SettingsCategory.polling => Icons.schedule_outlined,
         SettingsCategory.appearance => Icons.palette_outlined,
+        SettingsCategory.security => Icons.shield_outlined,
         SettingsCategory.compose => Icons.edit_note_outlined,
         SettingsCategory.ai => Icons.auto_awesome_outlined,
         SettingsCategory.push => Icons.notifications_active_outlined,
@@ -89,6 +97,7 @@ enum SettingsCategory {
         SettingsCategory.mailboxes => Icons.alternate_email,
         SettingsCategory.polling => Icons.schedule,
         SettingsCategory.appearance => Icons.palette,
+        SettingsCategory.security => Icons.shield,
         SettingsCategory.compose => Icons.edit_note,
         SettingsCategory.ai => Icons.auto_awesome,
         SettingsCategory.push => Icons.notifications_active,
@@ -139,7 +148,7 @@ class _SectionRef {
 /// - **宽屏（>= 1024）**：左栏是**固定宽度**的分类菜单（常驻），右栏是选中
 ///   分类的设置内容。与收件箱 / 发件箱 / 附件缓存同一个两栏形状，只是这条
 ///   左栏不让拖 —— 它是菜单不是列表。
-/// - **窄屏**：先是一张**分类列表**（九个入口），点一个进分类页（`AppBar`
+/// - **窄屏**：先是一张**分类列表**（十个入口），点一个进分类页（`AppBar`
 ///   带返回箭头，系统返回键也退回列表）。
 ///
 /// 判据是**窗口宽度**（[Breakpoints.panesOf]），跟着窗口走 —— 拖宽拖窄当场
@@ -147,7 +156,7 @@ class _SectionRef {
 ///
 /// ## 为什么分类切换不改地址、不压栈
 ///
-/// 九个分类是**一页之内的内部翻页**。做成九条路由（窄屏点一个 push 一层、
+/// 十个分类是**一页之内的内部翻页**。做成十条路由（窄屏点一个 push 一层、
 /// 宽屏选中态进 URL）有两个代价，而收益只有一个「地址能分享」：
 ///
 /// - 宽屏下每一次切换都会重建那一页，AI 里敲了一半的地址、推送向导翻到第 ⑤
@@ -181,7 +190,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// **已经构造过**的分类，按 [_SectionRef.key] 记。
   ///
   /// 宽屏右栏用 `IndexedStack` 把构造过的分类留着（切走再切回来，草稿还在），
-  /// 但**不一次把九个都建出来**：`PushSection` 一构造就会去读钥匙串、打中转端
+  /// 但**不一次把十个都建出来**：`PushSection` 一构造就会去读钥匙串、打中转端
   /// 的 `/devices`、还可能自动登记一次设备（见它的 `_load` / `_maybeAutoRegister`）。
   /// 只想改个主题的用户不该因此被发一轮推送请求。
   ///
@@ -221,6 +230,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       SettingsCategory.mailboxes => const MailboxesSection(),
       SettingsCategory.polling => const PollingSection(),
       SettingsCategory.appearance => const AppearanceSection(),
+      SettingsCategory.security => const SecuritySection(),
       SettingsCategory.compose => const ComposeSection(),
       SettingsCategory.ai => const AiSettingsSection(),
       SettingsCategory.push => PushSection(onExit: _back),
@@ -247,7 +257,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _labelOf(_SectionRef ref, AppLocalizations l10n) =>
       ref.section?.title ?? ref.category!.label(l10n);
 
-  /// 当前要铺出来的分类清单：**九个内置 + N 个扩展**，扩展插在「诊断」之后、
+  /// 当前要铺出来的分类清单：**十个内置 + N 个扩展**，扩展插在「诊断」之后、
   /// 「关于」之前。
   ///
   /// 「关于」永远收尾这条规矩写在 `SettingsSection` 的文档里 —— 扩展各自

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../l10n/app_localizations.dart';
 import 'external_resources.dart';
 
@@ -7,6 +8,23 @@ import 'external_resources.dart';
 ///
 /// 只负责展示与转发动作；「启用/屏蔽」后要不要重建 HTML 由 `HtmlBodyView`
 /// 决定（它会换 `HtmlWidget` 的 key，让整个正文重新解析一遍）。
+///
+/// ## 警告色，而不是普通底色
+///
+/// 有资源被拦时整张卡用琥珀色（[AppTheme.warningContainer]）——「这封邮件
+/// 想联网」是**提醒**，不是错误。真正的错误（投递失败、发送失败）与追踪
+/// 像素警告用的是 `errorContainer`（红色），两者不该长得一样：用户扫一眼
+/// 颜色就该分得出「坏了」和「注意」。
+///
+/// 白名单把全部资源都放行之后（`blocked == 0`）退回普通底色 —— 没有了要
+/// 提醒的事，再亮一张警告卡就是喊狼来了。
+///
+/// ## 资源按域名分组
+///
+/// 营销邮件一封动辄二三十个外链图，平铺一列读不出「它到底连了哪几家」。
+/// 列表按域名分组（域名按首次出现顺序），组头是域名 + 条数，组内才是
+/// 逐条资源；组头还能「始终允许」—— 直接把域名加进用户白名单，下一封
+/// 邮件起不再拦截。
 ///
 /// ## 为什么样式表/脚本不给启用按钮
 ///
@@ -23,6 +41,7 @@ class ExternalResourceBanner extends StatefulWidget {
     required this.onBlock,
     required this.onEnableAll,
     required this.onBlockAll,
+    this.onAllowHost,
   });
 
   final List<ExternalResource> resources;
@@ -32,6 +51,12 @@ class ExternalResourceBanner extends StatefulWidget {
   final void Function(String url) onBlock;
   final VoidCallback onEnableAll;
   final VoidCallback onBlockAll;
+
+  /// 「始终允许这个域名」：把 host 加进用户白名单（见 `external_allow_list.dart`）。
+  ///
+  /// 为空时组头不出现这个动作 —— 例如 `HtmlBodyView` 的 widget 测试直接构造
+  /// Banner，没必要为了一个按钮把设置层拖进来。
+  final void Function(String host)? onAllowHost;
 
   @override
   State<ExternalResourceBanner> createState() => _ExternalResourceBannerState();
@@ -45,9 +70,11 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final brightness = theme.brightness;
 
     final resources = widget.resources;
     final policy = widget.policy;
+    final groups = groupExternalResourcesByDomain(resources);
     final loaded = resources.where((r) => policy.isLoaded(r.url)).length;
     final blocked = resources.length - loaded;
     final loadableBlocked = resources
@@ -57,23 +84,45 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
         .where((r) => r.canEnable && policy.isLoaded(r.url))
         .length;
 
+    // 还有东西被拦时才用警告色；全放行后只是「提示」，回到普通卡片。
+    final warn = blocked > 0;
+    final containerColor = warn
+        ? AppTheme.warningContainer(brightness)
+        : scheme.surfaceContainerHighest.withValues(alpha: 0.55);
+    final accent = warn ? AppTheme.warningAccent(brightness) : scheme.primary;
+    final headerColor = warn
+        ? AppTheme.onWarningContainer(brightness)
+        : scheme.onSurface;
+    final detailColor = warn
+        ? AppTheme.onWarningContainer(brightness).withValues(alpha: 0.85)
+        : scheme.onSurfaceVariant;
+
     final title = blocked > 0
         ? l10n.externalResourcesBlockedTitle(blocked)
         : l10n.externalResourcesEnabledTitle(loaded);
 
     final details = <String>[
-      l10n.externalResourcesDomainCount(_domains()),
+      l10n.externalResourcesDomainCount(groups.length),
       if (blocked > 0)
         l10n.externalResourcesSubtitle
       else if (policy.rewriteUrl != null)
         l10n.externalResourcesProxyHint,
     ];
 
+    final actionStyle = TextButton.styleFrom(foregroundColor: accent);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
+        color: containerColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: warn
+                ? accent.withValues(alpha: 0.35)
+                : scheme.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 8, 6),
           child: Column(
@@ -83,11 +132,11 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Icon(
-                    blocked > 0
-                        ? Icons.shield_outlined
+                    warn
+                        ? Icons.warning_amber_rounded
                         : Icons.verified_user_outlined,
                     size: 18,
-                    color: blocked > 0 ? scheme.tertiary : scheme.primary,
+                    color: accent,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -96,14 +145,17 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
                       children: <Widget>[
                         Text(
                           title,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: headerColor,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           details.join(' · '),
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: scheme.onSurfaceVariant),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: detailColor,
+                          ),
                         ),
                         if (blocked > 0 &&
                             policy.rewriteUrl != null &&
@@ -111,8 +163,9 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
                           const SizedBox(height: 2),
                           Text(
                             l10n.externalResourcesProxyHint,
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: scheme.primary),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: accent,
+                            ),
                           ),
                         ],
                       ],
@@ -121,11 +174,13 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
                   if (loadableBlocked > 0)
                     TextButton(
                       onPressed: widget.onEnableAll,
+                      style: actionStyle,
                       child: Text(l10n.externalResourcesEnableAll),
                     )
                   else if (loadableLoaded > 0)
                     TextButton(
                       onPressed: widget.onBlockAll,
+                      style: actionStyle,
                       child: Text(l10n.externalResourcesBlockAll),
                     ),
                 ],
@@ -134,6 +189,7 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
                   onPressed: () => setState(() => _expanded = !_expanded),
+                  style: actionStyle,
                   icon: Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
                     size: 18,
@@ -146,12 +202,15 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
                 ),
               ),
               if (_expanded)
-                for (final resource in resources)
-                  _ResourceRow(
-                    resource: resource,
+                for (var index = 0; index < groups.length; index++)
+                  _DomainGroupSection(
+                    group: groups[index],
                     policy: policy,
+                    warn: warn,
+                    isLast: index == groups.length - 1,
                     onEnable: widget.onEnable,
                     onBlock: widget.onBlock,
+                    onAllowHost: widget.onAllowHost,
                   ),
             ],
           ),
@@ -159,8 +218,116 @@ class _ExternalResourceBannerState extends State<ExternalResourceBanner> {
       ),
     );
   }
+}
 
-  int _domains() => widget.resources.map((r) => r.host).toSet().length;
+/// 展开列表里的一个域名分组：组头（域名 · 条数 · 始终允许）+ 组内资源行。
+class _DomainGroupSection extends StatelessWidget {
+  const _DomainGroupSection({
+    required this.group,
+    required this.policy,
+    required this.warn,
+    required this.isLast,
+    required this.onEnable,
+    required this.onBlock,
+    required this.onAllowHost,
+  });
+
+  final ExternalResourceDomainGroup group;
+  final ExternalResourcePolicy policy;
+  final bool warn;
+  final bool isLast;
+  final void Function(String url) onEnable;
+  final void Function(String url) onBlock;
+  final void Function(String host)? onAllowHost;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final brightness = theme.brightness;
+    final accent = warn ? AppTheme.warningAccent(brightness) : scheme.primary;
+    final headerColor = warn
+        ? AppTheme.onWarningContainer(brightness)
+        : scheme.onSurface;
+    final allowed = policy.isHostAllowed(group.host);
+
+    final List<Widget> headerActions = <Widget>[
+      const SizedBox(width: 6),
+      Text(
+        l10n.externalResourcesGroupItems(group.count),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: headerColor.withValues(alpha: 0.65),
+        ),
+      ),
+      if (allowed)
+        Padding(
+          padding: const EdgeInsets.only(left: 6),
+          child: _Tag(
+            text: l10n.externalResourcesAllowListedTag,
+            color: accent,
+          ),
+        )
+      else if (onAllowHost != null)
+        Tooltip(
+          message: l10n.externalResourcesAllowDomainHint(group.host),
+          child: TextButton(
+            onPressed: () => onAllowHost!(group.host),
+            style: TextButton.styleFrom(
+              foregroundColor: accent,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 30),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+            child: Text(l10n.externalResourcesAllowDomain),
+          ),
+        ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.language, size: 15, color: accent),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  group.host,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: headerColor,
+                  ),
+                ),
+              ),
+              ...headerActions,
+            ],
+          ),
+          for (final resource in group.resources)
+            Padding(
+              padding: const EdgeInsets.only(left: 21),
+              child: _ResourceRow(
+                resource: resource,
+                policy: policy,
+                onEnable: onEnable,
+                onBlock: onBlock,
+              ),
+            ),
+          if (!isLast)
+            Divider(
+              height: 12,
+              thickness: 1,
+              color: headerColor.withValues(alpha: 0.12),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ResourceRow extends StatelessWidget {
@@ -182,7 +349,8 @@ class _ResourceRow extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final blocked = policy.isBlocked(resource.url);
-    final proxied = resource.canEnable &&
+    final proxied =
+        resource.canEnable &&
         policy.isLoaded(resource.url) &&
         policy.loadUrl(resource.url) != resource.url;
 
@@ -195,12 +363,17 @@ class _ResourceRow extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.lock_outline, size: 14, color: scheme.onSurfaceVariant),
+              Icon(
+                Icons.lock_outline,
+                size: 14,
+                color: scheme.onSurfaceVariant,
+              ),
               const SizedBox(width: 4),
               Text(
                 l10n.externalResourcesCannotEnable,
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -236,11 +409,12 @@ class _ResourceRow extends StatelessWidget {
                   children: <Widget>[
                     Flexible(
                       child: Text(
-                        '${_kindLabel(l10n)} · ${resource.host}',
+                        _kindLabel(l10n),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelMedium
-                            ?.copyWith(color: scheme.onSurface),
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: scheme.onSurface,
+                        ),
                       ),
                     ),
                     if (proxied) ...<Widget>[
@@ -271,8 +445,9 @@ class _ResourceRow extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       _whyCannotEnable(l10n),
-                      style: theme.textTheme.labelSmall
-                          ?.copyWith(color: scheme.tertiary),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.tertiary,
+                      ),
                     ),
                   ),
               ],
@@ -285,53 +460,56 @@ class _ResourceRow extends StatelessWidget {
   }
 
   IconData get _icon => switch (resource.kind) {
-        ExternalResourceKind.image => Icons.image_outlined,
-        ExternalResourceKind.cssImage => Icons.wallpaper_outlined,
-        ExternalResourceKind.stylesheet => Icons.style_outlined,
-        ExternalResourceKind.script => Icons.code_outlined,
-        ExternalResourceKind.media => Icons.videocam_outlined,
-        ExternalResourceKind.frame => Icons.web_asset_outlined,
-        ExternalResourceKind.font => Icons.font_download_outlined,
-      };
+    ExternalResourceKind.image => Icons.image_outlined,
+    ExternalResourceKind.cssImage => Icons.wallpaper_outlined,
+    ExternalResourceKind.stylesheet => Icons.style_outlined,
+    ExternalResourceKind.script => Icons.code_outlined,
+    ExternalResourceKind.media => Icons.videocam_outlined,
+    ExternalResourceKind.frame => Icons.web_asset_outlined,
+    ExternalResourceKind.font => Icons.font_download_outlined,
+  };
 
   String _kindLabel(AppLocalizations l10n) => switch (resource.kind) {
-        ExternalResourceKind.image => l10n.externalResourcesKindImage,
-        ExternalResourceKind.cssImage => l10n.externalResourcesKindCssImage,
-        ExternalResourceKind.stylesheet => l10n.externalResourcesKindStylesheet,
-        ExternalResourceKind.script => l10n.externalResourcesKindScript,
-        ExternalResourceKind.media => l10n.externalResourcesKindMedia,
-        ExternalResourceKind.frame => l10n.externalResourcesKindFrame,
-        ExternalResourceKind.font => l10n.externalResourcesKindFont,
-      };
+    ExternalResourceKind.image => l10n.externalResourcesKindImage,
+    ExternalResourceKind.cssImage => l10n.externalResourcesKindCssImage,
+    ExternalResourceKind.stylesheet => l10n.externalResourcesKindStylesheet,
+    ExternalResourceKind.script => l10n.externalResourcesKindScript,
+    ExternalResourceKind.media => l10n.externalResourcesKindMedia,
+    ExternalResourceKind.frame => l10n.externalResourcesKindFrame,
+    ExternalResourceKind.font => l10n.externalResourcesKindFont,
+  };
 
   String _whyCannotEnable(AppLocalizations l10n) => switch (resource.kind) {
-        ExternalResourceKind.stylesheet => l10n.externalResourcesStylesheetNote,
-        ExternalResourceKind.script => l10n.externalResourcesScriptNote,
-        ExternalResourceKind.frame => l10n.externalResourcesFrameNote,
-        _ => '',
-      };
+    ExternalResourceKind.stylesheet => l10n.externalResourcesStylesheetNote,
+    ExternalResourceKind.script => l10n.externalResourcesScriptNote,
+    ExternalResourceKind.frame => l10n.externalResourcesFrameNote,
+    _ => '',
+  };
 }
 
 class _Tag extends StatelessWidget {
-  const _Tag({required this.text});
+  const _Tag({required this.text, this.color});
 
   final String text;
+
+  /// 默认用主色；警告色背景上用 [AppTheme.warningAccent]。
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final tint = color ?? scheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.12),
+        color: tint.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         text,
-        style: Theme.of(context)
-            .textTheme
-            .labelSmall
-            ?.copyWith(color: scheme.primary, fontSize: 10),
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: tint, fontSize: 10),
       ),
     );
   }
@@ -343,15 +521,27 @@ class _Tag extends StatelessWidget {
 /// 拿到的是 600px 宽的大图：邮件里大量 16px 图标、1px 追踪像素都会走这里。
 /// 空间不够时退化成一个小图标；1×1 由工厂直接返回 `SizedBox.shrink()`，
 /// 不会画到版面上。
+///
+/// ## alt / title 走悬浮层，不进版面
+///
+/// 被拦下的图看不见内容，`alt`（或 `title`）往往就是唯一能说明「这里原本
+/// 是什么」的线索 —— 营销邮件的 CTA 图常把整句文案写在 alt 里。但它**不能
+/// 画进占位块**：占位块被 fwfh 压在原图尺寸里，塞一段长文案要么被裁掉，
+/// 要么把版式撑开。所以它进 `Tooltip`（桌面悬停、触屏长按）—— 一个**悬浮
+/// div**，完全不参与布局。
 class BlockedImageTile extends StatelessWidget {
   const BlockedImageTile({
     super.key,
     required this.url,
     required this.host,
+    this.label,
   });
 
   final String url;
   final String host;
+
+  /// 原图的 `alt`，没有则退回 `title`。可空。
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -359,14 +549,18 @@ class BlockedImageTile extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
+    final hint = (label ?? '').trim();
+    final message = hint.isEmpty ? '$host\n$url' : '$hint\n$host\n$url';
+
     return Tooltip(
-      message: '$host\n$url',
+      message: message,
+      waitDuration: const Duration(milliseconds: 150),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final narrow = constraints.hasBoundedWidth &&
-              constraints.maxWidth < 150;
-          final short = constraints.hasBoundedHeight &&
-              constraints.maxHeight < 44;
+          final narrow =
+              constraints.hasBoundedWidth && constraints.maxWidth < 150;
+          final short =
+              constraints.hasBoundedHeight && constraints.maxHeight < 44;
           final compact = narrow || short;
           final maxHeight = constraints.hasBoundedHeight
               ? constraints.maxHeight
@@ -405,22 +599,25 @@ class BlockedImageTile extends StatelessWidget {
                         l10n.externalResourcesImageBlocked,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                       Text(
                         host,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                       Text(
                         l10n.externalResourcesTapToLoad,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: scheme.primary),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.primary,
+                        ),
                       ),
                     ],
                   ),
@@ -472,6 +669,9 @@ class BlockedImageTile extends StatelessWidget {
 /// 邮件」。即使像素已被默认拦截，这个意图本身也值得告诉用户 —— 用户据此
 /// 才会对「要不要点启用」做出知情决定。
 ///
+/// 它用 `errorContainer`（红），与外联资源 Banner 的琥珀警告色区分：追踪
+/// 像素是**辜负信任**的行为，比「有外链图」严重一档。
+///
 /// 只统计 `ExternalResource.trackingPixel` 为 true 的资源：外链 `<img>` 与
 /// 1×1 元素上的背景图。尺寸来自 HTML 属性、行内 style 或 `<style>` 里的
 /// class/id 规则；只读到一个方向且 ≤ 2 也算（见扫描器里的说明）。
@@ -503,7 +703,10 @@ class TrackingPixelWarning extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: scheme.errorContainer.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: scheme.error.withValues(alpha: 0.25)),
+        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Row(
@@ -529,8 +732,9 @@ class TrackingPixelWarning extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       l10n.trackingPixelWarningBody,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.onErrorContainer),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onErrorContainer,
+                      ),
                     ),
                     const SizedBox(height: 3),
                     Text(

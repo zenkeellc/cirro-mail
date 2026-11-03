@@ -22,6 +22,7 @@ import '../../providers/mail_providers.dart';
 import '../../providers/ai_providers.dart';
 import '../../providers/notification_providers.dart';
 import '../../providers/profile_providers.dart';
+import '../../providers/settings_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../compose/compose_draft.dart';
 import '../compose/compose_launcher.dart';
@@ -514,6 +515,10 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
     List<MailAttachment> attachments,
     Color ac,
   ) {
+    // 外联资源域名白名单：设置页与 Banner 上的「始终允许」都写这一份，
+    // 打开邮件时按它决定哪些外链图直接加载。这里 `watch` 是合法的 ——
+    // `_body` 只在 build 里被调用。
+    final allowedHosts = ref.watch(externalAllowedHostsProvider);
     return SelectionArea(
       // 右键菜单：**不能再套一个 `GestureDetector(onSecondaryTapUp:)`** ——
       // macOS 上 `SelectableRegion` 的右键是 `onSecondaryTapDown`
@@ -595,6 +600,12 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
                   ? row.content!
                   : _plainTextHtml(row.text),
               ossBase: ossBase,
+              allowedHosts: allowedHosts,
+              // Banner 组头的「始终允许」：把域名写进白名单，下一帧就按
+              // 新名单判定（HtmlBodyView 会换 key 重新解析正文）。
+              onAllowHost: (host) => ref
+                  .read(externalAllowedHostsProvider.notifier)
+                  .add(host),
               onTapImage: (url) => _previewImage(url),
             )
           else

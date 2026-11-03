@@ -1566,5 +1566,48 @@
         "type": "int"
       }
     }
+  },
+  "externalResourcesGroupItems": "{count} 个资源",
+  "externalResourcesAllowDomain": "始终允许",
+  "externalResourcesAllowDomainHint": "把 {domain} 加入白名单，以后来自该域名的资源不再拦截",
+  "externalResourcesAllowListedTag": "白名单",
+  "@externalResourcesGroupItems": {
+    "description": "外联资源 Banner：域名分组头的资源条数",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesAllowDomainHint": {
+    "placeholders": {
+      "domain": {
+        "type": "String"
+      }
+    }
+  },
+  "security": "安全",
+  "securityExternalResourcesHeader": "邮件正文的外联资源",
+  "securityExternalResourcesIntro": "邮件里的外联图片默认被拦截，发件人无法知道你何时、从哪里打开了它。下面白名单里的域名会自动加载，不再拦截。",
+  "securityExternalResourcesEmpty": "还没有允许的域名。",
+  "securityExternalResourcesAddHint": "例如 *.example.com",
+  "securityExternalResourcesAdd": "添加",
+  "securityExternalResourcesInvalid": "域名格式不对。可以用 * 通配符，例如 *.example.com。",
+  "securityExternalResourcesRemove": "把 {domain} 移出白名单",
+  "securityExternalResourcesAdded": "已添加 {domain}",
+  "securityExternalResourcesNote": "* 匹配任意字符（包括点）：*.example.com 覆盖所有子域名，但不含 example.com 本身；精确域名只作用于该 host。样式表与脚本仍然不会被执行。",
+  "@securityExternalResourcesRemove": {
+    "placeholders": {
+      "domain": {
+        "type": "String"
+      }
+    }
+  },
+  "@securityExternalResourcesAdded": {
+    "placeholders": {
+      "domain": {
+        "type": "String"
+      }
+    }
   }
 }

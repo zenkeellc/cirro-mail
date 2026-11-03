@@ -19,10 +19,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 设置页的两副形态。三个层面各自都会静默地错，所以要分开钉：
 ///
-/// 1. **分类本身**：九个、顺序、文案。分类栏只有 [Breakpoints.settingsRailWidth]
+/// 1. **分类本身**：十个、顺序、文案。分类栏只有 [Breakpoints.settingsRailWidth]
 ///    宽，名字长一个字就会被省略号吃掉（推送那个短名字存在的理由）。
 /// 2. **窄屏**：一进来是**分类列表**而不是某个分类的正文 —— 漏了这一层，
-///    手机上打开设置会直接落在「实例」里，用户找不到其余九个。
+///    手机上打开设置会直接落在「实例」里，用户找不到其余十个。
 /// 3. **宽屏**：分类栏常驻 + 右栏跟着选；切换**不改地址、不压栈**（所以
 ///    右栏里没敲完的草稿必须还在）。这一条只有把窗口拖宽才看得见。
 ///
@@ -39,12 +39,12 @@ void main() {
 
   final zh = lookupAppLocalizations(const Locale('zh'));
 
-  group('九个分类', () {
+  group('十个分类', () {
     test('数量与顺序就是分类栏里的顺序', () {
       expect(
         SettingsCategory.values.map((c) => c.label(zh)).toList(),
         const <String>[
-          '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '关于',
+          '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '关于',
         ],
       );
     });
@@ -149,9 +149,18 @@ void main() {
     }
   });
 
-  // ── 窄屏（测试环境默认 800×600，< 1024）────────────────────────────
+  // ── 窄屏（宽 800 < 1024，高度放大到 1200）────────────────────────
+  //
+  // 高度刻意不用默认的 600：分类列表现在有十行，扩展那一组还会到十一行，
+  // 在 600 高的窗口里最后几行落在 `ListView` 的懒构建范围之外 —— 那时
+  // 「顺序」那条断言读不全整张列表（不是顺序错了，只是那几行还没建出来）。
+  // 判据只看**宽度**，放大高度不会改变「窄屏」这个前提。
 
   Future<void> pumpNarrow(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final prefs = PrefsStore(await SharedPreferences.getInstance());
     await tester.pumpWidget(ProviderScope(
@@ -171,14 +180,14 @@ void main() {
   testWidgets('窄屏：先是一张分类列表，点一个才进那一页', (tester) async {
     await pumpNarrow(tester);
 
-    // 一进来是**分类列表**：标题「设置」+ 九个入口，而不是某个分类的正文。
+    // 一进来是**分类列表**：标题「设置」+ 十个入口，而不是某个分类的正文。
     expect(find.text('设置'), findsOneWidget);
     for (final label in <String>[
-      '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '关于',
+      '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '关于',
     ]) {
       expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
     }
-    // 那九个是**列表**，不是分类栏 —— 分类栏的项是 `NavSidebarItem`。
+    // 那十个是**列表**，不是分类栏 —— 分类栏的项是 `NavSidebarItem`。
     expect(find.byType(NavSidebarItem), findsNothing);
     // 也没进任何分类页：没有返回箭头。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
@@ -259,11 +268,11 @@ void main() {
           matching: find.text(label),
         );
 
-    // 分类栏九个项常驻，且**没有**窄屏那张分类列表。
-    for (final label in <String>['实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '关于']) {
+    // 分类栏十个项常驻，且**没有**窄屏那张分类列表。
+    for (final label in <String>['实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '关于']) {
       expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
     }
-    expect(find.byType(NavSidebarItem), findsNWidgets(9));
+    expect(find.byType(NavSidebarItem), findsNWidgets(10));
     expect(find.widgetWithText(ListTile, '实例'), findsNothing);
 
     // 默认选中「实例」：右栏是实例正文（空实例时的入口），
@@ -314,7 +323,7 @@ void main() {
 
   /// 一个只往设置页加一栏的假扩展。
   ///
-  /// 图标刻意选两颗**不与内置九栏重复**的字形：重复的话「扩展那栏排在第几」
+  /// 图标刻意选两颗**不与内置十栏重复**的字形：重复的话「扩展那栏排在第几」
   /// 这条断言会退化成「某个内置图标出现了两次」，而它照样通过。
   group('扩展分类', () {
     testWidgets('登记之后窄屏多一行，且排在「关于」之前', (tester) async {
@@ -323,9 +332,9 @@ void main() {
       ]);
       await pumpNarrow(tester);
 
-      // 内置九栏原样都在 —— 扩展是**追加**，不是替换。
+      // 内置十栏原样都在 —— 扩展是**追加**，不是替换。
       for (final label in <String>[
-        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '关于',
+        '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '关于',
       ]) {
         expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
       }
@@ -337,7 +346,7 @@ void main() {
           .map((tile) => (tile.title! as Text).data)
           .toList();
       expect(labels, <String>[
-        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '关于',
+        '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '免打扰', '关于',
       ]);
     });
 
@@ -369,11 +378,11 @@ void main() {
             matching: find.text(label),
           );
       for (final label in <String>[
-        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '关于',
+        '实例', '邮箱', '轮询', '外观', '安全', '写邮件', 'AI', '推送', '诊断', '免打扰', '关于',
       ]) {
         expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
       }
-      expect(find.byType(NavSidebarItem), findsNWidgets(10));
+      expect(find.byType(NavSidebarItem), findsNWidgets(11));
 
       // **没点进去之前不构造它的正文** —— 与 `PushSection` 那条同一条规矩：
       // 扩展正文多半要读盘或者打接口，「打开设置页」不该等于「把每个扩展跑一遍」。
@@ -391,7 +400,7 @@ void main() {
     /// 设置页与从前逐像素相同。
     testWidgets('没有扩展时不多任何一栏', (tester) async {
       await pumpNarrow(tester);
-      expect(find.byType(ListTile), findsNWidgets(9));
+      expect(find.byType(ListTile), findsNWidgets(10));
     });
   });
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:fwfh_cached_network_image/fwfh_cached_network_image.dart';
@@ -56,6 +57,8 @@ class HtmlBodyView extends StatefulWidget {
     required this.ossBase,
     this.onTapImage,
     this.shrinkWrap = false,
+    this.allowedHosts = const <String>[],
+    this.onAllowHost,
   });
 
   /// 原始 HTML（**未替换 `{{domain}}`**）。
@@ -69,6 +72,19 @@ class HtmlBodyView extends StatefulWidget {
 
   /// 是否按内容高度自适应（详情页 true；列表里的预览 false）。
   final bool shrinkWrap;
+
+  /// 外联资源**域名白名单**（支持 `*` 通配，见 `external_allowlist.dart`）。
+  ///
+  /// 命中白名单的资源不拦截、打开即加载。由宿主（详情页）从
+  /// `externalAllowedHostsProvider` 读出来传进来 —— `HtmlBodyView` 刻意不
+  /// 直接依赖 Riverpod：它也会被用在附件预览这类没有 ProviderScope 的地方，
+  /// 也给 widget 测试留一个「传什么就按什么判」的干净入口。
+  final List<String> allowedHosts;
+
+  /// 「始终允许这个域名」：交给宿主去写白名单（详情页接到 prefs）。
+  ///
+  /// 为空时 Banner 不显示这个动作。
+  final void Function(String host)? onAllowHost;
 
   @override
   State<HtmlBodyView> createState() => _HtmlBodyViewState();
@@ -105,6 +121,12 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
     // ossBase 变了也要重算：实例后来配了 r2Domain 时前缀要跟着换。
     if (oldWidget.html != widget.html || oldWidget.ossBase != widget.ossBase) {
       _prepare();
+      return;
+    }
+    // 白名单变了不用重新扫描正文，但必须让 fwfh 重建工厂（它决定每张图
+    // 加载还是占位）—— 与启用/屏蔽走同一条路：换 key。
+    if (!listEquals(oldWidget.allowedHosts, widget.allowedHosts)) {
+      _revision++;
     }
   }
 
@@ -196,6 +218,7 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
       enabled: _enabled,
       blocked: _blockedUrls,
       blockAll: _blockAll,
+      allowedHosts: widget.allowedHosts,
     );
 
     final body = HtmlWidget(
@@ -244,6 +267,7 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
           onBlock: _block,
           onEnableAll: _enableAll,
           onBlockAll: _blockAllResources,
+          onAllowHost: widget.onAllowHost,
         ),
         body,
       ],
@@ -359,7 +383,13 @@ class _MailWidgetFactory extends WidgetFactory
       return const SizedBox.shrink();
     }
     if (blocked) {
-      return BlockedImageTile(url: src.url, host: policy.hostOf(src.url));
+      return BlockedImageTile(
+        url: src.url,
+        host: policy.hostOf(src.url),
+        // alt 优先、其次 title。两者都是**原图作者写给人看**的说明
+        // （很多营销邮件把整句 CTA 文案塞进 alt），被拦时它是唯一线索。
+        label: _imageLabel(tree, src),
+      );
     }
 
     final loadUrl = policy.loadUrl(src.url);
@@ -379,6 +409,35 @@ class _MailWidgetFactory extends WidgetFactory
             const SizedBox.shrink();
       },
     );
+  }
+
+  /// fwfh 会给带 `title` 的图片再包一层 `Tooltip`。
+  ///
+  /// 被拦图片的说明（alt / title 兜底 + host + url）已经在
+  /// [BlockedImageTile] 自己的悬浮层里了；再包一层的话，鼠标一悬停会同时
+  /// 冒出两个浮层、内容还重叠。拦下的图片直接吞掉 fwfh 这一层。
+  @override
+  Widget? buildTooltip(BuildTree tree, Widget child, String message) {
+    if (child is BlockedImageTile) return child;
+    return super.buildTooltip(tree, child, message);
+  }
+
+  /// 被拦图片的 `alt`，没有则退回 `title`。
+  ///
+  /// `ImageMetadata` 挂在 `ImageSource` 的 Expando 上，正常路径一定拿得到；
+  /// 兜底再读一次 DOM 属性 —— 解释性文字丢了并不会报错，只是用户在占位块上
+  /// 什么也看不到，所以宁可多读一条路。
+  String? _imageLabel(BuildTree tree, ImageSource src) {
+    final metadata = src.image;
+    final alt = metadata?.alt?.trim();
+    if (alt != null && alt.isNotEmpty) return alt;
+    final title = metadata?.title?.trim();
+    if (title != null && title.isNotEmpty) return title;
+    final attributes = tree.element.attributes;
+    final fromAlt = attributes['alt']?.trim();
+    if (fromAlt != null && fromAlt.isNotEmpty) return fromAlt;
+    final fromTitle = attributes['title']?.trim();
+    return (fromTitle == null || fromTitle.isEmpty) ? null : fromTitle;
   }
 
   /// CSS 背景图同样走策略：被拦就不建 provider（不联网），放行则经改写。

@@ -2148,4 +2148,57 @@ class AppLocalizationsZh extends AppLocalizations {
   String trackingPixelWarningLoadedNote(int count) {
     return '其中 $count 个当前已加载，发件人可能已经收到打开记录。';
   }
+
+  @override
+  String externalResourcesGroupItems(int count) {
+    return '$count 个资源';
+  }
+
+  @override
+  String get externalResourcesAllowDomain => '始终允许';
+
+  @override
+  String externalResourcesAllowDomainHint(String domain) {
+    return '把 $domain 加入白名单，以后来自该域名的资源不再拦截';
+  }
+
+  @override
+  String get externalResourcesAllowListedTag => '白名单';
+
+  @override
+  String get security => '安全';
+
+  @override
+  String get securityExternalResourcesHeader => '邮件正文的外联资源';
+
+  @override
+  String get securityExternalResourcesIntro =>
+      '邮件里的外联图片默认被拦截，发件人无法知道你何时、从哪里打开了它。下面白名单里的域名会自动加载，不再拦截。';
+
+  @override
+  String get securityExternalResourcesEmpty => '还没有允许的域名。';
+
+  @override
+  String get securityExternalResourcesAddHint => '例如 *.example.com';
+
+  @override
+  String get securityExternalResourcesAdd => '添加';
+
+  @override
+  String get securityExternalResourcesInvalid =>
+      '域名格式不对。可以用 * 通配符，例如 *.example.com。';
+
+  @override
+  String securityExternalResourcesRemove(String domain) {
+    return '把 $domain 移出白名单';
+  }
+
+  @override
+  String securityExternalResourcesAdded(String domain) {
+    return '已添加 $domain';
+  }
+
+  @override
+  String get securityExternalResourcesNote =>
+      '* 匹配任意字符（包括点）：*.example.com 覆盖所有子域名，但不含 example.com 本身；精确域名只作用于该 host。样式表与脚本仍然不会被执行。';
 }
