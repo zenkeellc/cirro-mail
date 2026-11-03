@@ -44,6 +44,8 @@ IconData iconOfName(String filename, {String? mimeType}) {
     case AttachmentKind.text:
     case AttachmentKind.markdown:
       return Icons.article_outlined;
+    case AttachmentKind.eml:
+      return Icons.mail_outline;
     case AttachmentKind.audio:
       return Icons.audiotrack_outlined;
     case AttachmentKind.video:
@@ -89,6 +91,7 @@ abstract final class ViewerSupport {
       case AttachmentKind.xlsx:
       case AttachmentKind.pptx:
       case AttachmentKind.audio:
+      case AttachmentKind.eml:
         // 音频五平台都有 `audioplayers` 实现（Linux 那条依赖系统
         // gstreamer，缺库时由播放页自己降级并提示，不在这一层判死）。
         return true;

@@ -24,6 +24,10 @@ enum AttachmentKind {
   text,
   csv,
   markdown,
+
+  /// 一整封信（`.eml` / `message/rfc822`）。与 [text] 分开：源码预览是给
+  /// 「文件」看的，这一种要拆成头 + 正文当邮件显示（见 `eml_viewer_screen.dart`）。
+  eml,
   docx,
   xlsx,
   pptx,
@@ -85,6 +89,10 @@ abstract final class AttachmentMime {
 
     // 先让**扩展名**在少数几个已知冲突上胜出。
     switch (ext) {
+      case 'eml':
+        // 服务端常把它写成 `application/octet-stream`（见文件头），
+        // 只看 mime 的话这封信会被当成二进制。
+        return AttachmentKind.eml;
       case 'csv' || 'tsv':
         return AttachmentKind.csv;
       case 'md' || 'markdown':
@@ -119,6 +127,10 @@ abstract final class AttachmentMime {
     if (base == 'text/markdown' || base == 'text/x-markdown') {
       return AttachmentKind.markdown;
     }
+
+    // `message/rfc822` 必须是**一整封信**，不是文本：它有自己的头与 MIME
+    // 结构，拿去当纯文本预览只会显示一屏源码。
+    if (base == 'message/rfc822') return AttachmentKind.eml;
 
     if (_zipBased.contains(base)) {
       // `.doc` / `.xls` / `.ppt`（老二进制格式）与 `.zip` 都落在这里 ——
@@ -177,7 +189,6 @@ abstract final class AttachmentMime {
     'application/javascript',
     'application/x-sh',
     'application/rtf',
-    'message/rfc822',
     'text/x-vcard',
     'text/calendar',
   };

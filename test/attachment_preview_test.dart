@@ -7,6 +7,7 @@ import 'package:mail_app/features/attachment/attachment_preview.dart';
 import 'package:mail_app/features/attachment/viewers/audio_viewer_screen.dart';
 import 'package:mail_app/features/attachment/viewers/csv_viewer_screen.dart';
 import 'package:mail_app/features/attachment/viewers/docx_viewer_screen.dart';
+import 'package:mail_app/features/attachment/viewers/eml_viewer_screen.dart';
 import 'package:mail_app/features/attachment/viewers/local_image_viewer_screen.dart';
 import 'package:mail_app/features/attachment/viewers/pdf_viewer_screen.dart';
 import 'package:mail_app/features/attachment/viewers/pptx_viewer_screen.dart';
@@ -55,6 +56,7 @@ void main() {
         'voice.m4a',
         'photo.png',
         'a.pdf',
+        'original.eml',
       ];
       for (final name in files) {
         for (final platform in _platforms) {
@@ -160,6 +162,10 @@ void main() {
       await expectLands<DocxViewerScreen>(tester, 'r.docx');
       await expectLands<XlsxViewerScreen>(tester, 'b.xlsx');
       await expectLands<PptxViewerScreen>(tester, 'd.pptx');
+    });
+
+    testWidgets('.eml 落到「当一封信显示」的页面，不是文本 viewer', (tester) async {
+      await expectLands<EmlViewerScreen>(tester, 'original.eml');
     });
 
     testWidgets(

@@ -484,6 +484,14 @@
     "description": "text viewer: markdown preview fell back to plain source because MarkdownDoc refused it"
   },
   "viewerFileGone": "The file is no longer on disk",
+  "emlUnreadable": "This message can't be parsed — try the raw source",
+  "@emlUnreadable": {
+    "description": "eml viewer: the file doesn't look like an RFC 822 message at all"
+  },
+  "emlNoBody": "This message has no body",
+  "@emlNoBody": {
+    "description": "eml viewer: parsed fine but there is neither an HTML nor a plain-text body part"
+  },
   "viewerOfficePartial": "Images and layout aren't shown in this preview",
   "@viewerOfficePartial": {
     "description": "docx viewer: footer note about what the simplified renderer leaves out"

@@ -6,6 +6,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../mail_detail/html_body_view.dart';
 import '../codecs/markdown_doc.dart';
 import '../codecs/text_codec.dart';
+import 'viewer_message.dart';
 
 /// 文本 / 日志 / 代码 / Markdown 附件的预览。
 ///
@@ -127,7 +128,7 @@ class _TextViewerScreenState extends State<TextViewerScreen> {
         : null;
 
     final body = _error != null
-        ? _Message(icon: Icons.error_outline, text: l10n.viewerFileGone)
+        ? ViewerMessage(icon: Icons.error_outline, text: l10n.viewerFileGone)
         : decoded == null
             ? const Center(child: CircularProgressIndicator())
             : _content(decoded, l10n, toggle);
@@ -292,23 +293,3 @@ class _Footer extends StatelessWidget {
   }
 }
 
-class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 48),
-          const SizedBox(height: 16),
-          Text(text),
-        ],
-      ),
-    );
-  }
-}

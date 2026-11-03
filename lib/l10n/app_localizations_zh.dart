@@ -946,6 +946,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get viewerFileGone => '文件已经不在了';
 
   @override
+  String get emlUnreadable => '这封邮件解析不出来，可以看看原文';
+
+  @override
+  String get emlNoBody => '这封邮件没有正文';
+
+  @override
   String get viewerOfficePartial => '此预览不显示图片与版式';
 
   @override

@@ -1832,6 +1832,18 @@ abstract class AppLocalizations {
   /// **'The file is no longer on disk'**
   String get viewerFileGone;
 
+  /// eml viewer: the file doesn't look like an RFC 822 message at all
+  ///
+  /// In en, this message translates to:
+  /// **'This message can\'t be parsed — try the raw source'**
+  String get emlUnreadable;
+
+  /// eml viewer: parsed fine but there is neither an HTML nor a plain-text body part
+  ///
+  /// In en, this message translates to:
+  /// **'This message has no body'**
+  String get emlNoBody;
+
   /// docx viewer: footer note about what the simplified renderer leaves out
   ///
   /// In en, this message translates to:

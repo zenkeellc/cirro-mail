@@ -5,6 +5,7 @@ import 'attachment_kind.dart';
 import 'viewers/audio_viewer_screen.dart';
 import 'viewers/csv_viewer_screen.dart';
 import 'viewers/docx_viewer_screen.dart';
+import 'viewers/eml_viewer_screen.dart';
 import 'viewers/local_image_viewer_screen.dart';
 import 'viewers/pdf_viewer_screen.dart';
 import 'viewers/pptx_viewer_screen.dart';
@@ -42,7 +43,8 @@ abstract final class AttachmentViewers {
         AttachmentKind.xlsx ||
         AttachmentKind.pptx ||
         AttachmentKind.audio ||
-        AttachmentKind.video =>
+        AttachmentKind.video ||
+        AttachmentKind.eml =>
           true,
         AttachmentKind.archive || AttachmentKind.other => false,
       };
@@ -93,6 +95,10 @@ Widget? buildAttachmentPreview({
       PptxViewerScreen(path: path, title: title, embedded: embedded),
     AttachmentKind.audio =>
       AudioViewerScreen(path: path, title: title, embedded: embedded),
+    // `.eml` 走「当一封信显示」的那一页，**不是**文本 viewer ——
+    // 那个会把 MIME 源码原样铺出来（见 `eml_viewer_screen.dart`）。
+    AttachmentKind.eml =>
+      EmlViewerScreen(path: path, title: title, embedded: embedded),
     // 视频在 Windows / Linux 上走不到这里（那两平台的 `canPreview` 已判
     // false，面板里没有「预览」这一行），见 `attachment_kind.dart`。
     AttachmentKind.video =>

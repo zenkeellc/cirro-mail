@@ -1001,6 +1001,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get viewerFileGone => 'The file is no longer on disk';
 
   @override
+  String get emlUnreadable =>
+      'This message can\'t be parsed — try the raw source';
+
+  @override
+  String get emlNoBody => 'This message has no body';
+
+  @override
   String get viewerOfficePartial =>
       'Images and layout aren\'t shown in this preview';
 

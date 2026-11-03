@@ -484,6 +484,14 @@
     "description": "text viewer: markdown preview fell back to plain source because MarkdownDoc refused it"
   },
   "viewerFileGone": "文件已经不在了",
+  "emlUnreadable": "这封邮件解析不出来，可以看看原文",
+  "@emlUnreadable": {
+    "description": "eml viewer: the file doesn't look like an RFC 822 message at all"
+  },
+  "emlNoBody": "这封邮件没有正文",
+  "@emlNoBody": {
+    "description": "eml viewer: parsed fine but there is neither an HTML nor a plain-text body part"
+  },
   "viewerOfficePartial": "此预览不显示图片与版式",
   "@viewerOfficePartial": {
     "description": "docx viewer: footer note about what the simplified renderer leaves out"

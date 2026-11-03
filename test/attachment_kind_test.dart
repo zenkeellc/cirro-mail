@@ -34,6 +34,7 @@ const _everywhere = <String>[
   'book.xlsx',
   'deck.pptx',
   'voice.m4a',
+  'original.eml',
 ];
 
 void main() {
@@ -81,6 +82,11 @@ void main() {
 
     test('文本与 markdown 共用一个文章图标', () {
       expect(iconOf(_att('a.txt')), iconOf(_att('a.md')));
+    });
+
+    test('.eml 是信封图标，与文本文件分得开', () {
+      expect(iconOf(_att('original.eml')), Icons.mail_outline);
+      expect(iconOf(_att('original.eml')), isNot(iconOf(_att('a.txt'))));
     });
   });
 

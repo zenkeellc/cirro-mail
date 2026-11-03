@@ -190,10 +190,31 @@ void main() {
         'application/json',
         'application/xml',
         'application/rtf',
-        'message/rfc822',
       ]) {
         expect(AttachmentMime.kindOf(mime), AttachmentKind.text, reason: mime);
       }
+    });
+
+    test('.eml 是一封信，不是一段文本', () {
+      // 前后对比：这一条以前落 `AttachmentKind.text`，预览出来是 MIME 源码
+      // （见 `eml_viewer_screen.dart`）。
+      expect(
+        AttachmentMime.kindOf('message/rfc822'),
+        AttachmentKind.eml,
+      );
+      expect(
+        AttachmentMime.kindOf('application/octet-stream', filename: 'original.eml'),
+        AttachmentKind.eml,
+      );
+      expect(
+        AttachmentMime.kindOf('message/rfc822', filename: 'original.eml'),
+        AttachmentKind.eml,
+      );
+      // 只是名字里带 eml 的别误伤。
+      expect(
+        AttachmentMime.kindOf('text/plain', filename: 'notes.txt'),
+        AttachmentKind.text,
+      );
     });
 
     test('zip / gz / 老版 office 二进制都不是可预览文档', () {
