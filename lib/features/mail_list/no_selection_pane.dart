@@ -1,0 +1,195 @@
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../l10n/app_localizations.dart';
+
+/// 打开一个外链，返回「到底开没开」。默认实现交给 `url_launcher`。
+///
+/// 单独抽成一个类型是为了让这块空态能被测到：`flutter_tester` 里没有
+/// `url_launcher` 的平台实现，真调一次那个 method channel，Future **永远
+/// 不返回**（不是抛异常 —— 所以 `try/catch` 也接不住）。测试注入一个假的
+/// 实现，就能同时钉住「传给按钮的是哪个地址」与「失败时有没有回执」。
+typedef UrlOpener = Future<bool> Function(Uri url);
+
+/// 默认实现：一律 `externalApplication` —— Star 要在**用户的浏览器登录态**
+/// 里点，App 内嵌 WebView 里没有那个登录态，等于白开。
+Future<bool> _openInBrowser(Uri url) =>
+    launchUrl(url, mode: LaunchMode.externalApplication);
+
+/// 分栏形态下右栏**还没有选中任何邮件**时的那一整块。
+///
+/// 调用方是 `MailPanes`：它**不默认选中第一封**（那样冷启动一进页面就等于
+/// 替用户把最上面那封标成已读），宁可留一块空的，于是这里接手那块空白。
+///
+/// ## 为什么不再是「选择一封邮件」那一行
+///
+/// 空白本身说明不了什么。这里放一块「给项目点个 Star」的引导：
+/// 一个大号 👍 + 一句夸赞 + 仓库卡片。
+///
+/// ## 「一键 Star」到底做了什么
+///
+/// GitHub 的 Star 是**登录态下的表单提交**，客户端拿不到、也不该去要用户的
+/// GitHub 凭据（这个 App 的认证只对自建 mail 实例，见 `core/storage/
+/// token_store.dart` 的约定）。所以按钮做的是「把用户送到那颗 Star 面前」：
+/// 用系统浏览器打开仓库页，登录过的账号在页面右上角就能点。按钮文案因此写
+/// 「去 GitHub 点个 Star」，而不是暗示已经替用户按下了。
+///
+/// 打不开外链（桌面端没有默认浏览器、测试环境没有 `url_launcher` 平台实现）
+/// 时只弹一条 SnackBar，不抛异常 —— 与「设置 → 关于 → 下载」同一取舍。
+class NoSelectionPane extends StatelessWidget {
+  const NoSelectionPane({super.key, this.openUrl = _openInBrowser});
+
+  /// 真正打开外链的那一步。默认是系统浏览器（见 [_openInBrowser]）；
+  /// 测试注入一个假实现，两条分支（开成 / 没开成）才都能钉住 ——
+  /// `flutter_tester` 里真调一次 `url_launcher` 会**一直挂着**，
+  /// 既不会返回也不会抛（见 [UrlOpener]）。
+  @visibleForTesting
+  final UrlOpener openUrl;
+
+  /// 项目公开仓库。卡片上显示的地址与按钮打开的是**同一个**常量，
+  /// 免得两处各写一份、改一处忘另一处。
+  static const String repoUrl = 'https://github.com/zenkeellc/cirro-mail';
+
+  /// 卡片上显示的形式：去掉协议前缀（`github.com/...` 比带协议的短一行，
+  /// 阅读区最窄只有 420 宽，省下的每一像素都算数）。
+  static String get displayUrl => repoUrl.replaceFirst('https://', '');
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Center(
+      // 窗口很矮时（笔记本竖屏分屏）整块要能滚，而不是 `RenderFlex overflow`。
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // 大号 👍。用 emoji 而不是 `Icons.thumb_up`：需求要的就是这个
+              // 字符本身的表情包质感，图标字体里那颗拇指太「系统控件」了。
+              // `height: 1` 是为了不让字体自带的行高把整块往下顶一截。
+              const Text('👍', style: TextStyle(fontSize: 64, height: 1)),
+              const SizedBox(height: 16),
+              Text(
+                AppLocalizations.of(context).noSelectionPraise,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: scheme.onSurface,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _GithubStarCard(onOpen: () => _openRepo(context)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 打开仓库页。失败只留一条 SnackBar，绝不冒泡。
+  Future<void> _openRepo(BuildContext context) async {
+    // 先取好 messenger / 文案：`await` 之后 `context` 可能已经不在树上，
+    // 而这两样在 await 前拿到才是安全的。
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final l10n = AppLocalizations.of(context);
+    var opened = false;
+    try {
+      opened = await openUrl(Uri.parse(repoUrl));
+    } catch (error) {
+      // 平台实现缺失 / 系统没浏览器都会走到这里。打不开只是打不开，
+      // 不许冒泡把整块空态搞崩。
+      debugPrint('打不开仓库页 $repoUrl：$error');
+    }
+    if (opened || !context.mounted) return;
+    messenger?.showSnackBar(SnackBar(content: Text(l10n.githubOpenFailed)));
+  }
+}
+
+/// 仓库卡片：GitHub 标志 + 地址 + 「点个 Star」按钮。
+///
+/// 整张卡片都可点（地址那一行字太小，只让按钮可点会显得这块东西一半是死的），
+/// 按钮是给「看得见的大目标」准备的，两者走同一个回调。
+class _GithubStarCard extends StatelessWidget {
+  const _GithubStarCard({required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Material(
+      color: scheme.surfaceContainerLow,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.7)),
+      ),
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  _GithubMark(size: 20, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      NoSelectionPane.displayUrl,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: onOpen,
+                icon: const Icon(Icons.star_rounded, size: 18),
+                label: Text(AppLocalizations.of(context).starOnGithub),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// GitHub 官方 Mark（octicon `mark-github` 栅格化的 256px 图）。
+///
+/// 素材本身是**黑色**透明底：浅色主题直接贴没问题，深色主题下就掉进背景里
+/// 了。所以统一用 `srcIn` 把整张图染成调用方给的主题色 —— 一张素材，两套
+/// 主题都对，不需要另存一份白色版。
+class _GithubMark extends StatelessWidget {
+  const _GithubMark({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColorFiltered(
+      colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+      child: Image.asset(
+        'assets/branding/github-mark.png',
+        width: size,
+        height: size,
+        filterQuality: FilterQuality.medium,
+        excludeFromSemantics: true,
+      ),
+    );
+  }
+}

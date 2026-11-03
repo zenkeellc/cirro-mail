@@ -267,6 +267,9 @@
   "close": "关闭",
   "switchMailbox": "切换邮箱",
   "pickMail": "选择一封邮件",
+  "noSelectionPraise": "对 Cirro 的夸赞，需要大声说出口",
+  "starOnGithub": "去 GitHub 点个 Star",
+  "githubOpenFailed": "打不开 GitHub 页面",
   "syncing": "正在同步",
   "lastSync": "上次同步 {time}",
   "@lastSync": {

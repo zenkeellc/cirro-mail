@@ -1100,6 +1100,24 @@ abstract class AppLocalizations {
   /// **'Pick a mail'**
   String get pickMail;
 
+  /// No description provided for @noSelectionPraise.
+  ///
+  /// In en, this message translates to:
+  /// **'Praise for Cirro is meant to be said out loud.'**
+  String get noSelectionPraise;
+
+  /// No description provided for @starOnGithub.
+  ///
+  /// In en, this message translates to:
+  /// **'Star on GitHub'**
+  String get starOnGithub;
+
+  /// No description provided for @githubOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the GitHub page'**
+  String get githubOpenFailed;
+
   /// No description provided for @syncing.
   ///
   /// In en, this message translates to:

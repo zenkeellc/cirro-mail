@@ -587,6 +587,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pickMail => 'Pick a mail';
 
   @override
+  String get noSelectionPraise =>
+      'Praise for Cirro is meant to be said out loud.';
+
+  @override
+  String get starOnGithub => 'Star on GitHub';
+
+  @override
+  String get githubOpenFailed => 'Couldn\'t open the GitHub page';
+
+  @override
   String get syncing => 'Syncing';
 
   @override

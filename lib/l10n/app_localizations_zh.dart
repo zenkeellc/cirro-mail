@@ -551,6 +551,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pickMail => '选择一封邮件';
 
   @override
+  String get noSelectionPraise => '对 Cirro 的夸赞，需要大声说出口';
+
+  @override
+  String get starOnGithub => '去 GitHub 点个 Star';
+
+  @override
+  String get githubOpenFailed => '打不开 GitHub 页面';
+
+  @override
   String get syncing => '正在同步';
 
   @override

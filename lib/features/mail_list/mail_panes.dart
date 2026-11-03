@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/breakpoints.dart';
 import '../../data/models/mail_ref.dart';
-import '../../l10n/app_localizations.dart';
 import '../../providers/settings_providers.dart';
 import '../mail_detail/mail_detail_screen.dart';
+import 'no_selection_pane.dart';
 
 /// 分栏形态下每栏顶部条的高度。
 ///
@@ -98,7 +98,7 @@ class _MailPanesState extends ConsumerState<MailPanes> {
                 // 哪怕之前开着一封的正文。
                 child: pane ??
                     (selected == null
-                        ? const _NoSelectionPane()
+                        ? const NoSelectionPane()
                         : MailDetailScreen(
                             // 换一封邮件就重挂：既让 `_openOnce` 重新跑
                             // （否则第二封信永远不会被标已读、也不会补拉
@@ -171,37 +171,6 @@ class _PaneResizeHandleState extends State<_PaneResizeHandle> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// 右栏还没有选中任何邮件时的样子。
-///
-/// **不默认选中第一封**：那样冷启动一进页面就等于替用户把最上面那封信
-/// 标成了已读。宁可留一块空的。
-class _NoSelectionPane extends StatelessWidget {
-  const _NoSelectionPane();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(
-            Icons.drafts_outlined,
-            size: 40,
-            color: theme.colorScheme.outline,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            AppLocalizations.of(context).pickMail,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ],
       ),
     );
   }

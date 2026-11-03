@@ -231,9 +231,9 @@ class PendingAttachmentRow extends StatelessWidget {
 
 /// 宽屏右栏还没选中任何一条时的样子。
 ///
-/// 与 `MailPanes._NoSelectionPane` 同一个意思，但**不能复用那个类**：
-/// 它在 `mail_panes.dart` 里是私有的，而且那一个的图标说的是「邮件」，
-/// 这里的语境是「还没有发出去的信」。
+/// 与 `mail_list/no_selection_pane.dart` 里的 `NoSelectionPane` 同一个意思，
+/// 但**不能复用那个类**：那一个是「给项目点 Star」的引导块（👍 + GitHub
+/// 卡片），这里的语境是「还没有发出去的信」，需要的是一句「选择一封邮件」。
 class OutboxNoSelectionPane extends StatelessWidget {
   const OutboxNoSelectionPane({super.key});
 
