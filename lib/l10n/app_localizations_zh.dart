@@ -2021,4 +2021,87 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updateOpenFailed => '打不开下载页';
+
+  @override
+  String externalResourcesBlockedTitle(int count) {
+    return '已拦截 $count 个外部资源';
+  }
+
+  @override
+  String externalResourcesEnabledTitle(int count) {
+    return '已启用 $count 个外部资源';
+  }
+
+  @override
+  String get externalResourcesSubtitle => '外部图片和样式可能让发件人知道你何时、从哪里打开了这封邮件。';
+
+  @override
+  String get externalResourcesProxyHint => '启用后将经隐私代理加载，隐藏你的 IP。';
+
+  @override
+  String externalResourcesDomainCount(int count) {
+    return '$count 个域名';
+  }
+
+  @override
+  String externalResourcesShowList(int count) {
+    return '查看 $count 项';
+  }
+
+  @override
+  String get externalResourcesHideList => '收起';
+
+  @override
+  String get externalResourcesEnableAll => '全部启用';
+
+  @override
+  String get externalResourcesBlockAll => '全部屏蔽';
+
+  @override
+  String get externalResourcesEnable => '启用';
+
+  @override
+  String get externalResourcesBlock => '屏蔽';
+
+  @override
+  String get externalResourcesCannotEnable => '无法启用';
+
+  @override
+  String get externalResourcesStylesheetNote => '渲染器不应用外链样式表';
+
+  @override
+  String get externalResourcesScriptNote => '脚本不会执行';
+
+  @override
+  String get externalResourcesFrameNote => '框架不会渲染';
+
+  @override
+  String get externalResourcesKindImage => '图片';
+
+  @override
+  String get externalResourcesKindCssImage => '背景图';
+
+  @override
+  String get externalResourcesKindStylesheet => '样式表';
+
+  @override
+  String get externalResourcesKindScript => '脚本';
+
+  @override
+  String get externalResourcesKindMedia => '媒体';
+
+  @override
+  String get externalResourcesKindFrame => '框架';
+
+  @override
+  String get externalResourcesKindFont => '字体';
+
+  @override
+  String get externalResourcesImageBlocked => '外部图片已拦截';
+
+  @override
+  String get externalResourcesTapToLoad => '点按加载';
+
+  @override
+  String get externalResourcesViaProxy => '经代理';
 }

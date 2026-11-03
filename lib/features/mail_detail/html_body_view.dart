@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:fwfh_cached_network_image/fwfh_cached_network_image.dart';
@@ -9,6 +11,8 @@ import 'package:html/parser.dart' as html_parser;
 import '../../core/theme/app_theme.dart';
 import '../../core/util/url_utils.dart';
 import '../compose/html/html_depth_guard.dart';
+import 'external_resource_banner.dart';
+import 'external_resources.dart';
 
 /// `package:html` 的 DOM 类型全部走 `dom` 前缀。
 ///
@@ -19,7 +23,7 @@ import 'package:html/dom.dart' as dom;
 
 /// 邮件正文渲染。
 ///
-/// 做三件事，每件都对应 worker 的一个已知行为：
+/// 做四件事，每件都对应 worker / 安全边界的一个已知行为：
 /// 1. **替换 `{{domain}}`**：`email.content` 里内嵌图的地址是**字面量占位符**
 ///    （worker 的 `emailService.imgReplace` 写进去的），必须在这里换成
 ///    OSS 前缀。**只替换这一份渲染用的副本，绝不写回本地缓存的 `content`** ——
@@ -32,6 +36,12 @@ import 'package:html/dom.dart' as dom;
 ///    `customStylesBuilder` 补回去，并尽量把 `<body style="...">` 里能被支持的
 ///    几项（字号 / 行高 / 颜色）提到外层 —— 与 Web 端「把 body 的 style 注入
 ///    到容器」的做法对齐。
+///
+/// 4. **外联资源默认拦截**：正文里的外链图片 / 背景图 / 样式表 / 脚本在渲染
+///    前扫描出来（[scanExternalResources]），默认一律不加载；顶部
+///    [ExternalResourceBanner] 列出域名与 URL，可逐项或全部启用。加载策略是
+///    **默认拒绝**：拦截不依赖扫描是否完整。Pro 的代理改写通过扩展接缝
+///    [AppExtension.rewriteExternalResourceUrl] 注入，核心不认识具体实现。
 ///
 /// 已知的保真度上限（见计划的「风险 2」）：媒体查询、grid、`@font-face`
 /// 一律不支持，复杂营销邮件会比 Web 端差。详情页的「用浏览器打开」是退路。
@@ -68,6 +78,21 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
   late String _prepared;
   EmailBodyStyle _bodyStyle = const EmailBodyStyle();
 
+  /// 净化前扫出来的外联资源，顺序即正文首次出现顺序。
+  ExternalResourceScan _scan = ExternalResourceScan.empty;
+
+  /// 用户显式启用的外联 URL（规范化后）。只存这一封邮件的决定。
+  final Set<String> _enabled = <String>{};
+
+  /// 用户显式屏蔽的 URL —— 只对「自动加载」模式有意义。
+  final Set<String> _blockedUrls = <String>{};
+
+  /// 「全部屏蔽」：优先于自动加载，直到用户重新启用。
+  bool _blockAll = false;
+
+  /// 重建正文用。启用/屏蔽后 `HtmlWidget` 换 key，让 fwfh 重新解析。
+  int _revision = 0;
+
   @override
   void initState() {
     super.initState();
@@ -86,9 +111,59 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
   void _prepare() {
     final substituted =
         UrlUtils.substituteDomainToken(widget.html, widget.ossBase);
+    // 扫描必须在净化之前：`sanitizeEmailHtml` 会把 `<script>` /
+    // `<link rel=stylesheet>` 删掉，之后就看不到它们了。
+    _scan = scanExternalResources(substituted, ossBase: widget.ossBase);
     final parsed = sanitizeEmailHtml(substituted);
     _prepared = parsed.html;
     _bodyStyle = parsed.bodyStyle;
+
+    // 换了一封邮件（或 ossBase 变了）就回到默认拦截。
+    _enabled.clear();
+    _blockedUrls.clear();
+    _blockAll = false;
+    _revision++;
+  }
+
+  String _normalizeUrl(String url) =>
+      ExternalResourcePolicy(ossBase: widget.ossBase).normalize(url);
+
+  void _enable(String url) {
+    setState(() {
+      final key = _normalizeUrl(url);
+      _enabled.add(key);
+      _blockedUrls.remove(key);
+      _revision++;
+    });
+  }
+
+  void _block(String url) {
+    setState(() {
+      final key = _normalizeUrl(url);
+      _blockedUrls.add(key);
+      _enabled.remove(key);
+      _revision++;
+    });
+  }
+
+  void _enableAll() {
+    setState(() {
+      _blockAll = false;
+      _blockedUrls.clear();
+      for (final resource in _scan.loadable) {
+        _enabled.add(resource.url);
+      }
+      _revision++;
+    });
+  }
+
+  void _blockAllResources() {
+    setState(() {
+      _enabled.clear();
+      _blockedUrls.clear();
+      _blockAll = true;
+      _revision++;
+    });
   }
 
   @override
@@ -113,23 +188,58 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
       );
     }
 
-    return HtmlWidget(
+    final registry = AppExtensionRegistry.instance;
+    final policy = ExternalResourcePolicy(
+      ossBase: widget.ossBase,
+      autoLoad: registry.autoLoadExternalResources,
+      rewriteUrl: registry.rewriteExternalResourceUrl,
+      enabled: _enabled,
+      blocked: _blockedUrls,
+      blockAll: _blockAll,
+    );
+
+    final body = HtmlWidget(
       html,
+      // 启用/屏蔽之后必须让正文重新解析：fwfh 的工厂实例在 state 初始化时
+      // 创建一次，`factoryBuilder` 不会在普通 rebuild 里被重新调用。换 key
+      // 是最省事、也最好验证的做法（正文通常远小于 200KB，重解析可接受）。
+      key: ValueKey<String>('$_revision:${policy.autoLoad}'),
       // 让相对地址（老实例里可能存的是 `/attachments/x.png`）能解析。
       baseUrl: Uri.tryParse(widget.ossBase),
       textStyle: textStyle,
-      factoryBuilder: () => _MailWidgetFactory(),
+      factoryBuilder: () => _MailWidgetFactory(policy: policy),
       // 大正文（>10KB）交给 async build，避免一帧里构建上千个 widget 卡住。
       buildAsync: html.length > 20000,
       renderMode: RenderMode.column,
       customStylesBuilder: (element) => _customStyles(element, theme),
-      onTapImage: widget.onTapImage == null
-          ? null
-          : (meta) {
-              final url = meta.sources.isNotEmpty ? meta.sources.first.url : '';
-              if (url.isNotEmpty) widget.onTapImage!(url);
-            },
+      // 被拦截的占位块也要能点：点一下等于「只启用这一张」。
+      onTapImage: (meta) {
+        final url = meta.sources.isNotEmpty ? meta.sources.first.url : '';
+        if (url.isEmpty) return;
+        if (policy.isBlocked(url)) {
+          _enable(url);
+          return;
+        }
+        widget.onTapImage?.call(policy.loadUrl(url));
+      },
       onTapUrl: (url) => _onTapUrl(context, url),
+    );
+
+    if (_scan.isEmpty) return body;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        ExternalResourceBanner(
+          resources: _scan.resources,
+          policy: policy,
+          onEnable: _enable,
+          onBlock: _block,
+          onEnableAll: _enableAll,
+          onBlockAll: _blockAllResources,
+        ),
+        body,
+      ],
     );
   }
 
@@ -222,6 +332,66 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
 /// 另外在这里给 `display:flex` 补一条「能收缩」—— 见 [buildFlex]。
 class _MailWidgetFactory extends WidgetFactory
     with CachedNetworkImageFactory, UrlLauncherFactory {
+  _MailWidgetFactory({required this.policy});
+
+  /// 外联资源加载策略（默认拒绝 + 可选改写）。
+  final ExternalResourcePolicy policy;
+
+  /// 被拦截的 `<img>` 换成占位块；放行且被改写（Pro 代理）时自己建
+  /// `CachedNetworkImage`，避免 mixin 用原始地址直连。
+  @override
+  Widget? buildImageWidget(BuildTree tree, ImageSource src) {
+    final blocked = policy.isBlocked(src.url);
+
+    // 1×1 / 2×2 的追踪像素：拦下之后不占版面，否则页脚会多出一个空框。
+    if (blocked &&
+        src.width != null &&
+        src.height != null &&
+        src.width! <= 2 &&
+        src.height! <= 2) {
+      return const SizedBox.shrink();
+    }
+    if (blocked) {
+      return BlockedImageTile(url: src.url, host: policy.hostOf(src.url));
+    }
+
+    final loadUrl = policy.loadUrl(src.url);
+    if (loadUrl == src.url) return super.buildImageWidget(tree, src);
+
+    return CachedNetworkImage(
+      cacheManager: cacheManager,
+      imageUrl: loadUrl,
+      fit: BoxFit.fill,
+      errorWidget: (context, _, error) =>
+          onErrorBuilder(context, tree, error, src) ?? const SizedBox.shrink(),
+      progressIndicatorBuilder: (context, _, progress) {
+        final total = progress.totalSize;
+        final value =
+            total != null && total > 0 ? progress.downloaded / total : null;
+        return onLoadingBuilder(context, tree, value, src) ??
+            const SizedBox.shrink();
+      },
+    );
+  }
+
+  /// CSS 背景图同样走策略：被拦就不建 provider（不联网），放行则经改写。
+  @override
+  DecorationImage? buildDecorationImage(
+    BuildTree tree,
+    String? url, {
+    AlignmentGeometry alignment = Alignment.topLeft,
+    BoxFit fit = BoxFit.scaleDown,
+    ImageRepeat repeat = ImageRepeat.noRepeat,
+  }) {
+    if (url == null || url.isEmpty || policy.isBlocked(url)) return null;
+    return super.buildDecorationImage(
+      tree,
+      policy.loadUrl(url),
+      alignment: alignment,
+      fit: fit,
+      repeat: repeat,
+    );
+  }
   /// 横向 flex 的每个孩子包一层 `Flexible(fit: loose)`。
   ///
   /// ## 不补这一层会怎样

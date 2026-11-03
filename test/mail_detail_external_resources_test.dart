@@ -1,0 +1,206 @@
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mail_app/features/mail_detail/external_resource_banner.dart';
+import 'package:mail_app/features/mail_detail/html_body_view.dart';
+import 'package:mail_app/l10n/app_localizations.dart';
+
+const _oss = 'https://mail.example.com/api/oss/';
+
+/// 只实现「外联资源策略」的假扩展，用来验接缝真的接到了渲染层。
+class _FakeExt extends AppExtension {
+  _FakeExt({this.autoLoad = false, this.rewrite});
+
+  final bool autoLoad;
+  final String? Function(String url)? rewrite;
+
+  @override
+  String get id => 'test.external';
+
+  @override
+  bool get autoLoadExternalResources => autoLoad;
+
+  @override
+  String? rewriteExternalResourceUrl(String url) => rewrite?.call(url);
+}
+
+/// 网络图一旦真的建出来，`pumpAndSettle` 会挂住：`cached_network_image` 走
+/// `flutter_cache_manager` → `path_provider`，widget 测试里那个 future 永远不
+/// 完成（与附件缓存测试里踩到的是同一个坑）。所以凡是会建出网络图的地方都用
+/// 固定帧数 `pump`，不用 settle。
+Future<void> pumpFrame(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
+}
+
+Future<void> pumpBody(
+  WidgetTester tester,
+  String html, {
+  String ossBase = _oss,
+  bool settle = true,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: const Locale('zh'),
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: HtmlBodyView(html: html, ossBase: ossBase, shrinkWrap: true),
+        ),
+      ),
+    ),
+  );
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await pumpFrame(tester);
+  }
+}
+
+void main() {
+  setUp(AppExtensionRegistry.instance.reset);
+  tearDown(AppExtensionRegistry.instance.reset);
+
+  testWidgets('外联图片默认拦截：占位块 + Banner 列出域名，正文里没有网络图', (tester) async {
+    await pumpBody(
+      tester,
+      '<p>hi</p><img src="https://tracker.example.com/p.gif" alt="像素" '
+          'width="200" height="100">',
+    );
+
+    expect(find.byType(BlockedImageTile), findsOneWidget);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(find.textContaining('已拦截 1 个外部资源'), findsOneWidget);
+    expect(find.textContaining('tracker.example.com'), findsOneWidget);
+
+    // 展开后能看到完整 URL 与单项启用按钮。
+    await tester.tap(find.textContaining('查看 1 项'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('https://tracker.example.com/p.gif'),
+      findsOneWidget,
+    );
+    expect(find.text('启用'), findsOneWidget);
+  });
+
+  testWidgets('点占位块等于只启用这一张，Banner 状态跟着变', (tester) async {
+    await pumpBody(
+      tester,
+      '<img src="https://a.example.com/x.png" width="200" height="100">',
+    );
+
+    await tester.tap(find.byType(BlockedImageTile));
+    await pumpFrame(tester);
+
+    expect(find.byType(BlockedImageTile), findsNothing);
+    expect(find.byType(CachedNetworkImage), findsOneWidget);
+    expect(find.textContaining('已启用 1 个外部资源'), findsOneWidget);
+  });
+
+  testWidgets('全部启用 / 全部屏蔽', (tester) async {
+    await pumpBody(
+      tester,
+      '<img src="https://a.example.com/x.png" width="200" height="100">'
+          '<img src="https://b.example.com/y.png" width="200" height="100">',
+    );
+    expect(find.textContaining('已拦截 2 个外部资源'), findsOneWidget);
+
+    await tester.tap(find.text('全部启用'));
+    await pumpFrame(tester);
+    expect(find.byType(CachedNetworkImage), findsNWidgets(2));
+    expect(find.textContaining('已启用 2 个外部资源'), findsOneWidget);
+
+    await tester.tap(find.text('全部屏蔽'));
+    await pumpFrame(tester);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(find.byType(BlockedImageTile), findsNWidgets(2));
+  });
+
+  testWidgets('1×1 追踪像素被拦但不占版面', (tester) async {
+    await pumpBody(
+      tester,
+      '<p>hi</p><img src="https://tracker.example.com/p.gif" width="1" height="1">',
+    );
+
+    // Banner 里照旧列出；正文里不画占位块（否则页脚会多一个空框）。
+    expect(find.textContaining('已拦截 1 个外部资源'), findsOneWidget);
+    expect(find.byType(BlockedImageTile), findsNothing);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+  });
+
+  testWidgets('样式表与脚本只列出，标「无法启用」且没有启用按钮', (tester) async {
+    await pumpBody(
+      tester,
+      '<link rel="stylesheet" href="https://css.example.com/a.css">'
+          '<script src="https://js.example.com/a.js"></script><p>hi</p>',
+    );
+
+    expect(find.textContaining('已拦截 2 个外部资源'), findsOneWidget);
+    await tester.tap(find.textContaining('查看 2 项'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('无法启用'), findsNWidgets(2));
+    expect(find.text('启用'), findsNothing);
+    expect(find.textContaining('渲染器不应用外链样式表'), findsOneWidget);
+    expect(find.textContaining('脚本不会执行'), findsOneWidget);
+  });
+
+  testWidgets('自家 OSS 图片不拦截、不出 Banner', (tester) async {
+    await pumpBody(
+      tester,
+      '<img src="https://mail.example.com/api/oss/a.png" width="200" height="100">',
+      settle: false,
+    );
+
+    expect(find.byType(BlockedImageTile), findsNothing);
+    expect(find.textContaining('已拦截'), findsNothing);
+    expect(find.byType(CachedNetworkImage), findsOneWidget);
+  });
+
+  testWidgets('Pro 接缝：启用后自动经 rewrite 地址加载，并标「经代理」', (tester) async {
+    AppExtensionRegistry.instance.registerAll(<AppExtension>[
+      _FakeExt(rewrite: (url) => 'https://proxy.example/?$url'),
+    ]);
+    await pumpBody(
+      tester,
+      '<img src="https://a.example.com/x.png" width="200" height="100">',
+    );
+
+    await tester.tap(find.text('全部启用'));
+    await pumpFrame(tester);
+
+    final image = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(image.imageUrl, 'https://proxy.example/?https://a.example.com/x.png');
+
+    await tester.tap(find.textContaining('查看 1 项'));
+    await pumpFrame(tester);
+    expect(find.text('经代理'), findsOneWidget);
+  });
+
+  testWidgets('Pro 自动加载：默认就放行，全部屏蔽能压回去', (tester) async {
+    AppExtensionRegistry.instance.registerAll(<AppExtension>[
+      _FakeExt(
+        autoLoad: true,
+        rewrite: (url) => 'https://proxy.example/?$url',
+      ),
+    ]);
+    await pumpBody(
+      tester,
+      '<img src="https://a.example.com/x.png" width="200" height="100">',
+      settle: false,
+    );
+
+    expect(find.byType(BlockedImageTile), findsNothing);
+    expect(find.byType(CachedNetworkImage), findsOneWidget);
+    expect(find.textContaining('已启用 1 个外部资源'), findsOneWidget);
+
+    await tester.tap(find.text('全部屏蔽'));
+    await pumpFrame(tester);
+    expect(find.byType(BlockedImageTile), findsOneWidget);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+  });
+}

@@ -3727,6 +3727,156 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not open the download page'**
   String get updateOpenFailed;
+
+  /// No description provided for @externalResourcesBlockedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Blocked {count} external resources'**
+  String externalResourcesBlockedTitle(int count);
+
+  /// No description provided for @externalResourcesEnabledTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Loaded {count} external resources'**
+  String externalResourcesEnabledTitle(int count);
+
+  /// No description provided for @externalResourcesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote images and styles can tell the sender when and where you opened this email.'**
+  String get externalResourcesSubtitle;
+
+  /// No description provided for @externalResourcesProxyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading will hide your IP through the privacy proxy.'**
+  String get externalResourcesProxyHint;
+
+  /// No description provided for @externalResourcesDomainCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} domains'**
+  String externalResourcesDomainCount(int count);
+
+  /// No description provided for @externalResourcesShowList.
+  ///
+  /// In en, this message translates to:
+  /// **'View {count}'**
+  String externalResourcesShowList(int count);
+
+  /// No description provided for @externalResourcesHideList.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide'**
+  String get externalResourcesHideList;
+
+  /// No description provided for @externalResourcesEnableAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Load all'**
+  String get externalResourcesEnableAll;
+
+  /// No description provided for @externalResourcesBlockAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Block all'**
+  String get externalResourcesBlockAll;
+
+  /// No description provided for @externalResourcesEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Load'**
+  String get externalResourcesEnable;
+
+  /// No description provided for @externalResourcesBlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Block'**
+  String get externalResourcesBlock;
+
+  /// No description provided for @externalResourcesCannotEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available'**
+  String get externalResourcesCannotEnable;
+
+  /// No description provided for @externalResourcesStylesheetNote.
+  ///
+  /// In en, this message translates to:
+  /// **'External stylesheets are not applied by the renderer'**
+  String get externalResourcesStylesheetNote;
+
+  /// No description provided for @externalResourcesScriptNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Scripts are never executed'**
+  String get externalResourcesScriptNote;
+
+  /// No description provided for @externalResourcesFrameNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Frames are never rendered'**
+  String get externalResourcesFrameNote;
+
+  /// No description provided for @externalResourcesKindImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get externalResourcesKindImage;
+
+  /// No description provided for @externalResourcesKindCssImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Background'**
+  String get externalResourcesKindCssImage;
+
+  /// No description provided for @externalResourcesKindStylesheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Stylesheet'**
+  String get externalResourcesKindStylesheet;
+
+  /// No description provided for @externalResourcesKindScript.
+  ///
+  /// In en, this message translates to:
+  /// **'Script'**
+  String get externalResourcesKindScript;
+
+  /// No description provided for @externalResourcesKindMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'Media'**
+  String get externalResourcesKindMedia;
+
+  /// No description provided for @externalResourcesKindFrame.
+  ///
+  /// In en, this message translates to:
+  /// **'Frame'**
+  String get externalResourcesKindFrame;
+
+  /// No description provided for @externalResourcesKindFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Font'**
+  String get externalResourcesKindFont;
+
+  /// No description provided for @externalResourcesImageBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote image blocked'**
+  String get externalResourcesImageBlocked;
+
+  /// No description provided for @externalResourcesTapToLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to load'**
+  String get externalResourcesTapToLoad;
+
+  /// No description provided for @externalResourcesViaProxy.
+  ///
+  /// In en, this message translates to:
+  /// **'via proxy'**
+  String get externalResourcesViaProxy;
 }
 
 class _AppLocalizationsDelegate

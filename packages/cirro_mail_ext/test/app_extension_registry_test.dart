@@ -18,6 +18,8 @@ class _FakeExt extends AppExtension {
     this.allow,
     this.prepareFail = false,
     this.onPrepare,
+    this.autoLoad = false,
+    this.rewrite,
   });
 
   @override
@@ -44,6 +46,12 @@ class _FakeExt extends AppExtension {
 
   /// 记录 `prepareNotificationPolicy` 被调用时的顺序号。
   final void Function()? onPrepare;
+
+  /// 是否默认放行外联资源。
+  final bool autoLoad;
+
+  /// 外联资源地址改写。
+  final String? Function(String url)? rewrite;
 
   @override
   List<Widget> aboutExtras(BuildContext context) =>
@@ -95,6 +103,12 @@ class _FakeExt extends AppExtension {
   @override
   bool allowsNotification(NotificationCandidate candidate) =>
       allow?.call(candidate) ?? true;
+
+  @override
+  bool get autoLoadExternalResources => autoLoad;
+
+  @override
+  String? rewriteExternalResourceUrl(String url) => rewrite?.call(url);
 }
 
 /// 一个只记「谁被挂上来了」的假 [MailStore]。
@@ -384,6 +398,50 @@ void main() {
       // 测试框架在 tearDown 时抱怨。
       AppExtensionRegistry.instance.bootstrapAll();
       gate.complete();
+    });
+  });
+
+  group('外联资源策略', () {
+    test('空注册表：默认拦截且不改写（公开版行为）', () {
+      expect(AppExtensionRegistry.instance.autoLoadExternalResources, isFalse);
+      expect(
+        AppExtensionRegistry.instance
+            .rewriteExternalResourceUrl('https://cdn.example.com/a.png'),
+        isNull,
+      );
+    });
+
+    test('autoLoad 是 OR：任一扩展说放行就放行', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a'),
+        _FakeExt('b', autoLoad: true),
+      ]);
+      expect(AppExtensionRegistry.instance.autoLoadExternalResources, isTrue);
+    });
+
+    test('改写按注册顺序取第一个非 null，后者不覆盖前者', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a'),
+        _FakeExt('b', rewrite: (url) => 'https://b.example/?$url'),
+        _FakeExt('c', rewrite: (url) => 'https://c.example/?$url'),
+      ]);
+      expect(
+        AppExtensionRegistry.instance
+            .rewriteExternalResourceUrl('https://cdn.example.com/a.png'),
+        'https://b.example/?https://cdn.example.com/a.png',
+      );
+    });
+
+    test('不 return 的扩展不会把前面的改写结果盖成 null', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a', rewrite: (url) => 'https://proxy.example/?$url'),
+        _FakeExt('b'),
+      ]);
+      expect(
+        AppExtensionRegistry.instance
+            .rewriteExternalResourceUrl('https://cdn.example.com/a.png'),
+        'https://proxy.example/?https://cdn.example.com/a.png',
+      );
     });
   });
 }

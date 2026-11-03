@@ -117,6 +117,26 @@ class AppExtensionRegistry {
         for (final ext in _extensions) ...ext.settingsSections(context),
       ];
 
+  // ---- 邮件正文外联资源 ----
+
+  /// 是否有扩展愿意默认放行外联资源（见 [AppExtension.autoLoadExternalResources]）。
+  ///
+  /// 多个扩展之间是 **OR**：任何一个说「我来接管」，核心就按放行处理；用户
+  /// 在 Banner 里的逐项/全部屏蔽仍然优先。
+  bool get autoLoadExternalResources =>
+      _extensions.any((e) => e.autoLoadExternalResources);
+
+  /// 外联资源的地址改写（代理/CDN），按注册顺序取第一个非 null。
+  ///
+  /// 只应由「外联且已放行」的资源调用 —— 自家 OSS 与 `data:` 不该进代理。
+  String? rewriteExternalResourceUrl(String url) {
+    for (final ext in _extensions) {
+      final rewritten = ext.rewriteExternalResourceUrl(url);
+      if (rewritten != null) return rewritten;
+    }
+    return null;
+  }
+
   // ---- 启动 / 通知 ----
 
   /// 启动钩子。逐个调用，**不等待任何一个**（见 [AppExtension.onBootstrap]）。

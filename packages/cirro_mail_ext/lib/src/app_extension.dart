@@ -25,6 +25,7 @@ import 'settings_section.dart';
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
 /// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
+/// | [autoLoadExternalResources] / [rewriteExternalResourceUrl] | `external_resource_banner.dart#_HtmlBodyViewState` / `html_body_view.dart`（读信页外联资源） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
 /// | [allowsNotification] | `NotificationGate.select` / `countNotifiable` |
 /// | [onBootstrap] | `main.dart`，`runApp` 之前，**不 await** |
@@ -171,6 +172,27 @@ abstract class AppExtension {
   ///
   /// 空注册表时恒为 `true`，也就是公开版的既有行为。
   bool allowsNotification(NotificationCandidate candidate) => true;
+
+  /// 默认是否放行邮件正文里的**外联资源**（外链图片、背景图、媒体）。
+  ///
+  /// 核心的默认行为是**一律拦截**：外联图片可以当追踪像素用，发件人能据此
+  /// 知道你什么时候、从哪里打开了邮件。扩展返回 `true` 表示「我替用户接管
+  /// 这件事」—— 典型做法是配合 [rewriteExternalResourceUrl] 走隐私代理，让
+  /// 资源能显示、又拿不到用户的真实 IP。
+  ///
+  /// 注意语义仍然是「默认放行、但用户可以在 Banner 里逐项/全部屏蔽」：核心
+  /// 的 UI 会把每一项都列出来，用户按下的屏蔽优先于这个默认值。
+  ///
+  /// 空注册表时恒为 `false` —— 公开版保持默认拦截。
+  bool get autoLoadExternalResources => false;
+
+  /// 把外联资源地址改写成实际要加载的地址（云端代理、CDN……）。
+  ///
+  /// 只在**外联资源确实要加载时**调用（自家 OSS 的图不会走到这里），入参是
+  /// 规范化后的绝对 URL。返回 `null` 表示不改写，按原地址加载。
+  ///
+  /// 多个扩展都返回非 null 时，注册表按注册顺序取**第一个**。
+  String? rewriteExternalResourceUrl(String url) => null;
 
   /// 启动时调一次。核心**不 await**：扩展的初始化不该拖慢首帧；真需要等待的
   /// 扩展自己在内部排队。

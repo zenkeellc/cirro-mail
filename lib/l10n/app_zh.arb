@@ -1474,5 +1474,58 @@
   "updateLater": "稍后",
   "updateAutoCheck": "自动检查更新",
   "updateView": "查看",
-  "updateOpenFailed": "打不开下载页"
+  "updateOpenFailed": "打不开下载页",
+  "externalResourcesBlockedTitle": "已拦截 {count} 个外部资源",
+  "externalResourcesEnabledTitle": "已启用 {count} 个外部资源",
+  "externalResourcesSubtitle": "外部图片和样式可能让发件人知道你何时、从哪里打开了这封邮件。",
+  "externalResourcesProxyHint": "启用后将经隐私代理加载，隐藏你的 IP。",
+  "externalResourcesDomainCount": "{count} 个域名",
+  "externalResourcesShowList": "查看 {count} 项",
+  "externalResourcesHideList": "收起",
+  "externalResourcesEnableAll": "全部启用",
+  "externalResourcesBlockAll": "全部屏蔽",
+  "externalResourcesEnable": "启用",
+  "externalResourcesBlock": "屏蔽",
+  "externalResourcesCannotEnable": "无法启用",
+  "externalResourcesStylesheetNote": "渲染器不应用外链样式表",
+  "externalResourcesScriptNote": "脚本不会执行",
+  "externalResourcesFrameNote": "框架不会渲染",
+  "externalResourcesKindImage": "图片",
+  "externalResourcesKindCssImage": "背景图",
+  "externalResourcesKindStylesheet": "样式表",
+  "externalResourcesKindScript": "脚本",
+  "externalResourcesKindMedia": "媒体",
+  "externalResourcesKindFrame": "框架",
+  "externalResourcesKindFont": "字体",
+  "externalResourcesImageBlocked": "外部图片已拦截",
+  "externalResourcesTapToLoad": "点按加载",
+  "externalResourcesViaProxy": "经代理",
+  "@externalResourcesBlockedTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesEnabledTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesDomainCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesShowList": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

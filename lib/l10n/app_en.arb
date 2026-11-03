@@ -1511,5 +1511,58 @@
   "updateLater": "Later",
   "updateAutoCheck": "Check for updates automatically",
   "updateView": "View",
-  "updateOpenFailed": "Could not open the download page"
+  "updateOpenFailed": "Could not open the download page",
+  "externalResourcesBlockedTitle": "Blocked {count} external resources",
+  "externalResourcesEnabledTitle": "Loaded {count} external resources",
+  "externalResourcesSubtitle": "Remote images and styles can tell the sender when and where you opened this email.",
+  "externalResourcesProxyHint": "Loading will hide your IP through the privacy proxy.",
+  "externalResourcesDomainCount": "{count} domains",
+  "externalResourcesShowList": "View {count}",
+  "externalResourcesHideList": "Hide",
+  "externalResourcesEnableAll": "Load all",
+  "externalResourcesBlockAll": "Block all",
+  "externalResourcesEnable": "Load",
+  "externalResourcesBlock": "Block",
+  "externalResourcesCannotEnable": "Not available",
+  "externalResourcesStylesheetNote": "External stylesheets are not applied by the renderer",
+  "externalResourcesScriptNote": "Scripts are never executed",
+  "externalResourcesFrameNote": "Frames are never rendered",
+  "externalResourcesKindImage": "Image",
+  "externalResourcesKindCssImage": "Background",
+  "externalResourcesKindStylesheet": "Stylesheet",
+  "externalResourcesKindScript": "Script",
+  "externalResourcesKindMedia": "Media",
+  "externalResourcesKindFrame": "Frame",
+  "externalResourcesKindFont": "Font",
+  "externalResourcesImageBlocked": "Remote image blocked",
+  "externalResourcesTapToLoad": "Tap to load",
+  "externalResourcesViaProxy": "via proxy",
+  "@externalResourcesBlockedTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesEnabledTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesDomainCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesShowList": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

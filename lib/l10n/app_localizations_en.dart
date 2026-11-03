@@ -2136,4 +2136,90 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updateOpenFailed => 'Could not open the download page';
+
+  @override
+  String externalResourcesBlockedTitle(int count) {
+    return 'Blocked $count external resources';
+  }
+
+  @override
+  String externalResourcesEnabledTitle(int count) {
+    return 'Loaded $count external resources';
+  }
+
+  @override
+  String get externalResourcesSubtitle =>
+      'Remote images and styles can tell the sender when and where you opened this email.';
+
+  @override
+  String get externalResourcesProxyHint =>
+      'Loading will hide your IP through the privacy proxy.';
+
+  @override
+  String externalResourcesDomainCount(int count) {
+    return '$count domains';
+  }
+
+  @override
+  String externalResourcesShowList(int count) {
+    return 'View $count';
+  }
+
+  @override
+  String get externalResourcesHideList => 'Hide';
+
+  @override
+  String get externalResourcesEnableAll => 'Load all';
+
+  @override
+  String get externalResourcesBlockAll => 'Block all';
+
+  @override
+  String get externalResourcesEnable => 'Load';
+
+  @override
+  String get externalResourcesBlock => 'Block';
+
+  @override
+  String get externalResourcesCannotEnable => 'Not available';
+
+  @override
+  String get externalResourcesStylesheetNote =>
+      'External stylesheets are not applied by the renderer';
+
+  @override
+  String get externalResourcesScriptNote => 'Scripts are never executed';
+
+  @override
+  String get externalResourcesFrameNote => 'Frames are never rendered';
+
+  @override
+  String get externalResourcesKindImage => 'Image';
+
+  @override
+  String get externalResourcesKindCssImage => 'Background';
+
+  @override
+  String get externalResourcesKindStylesheet => 'Stylesheet';
+
+  @override
+  String get externalResourcesKindScript => 'Script';
+
+  @override
+  String get externalResourcesKindMedia => 'Media';
+
+  @override
+  String get externalResourcesKindFrame => 'Frame';
+
+  @override
+  String get externalResourcesKindFont => 'Font';
+
+  @override
+  String get externalResourcesImageBlocked => 'Remote image blocked';
+
+  @override
+  String get externalResourcesTapToLoad => 'Tap to load';
+
+  @override
+  String get externalResourcesViaProxy => 'via proxy';
 }
