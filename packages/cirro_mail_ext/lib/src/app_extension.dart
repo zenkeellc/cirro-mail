@@ -21,7 +21,7 @@ import 'settings_section.dart';
 /// |---|---|
 /// | [routes] | `router.dart` 根部，核心路由**之后** |
 /// | [mailBranchRoutes] | `router.dart` 邮件那一支的末尾（壳**里面**） |
-/// | [appDisplayName] | `AppBrand`（侧栏左上角、窗口标题、关于页、通知渠道名） |
+/// | [appDisplayName] | `AppBrand`（侧栏标题 / 原生窗口标题 / 关于页 / 任务切换器 / 推送的实例名默认值） |
 /// | [aboutExtras] | `about_section.dart` 的「关于」页 |
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
@@ -39,7 +39,8 @@ abstract class AppExtension {
   /// 本扩展代表的**产品名**（整串，例如 `Cirro Mail Pro`）。
   ///
   /// 核心在「App 自己叫什么」的每一处先问它：侧栏左上角的标题、桌面窗口
-  /// 标题、关于页那一行、Android 通知渠道名。返回 `null` / 空白 = 不参与
+  /// 标题、关于页那一行、任务切换器（`MaterialApp.title`）、后台推送里的
+  /// 实例名默认值。返回 `null` / 空白 = 不参与
   /// 命名，回落到核心自己的默认名（ARB 的 `appTitle`、`AppDefaults.appDisplayName`）
   /// —— 空注册表（公开版）逐字不变。
   ///
