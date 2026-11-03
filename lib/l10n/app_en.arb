@@ -1564,5 +1564,31 @@
         "type": "int"
       }
     }
+  },
+  "trackingPixelWarningTitle": "Tracking pixels detected ({count})",
+  "trackingPixelWarningBody": "This email uses 1×1 remote images that are usually invisible. They record when, where, and on what device you opened it.",
+  "trackingPixelWarningDomains": "From: {domains}",
+  "trackingPixelWarningNote": "These images are blocked by default. Any load — manual or automatic — lets the sender confirm you opened this email.",
+  "trackingPixelWarningLoadedNote": "{count} of them are currently loaded; the sender may already know this email was opened.",
+  "@trackingPixelWarningTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@trackingPixelWarningDomains": {
+    "placeholders": {
+      "domains": {
+        "type": "String"
+      }
+    }
+  },
+  "@trackingPixelWarningLoadedNote": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

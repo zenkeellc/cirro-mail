@@ -449,3 +449,108 @@ class BlockedImageTile extends StatelessWidget {
     );
   }
 }
+
+/// 「检测到追踪像素」额外警告条。
+///
+/// 这是**独立于** [ExternalResourceBanner] 的第二张卡，因为它说的是另一件
+/// 事：资源 Banner 讲「有东西要被加载」，这张卡讲「发件人在试图确认你打开了
+/// 邮件」。即使像素已被默认拦截，这个意图本身也值得告诉用户 —— 用户据此
+/// 才会对「要不要点启用」做出知情决定。
+///
+/// 只统计 `ExternalResource.trackingPixel` 为 true 的外链 `<img>`（宽高都
+/// 读得到且 ≤ 2，见扫描器里的说明）。
+class TrackingPixelWarning extends StatelessWidget {
+  const TrackingPixelWarning({
+    super.key,
+    required this.pixels,
+    required this.policy,
+  });
+
+  final List<ExternalResource> pixels;
+  final ExternalResourcePolicy policy;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final domains = pixels.map((p) => p.host).toSet().toList()..sort();
+    final separator = Localizations.localeOf(context).languageCode == 'zh'
+        ? '、'
+        : ', ';
+    final shown = domains.take(3).join(separator);
+    final more = domains.length > 3 ? ' +${domains.length - 3}' : '';
+    final loaded = pixels.where((p) => policy.isLoaded(p.url)).length;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: scheme.errorContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(
+                Icons.visibility_off_outlined,
+                size: 18,
+                color: scheme.onErrorContainer,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      l10n.trackingPixelWarningTitle(pixels.length),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onErrorContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      l10n.trackingPixelWarningBody,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: scheme.onErrorContainer),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      l10n.trackingPixelWarningDomains('$shown$more'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onErrorContainer,
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (loaded > 0) ...<Widget>[
+                      const SizedBox(height: 3),
+                      Text(
+                        l10n.trackingPixelWarningLoadedNote(loaded),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onErrorContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 3),
+                    Text(
+                      l10n.trackingPixelWarningNote,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onErrorContainer.withValues(alpha: 0.85),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

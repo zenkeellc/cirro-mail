@@ -203,4 +203,64 @@ void main() {
     expect(find.byType(BlockedImageTile), findsOneWidget);
     expect(find.byType(CachedNetworkImage), findsNothing);
   });
+
+  testWidgets('1×1 追踪像素：额外一条安全提醒，并说明原因', (tester) async {
+    await pumpBody(
+      tester,
+      '<p>hi</p>'
+          '<img src="https://tracker.example.com/p.gif" width="1" height="1">'
+          '<img src="https://cdn.example.com/a.png" width="600" height="300">',
+    );
+
+    // 资源 Banner 照旧；额外多一张追踪像素警告卡，讲清「为什么会这样」。
+    expect(find.textContaining('已拦截 2 个外部资源'), findsOneWidget);
+    expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
+    expect(
+      find.textContaining('记录你何时、从哪里、用什么设备打开了它'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('来源：tracker.example.com'), findsOneWidget);
+    expect(find.textContaining('这些图片默认已被拦截'), findsOneWidget);
+  });
+
+  testWidgets('没有 1×1 外链图时不出现追踪像素警告', (tester) async {
+    await pumpBody(
+      tester,
+      '<img src="https://cdn.example.com/a.png" width="600" height="300">',
+    );
+
+    expect(find.textContaining('追踪像素'), findsNothing);
+    expect(find.textContaining('已拦截 1 个外部资源'), findsOneWidget);
+  });
+
+  testWidgets('启用追踪像素后，警告里写明「当前已加载」', (tester) async {
+    await pumpBody(
+      tester,
+      '<img src="https://tracker.example.com/p.gif" width="1" height="1">',
+    );
+    expect(find.textContaining('其中 1 个当前已加载'), findsNothing);
+
+    await tester.tap(find.text('全部启用'));
+    await pumpFrame(tester);
+
+    expect(find.textContaining('其中 1 个当前已加载'), findsOneWidget);
+    expect(find.textContaining('发件人可能已经收到打开记录'), findsOneWidget);
+  });
+
+  testWidgets('Pro 自动加载模式下也提醒，并标出已加载数量', (tester) async {
+    AppExtensionRegistry.instance.registerAll(<AppExtension>[
+      _FakeExt(
+        autoLoad: true,
+        rewrite: (url) => 'https://proxy.example/?$url',
+      ),
+    ]);
+    await pumpBody(
+      tester,
+      '<img src="https://tracker.example.com/p.gif" width="1" height="1">',
+      settle: false,
+    );
+
+    expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
+    expect(find.textContaining('其中 1 个当前已加载'), findsOneWidget);
+  });
 }

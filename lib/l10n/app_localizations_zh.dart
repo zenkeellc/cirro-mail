@@ -2104,4 +2104,27 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get externalResourcesViaProxy => '经代理';
+
+  @override
+  String trackingPixelWarningTitle(int count) {
+    return '检测到 $count 个追踪像素';
+  }
+
+  @override
+  String get trackingPixelWarningBody =>
+      '这封邮件用 1×1 的外链图片记录你何时、从哪里、用什么设备打开了它。这类图片通常不可见。';
+
+  @override
+  String trackingPixelWarningDomains(String domains) {
+    return '来源：$domains';
+  }
+
+  @override
+  String get trackingPixelWarningNote =>
+      '这些图片默认已被拦截。任何加载（手动启用或自动加载）都会让发件人确认你打开了这封邮件。';
+
+  @override
+  String trackingPixelWarningLoadedNote(int count) {
+    return '其中 $count 个当前已加载，发件人可能已经收到打开记录。';
+  }
 }

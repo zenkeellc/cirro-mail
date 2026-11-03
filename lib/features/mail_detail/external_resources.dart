@@ -1,3 +1,4 @@
+import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
 import '../compose/html/html_depth_guard.dart';
@@ -47,6 +48,7 @@ class ExternalResource {
     required this.kind,
     this.count = 1,
     this.label,
+    this.trackingPixel = false,
   });
 
   /// 规范化后的绝对地址（http/https，去掉 fragment）。
@@ -63,6 +65,12 @@ class ExternalResource {
   /// `<img alt>` 之类的可读标签，可能为空。
   final String? label;
 
+  /// 是否像追踪像素：外链 `<img>`，且宽高都读得到、都 ≤ 2。
+  ///
+  /// 1×1 的透明图不会显示任何东西，唯一用途就是「邮件被打开时通知发件人」。
+  /// 读不到尺寸的图片不猜（正常小图标不计入），宁可漏报也不误报。
+  final bool trackingPixel;
+
   /// 这一类资源是否有可能被「启用」。
   ///
   /// 样式表 / 脚本 / 框架是**永远不加载**的：渲染器没有 JS 执行环境，
@@ -74,12 +82,14 @@ class ExternalResource {
       kind == ExternalResourceKind.media ||
       kind == ExternalResourceKind.font;
 
-  ExternalResource copyWithCount(int count) => ExternalResource(
+  ExternalResource copyWith({int? count, bool? trackingPixel}) =>
+      ExternalResource(
         url: url,
         host: host,
         kind: kind,
-        count: count,
+        count: count ?? this.count,
         label: label,
+        trackingPixel: trackingPixel ?? this.trackingPixel,
       );
 }
 
@@ -100,6 +110,15 @@ class ExternalResourceScan {
   int get loadableCount => loadable.length;
 
   int get domains => resources.map((r) => r.host).toSet().length;
+
+  /// 疑似追踪像素的外链图片（1×1 / 2×2）。见 [ExternalResource.trackingPixel]。
+  List<ExternalResource> get trackingPixels =>
+      resources.where((r) => r.trackingPixel).toList(growable: false);
+
+  bool get hasTrackingPixels => resources.any((r) => r.trackingPixel);
+
+  int get trackingPixelCount =>
+      resources.where((r) => r.trackingPixel).length;
 }
 
 /// 扫描正文里的外联资源。
@@ -129,7 +148,12 @@ ExternalResourceScan scanExternalResources(
 
   final found = <String, ExternalResource>{};
 
-  void add(String? raw, ExternalResourceKind kind, {String? label}) {
+  void add(
+    String? raw,
+    ExternalResourceKind kind, {
+    String? label,
+    bool trackingPixel = false,
+  }) {
     final resolved = _resolve(raw, base);
     if (resolved == null) return;
     if (ownHost.isNotEmpty && resolved.$2.host.toLowerCase() == ownHost) return;
@@ -137,7 +161,12 @@ ExternalResourceScan scanExternalResources(
     final key = resolved.$1;
     final existing = found[key];
     if (existing != null) {
-      found[key] = existing.copyWithCount(existing.count + 1);
+      // 同一 URL 第二次出现时也把「追踪像素」的信息合进来：先出现的是不带
+      // 尺寸的写法、后面才带 1×1 的情况同样要提醒。
+      found[key] = existing.copyWith(
+        count: existing.count + 1,
+        trackingPixel: existing.trackingPixel || trackingPixel,
+      );
       return;
     }
     found[key] = ExternalResource(
@@ -145,6 +174,7 @@ ExternalResourceScan scanExternalResources(
       host: resolved.$2.host.toLowerCase(),
       kind: kind,
       label: label,
+      trackingPixel: trackingPixel,
     );
   }
 
@@ -165,6 +195,7 @@ ExternalResourceScan scanExternalResources(
           element.attributes['src'],
           ExternalResourceKind.image,
           label: element.attributes['alt'],
+          trackingPixel: _isTrackingPixel(element),
         );
       // `srcset` 不收集：fwfh 根本不读它，不渲染就没有风险。
       case 'link':
@@ -283,6 +314,41 @@ class ExternalResourcePolicy {
 
   final normalized = absolute.removeFragment();
   return (normalized.toString(), normalized);
+}
+
+/// 1×1 / 2×2 的外链图片 —— 典型的追踪像素。
+///
+/// 尺寸来源只认 `width` / `height` 属性与**行内** `style` 里的 px 值；不解析
+/// `<style>` 里的类选择器（那需要真 CSS 引擎，而且追踪像素几乎都写在行内）。
+/// 两个方向都必须读得到才判定，避免把「宽 1px 的装饰线」误当成追踪器。
+bool _isTrackingPixel(dom.Element element) {
+  final width = _dimension(element, 'width');
+  final height = _dimension(element, 'height');
+  return width != null && height != null && width <= 2 && height <= 2;
+}
+
+/// 读一个方向上的尺寸（px）。小数、`px` 后缀都接受；百分比/`auto` 等返回 null。
+double? _dimension(dom.Element element, String name) {
+  final fromAttr = _pxValue(element.attributes[name]);
+  if (fromAttr != null) return fromAttr;
+
+  final style = element.attributes['style'];
+  if (style == null || style.isEmpty) return null;
+  final match = RegExp(
+    '(?:^|;)\\s*${RegExp.escape(name)}\\s*:\\s*([0-9]*\\.?[0-9]+)\\s*(?:px)?\\s*(?=;|!|\$)',
+    caseSensitive: false,
+  ).firstMatch(style);
+  return _pxValue(match?.group(1));
+}
+
+double? _pxValue(String? raw) {
+  if (raw == null) return null;
+  final match = RegExp(
+    r'^\s*([0-9]*\.?[0-9]+)\s*(?:px)?\s*$',
+    caseSensitive: false,
+  ).firstMatch(raw);
+  if (match == null) return null;
+  return double.tryParse(match.group(1)!);
 }
 
 /// 从一段 CSS 文本里抠出 `url(...)` / `@import`。

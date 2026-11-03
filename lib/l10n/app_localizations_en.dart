@@ -2222,4 +2222,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get externalResourcesViaProxy => 'via proxy';
+
+  @override
+  String trackingPixelWarningTitle(int count) {
+    return 'Tracking pixels detected ($count)';
+  }
+
+  @override
+  String get trackingPixelWarningBody =>
+      'This email uses 1×1 remote images that are usually invisible. They record when, where, and on what device you opened it.';
+
+  @override
+  String trackingPixelWarningDomains(String domains) {
+    return 'From: $domains';
+  }
+
+  @override
+  String get trackingPixelWarningNote =>
+      'These images are blocked by default. Any load — manual or automatic — lets the sender confirm you opened this email.';
+
+  @override
+  String trackingPixelWarningLoadedNote(int count) {
+    return '$count of them are currently loaded; the sender may already know this email was opened.';
+  }
 }

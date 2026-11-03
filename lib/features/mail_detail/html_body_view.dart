@@ -230,6 +230,13 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // 追踪像素单独一条警告：它讲的是「发件人在确认你打开了邮件」，
+        // 与「有资源可启用」是两件事。
+        if (_scan.hasTrackingPixels)
+          TrackingPixelWarning(
+            pixels: _scan.trackingPixels,
+            policy: policy,
+          ),
         ExternalResourceBanner(
           resources: _scan.resources,
           policy: policy,

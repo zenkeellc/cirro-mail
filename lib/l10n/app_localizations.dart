@@ -3877,6 +3877,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'via proxy'**
   String get externalResourcesViaProxy;
+
+  /// No description provided for @trackingPixelWarningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tracking pixels detected ({count})'**
+  String trackingPixelWarningTitle(int count);
+
+  /// No description provided for @trackingPixelWarningBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This email uses 1×1 remote images that are usually invisible. They record when, where, and on what device you opened it.'**
+  String get trackingPixelWarningBody;
+
+  /// No description provided for @trackingPixelWarningDomains.
+  ///
+  /// In en, this message translates to:
+  /// **'From: {domains}'**
+  String trackingPixelWarningDomains(String domains);
+
+  /// No description provided for @trackingPixelWarningNote.
+  ///
+  /// In en, this message translates to:
+  /// **'These images are blocked by default. Any load — manual or automatic — lets the sender confirm you opened this email.'**
+  String get trackingPixelWarningNote;
+
+  /// No description provided for @trackingPixelWarningLoadedNote.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of them are currently loaded; the sender may already know this email was opened.'**
+  String trackingPixelWarningLoadedNote(int count);
 }
 
 class _AppLocalizationsDelegate

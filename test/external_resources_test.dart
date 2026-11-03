@@ -210,4 +210,71 @@ void main() {
       expect(p.hostOf(''), '');
     });
   });
+
+  group('追踪像素', () {
+    test('width/height 属性都是 1 的外链图 = 追踪像素', () {
+      final scan = scanExternalResources(
+        '<p>hi</p><img src="https://tracker.example.com/p.gif" '
+        'width="1" height="1">',
+        ossBase: _oss,
+      );
+      expect(scan.resources.single.trackingPixel, isTrue);
+      expect(scan.hasTrackingPixels, isTrue);
+      expect(scan.trackingPixelCount, 1);
+      expect(scan.trackingPixels.single.host, 'tracker.example.com');
+    });
+
+    test('行内 style 写 1×1 也算（带 px / 空格 / 2×2）', () {
+      for (final style in <String>[
+        'width:1px;height:1px',
+        'width: 1px; height: 1px;',
+        'WIDTH:2PX;HEIGHT:2PX',
+      ]) {
+        final scan = scanExternalResources(
+          '<img src="https://tracker.example.com/p.gif" style="$style">',
+          ossBase: _oss,
+        );
+        expect(
+          scan.hasTrackingPixels,
+          isTrue,
+          reason: 'style=$style 应被识别为追踪像素',
+        );
+      }
+    });
+
+    test('正常尺寸 / 只读到一个方向 / 读不到尺寸都不误报', () {
+      for (final html in <String>[
+        '<img src="https://cdn.example.com/a.png" width="600" height="300">',
+        '<img src="https://cdn.example.com/a.png" width="1" height="300">',
+        '<img src="https://cdn.example.com/a.png" width="300">',
+        '<img src="https://cdn.example.com/a.png">',
+        '<img src="https://cdn.example.com/a.png" '
+            'style="width:100%;height:auto">',
+      ]) {
+        final scan = scanExternalResources(html, ossBase: _oss);
+        expect(scan.hasTrackingPixels, isFalse, reason: html);
+      }
+    });
+
+    test('同一 URL 先无尺寸、后 1×1：合并后仍要提醒', () {
+      final scan = scanExternalResources(
+        '<img src="https://tracker.example.com/p.gif">'
+        '<img src="https://tracker.example.com/p.gif" width="1" height="1">',
+        ossBase: _oss,
+      );
+      expect(scan.resources, hasLength(1));
+      expect(scan.resources.single.count, 2);
+      expect(scan.resources.single.trackingPixel, isTrue);
+    });
+
+    test('自家 OSS 的 1×1 不列为外联，也不提醒', () {
+      final scan = scanExternalResources(
+        '<img src="https://mail.example.com/api/oss/p.gif" '
+        'width="1" height="1">',
+        ossBase: _oss,
+      );
+      expect(scan.isEmpty, isTrue);
+      expect(scan.hasTrackingPixels, isFalse);
+    });
+  });
 }
