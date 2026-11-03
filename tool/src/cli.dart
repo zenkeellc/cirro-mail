@@ -44,7 +44,9 @@ const String versionUsage = '''
         json        给脚本解析的 JSON
         build-args  一行 flutter build 参数串
   --build-args        等价于 --format=build-args
-  --channel=<名字>    更新渠道，默认 public（商业版传 pro）
+  --channel=<名字>    更新渠道，默认 public（商业版传 pro）。tag 上的渠道
+                      标记（`v0.1.4-pro.1`）与它一致时会被去掉，版本名就是
+                      `0.1.4`；对不上时保留标记并警告（多半忘了传这个）。
   --repo=<目录>       从哪个检出算版本（默认是本文件所在的检出）。商业检出
                       还没合入本工具时可以指过去借用，版本按那个仓库算。
   -h, --help          显示这段说明
