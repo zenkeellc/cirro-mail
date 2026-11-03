@@ -119,8 +119,9 @@ class OutboxScreen extends ConsumerWidget {
 
     if (panes) {
       // 左栏宽度用**内容区**宽度去夹（`LayoutBuilder` 的 maxWidth），不是窗口
-      // 宽度 —— 这一层外面还有 232px 的一级导航侧栏，拿窗口宽去夹会在刚够
-      // 分栏的尺寸上给出一个挤没阅读区的宽度。与 `MailPanes` 同一个口径。
+      // 宽度 —— 这一层外面还有一级导航侧栏（`Breakpoints.railWidth`，272px），
+      // 拿窗口宽去夹会在刚够分栏的尺寸上给出一个挤没阅读区的宽度。
+      // 与 `MailPanes` 同一个口径。
       return Scaffold(
         body: SafeArea(
           child: LayoutBuilder(

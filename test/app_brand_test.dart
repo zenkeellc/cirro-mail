@@ -40,16 +40,28 @@ import 'package:mail_app/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 一个只声明产品名的假扩展。`name` 为 null / 空白时应当回落到核心默认名。
+///
+/// [withShellAction] 模拟商业版往侧栏标题行加的那颗搜索按钮：标题行的宽度
+/// 预算要连它一起算（见下面「侧栏标题行」那条用例）。
 class _NamedBrand extends AppExtension {
-  const _NamedBrand(this.id, this.name);
+  const _NamedBrand(this.id, this.name, {this.withShellAction = false});
 
   @override
   final String id;
 
   final String? name;
 
+  final bool withShellAction;
+
   @override
   String? get appDisplayName => name;
+
+  @override
+  List<Widget> shellActions(BuildContext context) => withShellAction
+      ? <Widget>[
+          IconButton(onPressed: () {}, icon: const Icon(Icons.search)),
+        ]
+      : const <Widget>[];
 }
 
 void main() {
@@ -224,6 +236,22 @@ void main() {
       await pumpShell(tester);
       expect(find.text('Cirro Mail Pro'), findsOneWidget);
       expect(find.text('Cirro Mail'), findsNothing);
+      await settleAndDispose(tester);
+    });
+
+    testWidgets('商业版多一颗扩展按钮之后，产品名仍然整行显示不被截断',
+        (tester) async {
+      // 回归：侧栏标题行是 `产品名 | 写邮件 | 同步状态 | 扩展按钮`。232 的
+      // 旧宽度只留给产品名 76px，`Cirro Mail Pro`（约 100px）会被 ellipsis
+      // 截成 `Cirro M…` —— 就是用户报的那一幕。这里把商业版那颗搜索按钮也
+      // 挂上，断标题真的拿到了 ≥108px。
+      AppExtensionRegistry.instance.registerAll(const <AppExtension>[
+        _NamedBrand('test.brand.pro', 'Cirro Mail Pro', withShellAction: true),
+      ]);
+      await pumpShell(tester);
+
+      final title = tester.renderObject<RenderBox>(find.text('Cirro Mail Pro'));
+      expect(title.size.width, greaterThanOrEqualTo(108));
       await settleAndDispose(tester);
     });
   });

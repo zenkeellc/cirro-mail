@@ -53,4 +53,27 @@ void main() {
       expect(Breakpoints.panesAt(Breakpoints.compact), isFalse);
     });
   });
+
+  group('一级导航宽度预算', () {
+    test('最窄的分栏窗口仍然放得下三栏（侧栏加宽后只剩几像素余地）', () {
+      // 这条是 railWidth 的上界：1024 - 272 = 752，刚好比
+      // 320 + 6 + 420 = 746 多 6px。侧栏再宽就得连 `medium` 一起改。
+      final content = Breakpoints.medium - Breakpoints.railWidth;
+      final panes = Breakpoints.listMinWidth +
+          Breakpoints.paneHandleWidth +
+          Breakpoints.readerMinWidth;
+      expect(content, greaterThanOrEqualTo(panes));
+      expect(Breakpoints.clampListWidth(9999, content),
+          greaterThanOrEqualTo(Breakpoints.listMinWidth));
+    });
+
+    test('侧栏标题行给产品名留够宽度（Cirro Mail Pro + 三颗图标按钮）', () {
+      // 标题行的固定开支：两侧内边距 24 + 写邮件 48 + 同步状态 36 +
+      // 扩展按钮 48 = 156。`Cirro Mail Pro` 在 16sp/w700 下约 100px（SF Pro
+      // 实测 97px），108 是「留 8px 余量」的那条线 —— 232 的旧宽度只剩 76，
+      // 会在标题行里被 ellipsis 截成 `Cirro M…`。
+      const chrome = 24 + 48 + 36 + 48;
+      expect(Breakpoints.railWidth - chrome, greaterThanOrEqualTo(108));
+    });
+  });
 }

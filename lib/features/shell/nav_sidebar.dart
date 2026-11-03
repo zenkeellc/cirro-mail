@@ -17,12 +17,14 @@ import 'sidebar_counts.dart';
 /// 现在每一项是整宽可点的一块（左右各留 8 边距、圆角 10），hover / 选中都是
 /// 这**同一块**的底色变化，标签是**常驻文字**。
 ///
-/// ## 为什么从 72px 加宽成 232
+/// ## 为什么从 72px 加宽成 272
 ///
 /// 这个宽度下侧栏是**唯一**的一级导航 —— 主屏那张 icon 网格只在窄屏出现
 /// （见 `HomeMenuScreen` 的类注释）。原来 72px 里 7 个入口挤成一列图标，
 /// 认字只能靠 hover 300ms 的 Tooltip，桌面上等于没有标签（spec §2.2）。
-/// 宽度来源见 [Breakpoints.railWidth]。
+/// 宽度来源见 [Breakpoints.railWidth]：先是导航项（「附件缓存」四个汉字），
+/// 后来是标题行的产品名 —— 商业版多一颗扩展按钮之后，232 会把
+/// `Cirro Mail Pro` 截成 `Cirro M…`，所以又加了一档。
 class NavSidebar extends StatelessWidget {
   const NavSidebar({
     super.key,
@@ -47,7 +49,7 @@ class NavSidebar extends StatelessWidget {
   /// 跟着滚，而「设置在哪儿」这件事本来就不该随着滚动变。
   ///
   /// 里面仍然放一个 [NavSidebarItem] 而不是一颗光秃秃的 `IconButton`：
-  /// 这个侧栏当初从 72px 加宽到 232 的全部理由就是「桌面上没有常驻标签」，
+  /// 这个侧栏当初从 72px 加宽的全部理由就是「桌面上没有常驻标签」，
   /// 在最下面那颗按钮上把标签去掉，等于把那条理由原地否掉。
   final Widget? footer;
 

@@ -175,8 +175,9 @@ class _AttachmentCacheScreenState
       return Scaffold(
         body: SafeArea(
           // 左栏宽度用**内容区**宽度去夹（`LayoutBuilder` 的 maxWidth），
-          // 不是窗口宽度 —— 这一层外面还有 232px 的一级导航侧栏，拿窗口宽
-          // 去夹会在刚够分栏的尺寸上给出一个挤没右栏的宽度。
+          // 不是窗口宽度 —— 这一层外面还有一级导航侧栏
+          // （`Breakpoints.railWidth`，272px），拿窗口宽去夹会在刚够分栏的
+          // 尺寸上给出一个挤没右栏的宽度。
           // 与 `MailPanes`、`OutboxScreen` 同一个口径。
           child: LayoutBuilder(
             builder: (context, constraints) => Row(

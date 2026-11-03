@@ -124,8 +124,9 @@ abstract final class MailRowMenu {
   /// **坐标必须减掉 Overlay 的原点**：`showMenu` 的 `position` 是相对**它要
   /// 落到的那个 Overlay** 的，而 [at] 是从 `onSecondaryTapUp` 拿到的**全局**
   /// 坐标。两者只在「Overlay 原点恰好在窗口左上角」时才相等 —— 宽屏下外壳
-  /// 左侧有一条 232px 的一级导航，分支 Overlay 的原点因此偏在 x=232，少减
-  /// 这一下菜单会整体右移 232（用户报的就是这个偏移）。
+  /// 左侧有一条一级导航（`Breakpoints.railWidth`，现在是 272px），分支
+  /// Overlay 的原点因此偏在 x=272，少减这一下菜单会整体右移同样的距离
+  /// （用户报的就是这个偏移）。
   ///
   /// 两边都取**根** Overlay：`rootOverlay` 与 `useRootNavigator` 是同一个
   /// Navigator 的 Overlay，坐标空间必然一致；根 Overlay 浮在整棵外壳之上，
