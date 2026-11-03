@@ -951,6 +951,21 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get revealInFinder => 'Show in Finder';
+
+  @override
+  String get revealInExplorer => 'Show in Explorer';
+
+  @override
+  String get revealInFileManager => 'Show in file manager';
+
+  @override
+  String get openNow => 'Open';
+
+  @override
+  String get revealFailed => 'Can\'t show where the file is';
+
+  @override
   String get openFailed =>
       'Couldn\'t open — no app on this system handles this file type';
 

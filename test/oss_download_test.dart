@@ -118,6 +118,41 @@ void main() {
     expect(await target.exists(), isFalse);
   });
 
+  test('对象不存在（HTTP 404 + `404 Not Found` 纯文本）→ 抛 AttachmentNotAvailable，不写盘', () async {
+    // 2026-11-03 线上实证：worker 的 `/api/oss/*` 在 R2 里找不到对象时回的是
+    // **HTTP 404 + text/plain + "404 Not Found"**（13 字节），而不是老版那种
+    // 200 + JSON 信封。`validateStatus` 放行一切之后，这里要是只看 content-type
+    // 就会把这 13 字节存成 `original.eml` —— App 内预览显示「404 Not Found」，
+    // 用邮件客户端打开是空白。
+    final api = OssApi(
+      _dioWith(
+        _body(
+          utf8.encode('404 Not Found'),
+          contentType: 'text/plain; charset=UTF-8',
+          statusCode: 404,
+        ),
+      ),
+    );
+
+    final target = File('${temp.path}/original.eml');
+    var sinkOpened = false;
+
+    await expectLater(
+      api.downloadTo(
+        url: 'https://mail.example.com/api/oss/attachments/gone.eml',
+        savePath: target.path,
+        writeTo: (stream, expected) async {
+          // 这一步**不该被调用** —— 调用方一旦开写，文件就已经生成了。
+          sinkOpened = true;
+        },
+      ),
+      throwsA(isA<AttachmentNotAvailableException>()),
+    );
+
+    expect(sinkOpened, isFalse, reason: '状态码不是 2xx 就不该开写');
+    expect(await target.exists(), isFalse, reason: '错误页不能落盘');
+  });
+
   test('键为空 → 直接拒绝，不发请求', () async {
     var requested = false;
     final api = OssApi(
@@ -200,10 +235,13 @@ ResponseBody _body(
   List<int> data, {
   required String contentType,
   bool withContentLength = true,
+  int statusCode = 200,
 }) =>
     ResponseBody(
       Stream<Uint8List>.fromIterable(<Uint8List>[Uint8List.fromList(data)]),
-      200, // 关键：HTTP 状态**恒为 200**，包括「对象不存在」那条路径。
+      // 老版 worker 的「对象不存在」是 **HTTP 200**；新版 R2 路由回的是
+      // **HTTP 404**。两种都要覆盖，所以状态码做成参数。
+      statusCode,
       headers: <String, List<String>>{
         Headers.contentTypeHeader: <String>[contentType],
         // dio 的 `contentLength` 只认这个头，不看构造参数。

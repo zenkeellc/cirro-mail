@@ -11,9 +11,12 @@ import '../../core/network/api_envelope.dart';
 /// 1. **免鉴权** —— `/api/oss/<key>` 与历史数据里的完整 CDN URL 都不要 token，
 ///    用 [ApiClient] 那条带 Authorization 的 Dio 会把 token 泄漏给第三方 CDN。
 ///    这里收一条裸 Dio（`DioFactory.buildDownloadDio`）。
-/// 2. **失败也是 HTTP 200** —— 对象不存在时返回
-///    `{"code":500,"message":"Cannot read properties of null (reading 'body')"}`。
-///    必须嗅探响应，否则会把 72 字节的 JSON 当附件写盘。
+/// 2. **失败不一定是什么形态** —— 对象不存在时，老版 worker 回的是
+///    **HTTP 200 + `{"code":500,…}`** 的信封，新版 worker（R2 直接路由）
+///    回的是 **HTTP 404 + `text/plain` 的 `404 Not Found`**。
+///    `validateStatus` 放行一切，所以两条都得嗅探：状态码不是 2xx 直接判不可用，
+///    200 但 content-type 是 JSON/HTML 的也判不可用。漏掉任何一条，那段几十
+///    字节的错误页就会被当成附件内容写盘 —— 用户点开是空白/一串 404。
 /// 3. **流式落盘** —— 用 [downloadTo] 把响应流直接接到文件，不经过内存，
 ///    大附件才不会把 App 打爆。
 class OssApi {
@@ -52,6 +55,18 @@ class OssApi {
     final body = response.data;
     if (body == null) {
       throw const AttachmentNotAvailableException(detail: '响应体为空');
+    }
+
+    // 状态码先拦一道。`buildDownloadDio` 的 `validateStatus` 是「放行一切」，
+    // 所以 404 不会抛 —— 它只会带着 `404 Not Found` 的纯文本正文回来。
+    //
+    // 2026-11-03 线上实证：worker 的 `/oss/*` 路由在 R2 里找不到对象时，回的是
+    // **HTTP 404 + `text/plain` + `404 Not Found`（13 字节）**。下面那道
+    // `application/json` 嗅探拦不住它，于是 13 字节的错误页被存成
+    // `original.eml`：App 内预览显示「404 Not Found」，用邮件客户端打开是空白。
+    final status = response.statusCode ?? 0;
+    if (status < 200 || status >= 300) {
+      throw AttachmentNotAvailableException(detail: 'HTTP $status');
     }
 
     // `application/json` 是「没找到对象」的信号；正常附件不会是这个类型。

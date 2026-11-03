@@ -900,6 +900,21 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get revealInFinder => '在 Finder 中显示';
+
+  @override
+  String get revealInExplorer => '在资源管理器中显示';
+
+  @override
+  String get revealInFileManager => '在文件管理器中显示';
+
+  @override
+  String get openNow => '打开';
+
+  @override
+  String get revealFailed => '打不开文件所在位置';
+
+  @override
   String get openFailed => '打不开 —— 系统里没有能处理这种文件的应用';
 
   @override

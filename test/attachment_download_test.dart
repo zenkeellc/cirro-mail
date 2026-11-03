@@ -167,6 +167,59 @@ void main() {
     expect(await File(again).readAsBytes(), bytes);
   });
 
+  test('对象已不存在（HTTP 404 + `404 Not Found` 纯文本）→ 「附件不可用」，磁盘与库都不留痕', () async {
+    // 线上现场：测试邮件被清掉之后，App 的增量同步并不会把行删掉（服务端没有
+    // 「这封信没了」这种通知），于是用户点开旧邮件里的附件时打的是已经删掉的
+    // key。worker 回 404 + `text/plain` 的 `404 Not Found`（13 字节）——
+    // 上一版只看 content-type，把这 13 字节存成了 `original.eml`：
+    // App 内预览显示「404 Not Found」，导出来用邮件客户端打开是空白。
+    harness.respondBytes(
+      utf8.encode('404 Not Found'),
+      contentType: 'text/plain; charset=UTF-8',
+      statusCode: 404,
+    );
+    final att = await harness.seedAttachment(
+      attId: 16,
+      filename: 'original.eml',
+      key: 'attachments/gone.eml',
+      size: 7397,
+    );
+
+    await expectLater(
+      harness.repo.download(att, profileId: harness.profileId),
+      throwsA(isA<AttachmentNotAvailableException>()),
+    );
+
+    await harness.expectNothingOnDisk(att);
+  });
+
+  test('缓存文件大小和库里记的对不上（上次存的是错误页）→ 重新下载，而不是把错误页当附件', () async {
+    final bytes = utf8.encode(
+      'From: a@example.com\nSubject: hi\n\nbody\n',
+    );
+    harness.respondBytes(bytes);
+    final att = await harness.seedAttachment(
+      attId: 17,
+      filename: 'original.eml',
+      key: 'attachments/original.eml',
+      size: bytes.length,
+    );
+    final path = await harness.repo.download(att, profileId: harness.profileId);
+
+    // 模拟上一版留下的坏缓存：库里记着「已下载」，磁盘上却是 13 字节的错误页。
+    await File(path).writeAsString('404 Not Found');
+    final stale = (await harness.repo.downloaded()).single;
+    expect(stale.localPath, path, reason: '前提：库里仍记着这个坏文件');
+
+    harness.respondBytes(bytes);
+    final again = await harness.repo.ensureLocal(
+      stale,
+      profileId: harness.profileId,
+    );
+
+    expect(await File(again).readAsBytes(), bytes, reason: '要重下成真附件');
+  });
+
   test('两个同名附件不互相覆盖', () async {
     final att1 = await harness.seedAttachment(
       attId: 21,
@@ -336,11 +389,17 @@ class _Harness {
     return att;
   }
 
-  void respondBytes(List<int> bytes, {bool withContentLength = true}) =>
+  void respondBytes(
+    List<int> bytes, {
+    bool withContentLength = true,
+    String contentType = 'application/octet-stream',
+    int statusCode = 200,
+  }) =>
       adapter.respond(
         bytes,
-        contentType: 'application/octet-stream',
+        contentType: contentType,
         withContentLength: withContentLength,
+        statusCode: statusCode,
       );
 
   void respondJson(Map<String, Object?> data) => adapter.respond(
@@ -375,6 +434,9 @@ class _FakeAdapter implements HttpClientAdapter {
   /// 响应带不带 `Content-Length`。false 模拟 chunked（gzip 的文本响应）。
   bool _withContentLength = true;
 
+  /// HTTP 状态码。老版 worker 的「对象不存在」是 200，新版 R2 路由是 404。
+  int _statusCode = 200;
+
   /// 已收到的请求 URL（断言「不该发请求」时用）。
   final List<String> requested = <String>[];
 
@@ -382,10 +444,12 @@ class _FakeAdapter implements HttpClientAdapter {
     List<int> bytes, {
     required String contentType,
     bool withContentLength = true,
+    int statusCode = 200,
   }) {
     _bytes = bytes;
     _contentType = contentType;
     _withContentLength = withContentLength;
+    _statusCode = statusCode;
   }
 
   void respondNothing() => _bytes = null;
@@ -403,7 +467,7 @@ class _FakeAdapter implements HttpClientAdapter {
     }
     return ResponseBody(
       Stream<Uint8List>.fromIterable(<Uint8List>[Uint8List.fromList(bytes)]),
-      200, // HTTP 状态恒为 200。
+      _statusCode,
       headers: <String, List<String>>{
         Headers.contentTypeHeader: <String>[_contentType],
         // chunked 响应就是**没有**这一行；只有它不是 chunked 时才带上。

@@ -8,6 +8,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/core_providers.dart';
 import 'attachment_kind.dart';
 import 'attachment_preview.dart';
+import 'attachment_saved_toast.dart';
 
 /// 附件能做的四件事：预览 / 打开 / 分享 / 另存为，外加删掉本地副本。
 ///
@@ -251,18 +252,28 @@ class _AttachmentSheetState extends ConsumerState<_AttachmentSheet> {
   }
 
   Future<void> _saveAs(String path) async {
+    // 回执条在面板 pop 之后才弹，所以 l10n / theme / messenger 都要先取好 ——
+    // 那时候 `context` 已经失效。
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
     final messenger = ScaffoldMessenger.maybeOf(context);
+    final mimeType = AttachmentMime.of(_attachment);
     final saved = await AttachmentLauncher.saveAs(
       sourcePath: path,
       suggestedName: _attachment.displayName,
-      mimeType: AttachmentMime.of(_attachment),
+      mimeType: mimeType,
       dialogTitle: l10n.saveAs,
     );
     if (!mounted) return;
     if (saved != null) {
       Navigator.of(context).pop();
-      messenger?.showSnackBar(SnackBar(content: Text(l10n.savedTo(saved))));
+      AttachmentSavedToast.show(
+        messenger: messenger,
+        l10n: l10n,
+        theme: theme,
+        path: saved,
+        mimeType: mimeType,
+      );
     }
     // 用户取消（null）不是错误，什么都不用做。
   }

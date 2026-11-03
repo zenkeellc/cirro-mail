@@ -24,6 +24,17 @@ class AppDelegate: FlutterAppDelegate {
   /// （Windows 那侧注册的是同名同方法的通道，两边共用那一份 Dart）。
   private var windowChannel: FlutterMethodChannel?
 
+  /// 给 Dart 侧的桌面外壳能力（目前只有「在 Finder 里显示附件」）。
+  ///
+  /// 与 `windowChannel` 一样必须强持有：通道一释放，handler 就没了。
+  /// 见 `lib/core/storage/attachment_launcher.dart` 的 `revealInFileManager`
+  /// —— Windows / Linux 在 Dart 侧拉系统命令，macOS 走这条原生通道
+  /// （App 是沙盒的，`NSWorkspace.activateFileViewerSelecting` 才是正路）。
+  ///
+  /// 是**数组**：这条通道按「公开版前缀 + 当前 bundle id 前缀」各挂一条
+  /// （见 [setUpDesktopChannel]），两条都得活着。
+  private var desktopChannels: [FlutterMethodChannel] = []
+
   /// 关掉窗口之后用来顶着 App Nap 的那个「活动」。见 [updateWindowlessActivity]。
   private var windowlessActivity: NSObjectProtocol?
   /// 关掉窗口后 App 不许跟着退。这是「留在菜单栏」的**前提**：只要它还返回
@@ -63,6 +74,7 @@ class AppDelegate: FlutterAppDelegate {
     retainedWindow = mainFlutterWindow
     setUpStatusItem()
     setUpWindowChannel()
+    setUpDesktopChannel()
     setUpWindowObservers()
     updateWindowlessActivity()
 
@@ -251,6 +263,67 @@ class AppDelegate: FlutterAppDelegate {
       }
     }
     windowChannel = channel
+  }
+
+  /// 「在 Finder 里显示附件」这条通道的 macOS 实现。
+  ///
+  /// 为什么非原生不可：本 App 开了 **App Sandbox**（见 `Release.entitlements`），
+  /// 而 Dart 侧能想到的两条野路子在这个沙盒里都不可靠 ——
+  /// `Process.run('open', ['-R', …])` 要自己 fork 一个子进程，
+  /// `url_launcher` 的 `file://` 只能打开目录、选不中文件。
+  /// `NSWorkspace.activateFileViewerSelecting` 是唯一既能选中文件、
+  /// 又完全不需要额外 entitlement 的做法。
+  ///
+  /// 参数是 `{"path": String}`（Dart 侧 `AttachmentLauncher` 传的是**另存为**
+  /// 之后的目标路径，位于用户自己选的目录里 —— 沙盒对它有临时授权）。
+  private func setUpDesktopChannel() {
+    guard let window = retainedWindow ?? mainFlutterWindow,
+      let controller = window.contentViewController as? FlutterViewController
+    else { return }
+
+    // **这个工程有两个检出，共用同一份 Dart 核心，bundle id 却不一样**
+    // （公开版是 `com.zenkee.cirromail`，另一个检出在它后面带后缀）。
+    // 核心代码里不该出现那一个的标识符（公开仓库有 `no-commercial-refs` 在扫），
+    // 所以 Dart 侧固定用公开版前缀，原生这侧按**当前** bundle id 再挂一条：
+    // 两个名字共用同一个 handler，谁在用都能对上。
+    let names = <String>[
+      "com.zenkee.cirromail/desktop",
+      if let bundleId = Bundle.main.bundleIdentifier {
+        "\(bundleId)/desktop"
+      },
+    ]
+
+    let handler: FlutterMethodCallHandler = { call, result in
+      guard call.method == "revealInFileManager" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let arguments = call.arguments as? [String: Any]
+      guard let path = arguments?["path"] as? String, !path.isEmpty else {
+        result(false)
+        return
+      }
+      // AppKit 只认主线程。
+      DispatchQueue.main.async {
+        let url = URL(fileURLWithPath: path)
+        // 文件已经不在了（用户自己删了/目录被清）就别把 Finder 叫起来了。
+        guard FileManager.default.fileExists(atPath: url.path) else {
+          result(false)
+          return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        result(true)
+      }
+    }
+
+    for name in Set(names) {
+      let channel = FlutterMethodChannel(
+        name: name,
+        binaryMessenger: controller.engine.binaryMessenger
+      )
+      channel.setMethodCallHandler(handler)
+      desktopChannels.append(channel)
+    }
   }
 
   /// 藏窗（`Cmd+W`），语义与点窗口的关闭按钮、`Cmd+H` 都不同：

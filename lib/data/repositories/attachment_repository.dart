@@ -42,6 +42,9 @@ class AttachmentRepository {
   /// 确保附件在本地，返回它的路径。
   ///
   /// 已经下过且文件还在 → 直接返回，不打网络。文件被系统清掉了 → 重下。
+  ///
+  /// 「文件还在」还要看**大小对不对**（见 [_looksIntact]）：缓存里可能躺着
+  /// 上一版写下的错误页，那种文件在、但内容不是附件。
   Future<String> ensureLocal(
     MailAttachment attachment, {
     String? profileId,
@@ -54,7 +57,16 @@ class AttachmentRepository {
     }
 
     final existing = attachment.localPath;
-    if (existing != null && await cache.exists(existing)) return existing;
+    if (existing != null && await cache.exists(existing)) {
+      if (await _looksIntact(attachment, existing)) return existing;
+      // 文件在、但大小和服务端说的对不上：多半是上一版把错误页当附件存了下来
+      // （2026-11-03 线上：对象已不存在时 `/api/oss/*` 回 404 + `404 Not Found`
+      // 纯文本，13 字节被写成 `original.eml`，而库里记着服务端说的真实大小）。
+      // 这种缓存不能直接返回 —— 用户点「预览」看到的正是那串 404。
+      // 删掉重下：能下到就刷新缓存，服务端也没了就让下载层报「附件不可用」。
+      await cache.deleteFile(existing);
+      await db.mailDao.clearAttachmentLocal(owner, attachment.attId);
+    }
 
     return download(
       attachment,
@@ -62,6 +74,20 @@ class AttachmentRepository {
       onProgress: onProgress,
       cancelToken: cancelToken,
     );
+  }
+
+  /// 缓存里的文件和「服务端说的大小」是否一致。
+  ///
+  /// `size <= 0` 表示服务端没给（老数据、或对象本身 0 字节），这时**不做判断**
+  /// —— 不能把一个正常文件当成坏的重下，那是白费流量。
+  Future<bool> _looksIntact(MailAttachment attachment, String path) async {
+    final expected = attachment.size;
+    if (expected <= 0) return true;
+    try {
+      return await File(path).length() == expected;
+    } on FileSystemException {
+      return false;
+    }
   }
 
   /// 下载并落盘。返回落盘路径。

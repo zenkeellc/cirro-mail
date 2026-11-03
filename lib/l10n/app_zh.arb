@@ -448,6 +448,11 @@
       }
     }
   },
+  "revealInFinder": "在 Finder 中显示",
+  "revealInExplorer": "在资源管理器中显示",
+  "revealInFileManager": "在文件管理器中显示",
+  "openNow": "打开",
+  "revealFailed": "打不开文件所在位置",
   "openFailed": "打不开 —— 系统里没有能处理这种文件的应用",
   "shareUnavailable": "这个平台没有分享面板，试试「另存为」",
   "previewUnsupported": "这种格式不能应用内预览，可以下载后用其他应用打开",

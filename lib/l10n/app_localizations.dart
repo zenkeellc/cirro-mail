@@ -1748,6 +1748,36 @@ abstract class AppLocalizations {
   /// **'Saved to {path}'**
   String savedTo(String path);
 
+  /// No description provided for @revealInFinder.
+  ///
+  /// In en, this message translates to:
+  /// **'Show in Finder'**
+  String get revealInFinder;
+
+  /// No description provided for @revealInExplorer.
+  ///
+  /// In en, this message translates to:
+  /// **'Show in Explorer'**
+  String get revealInExplorer;
+
+  /// No description provided for @revealInFileManager.
+  ///
+  /// In en, this message translates to:
+  /// **'Show in file manager'**
+  String get revealInFileManager;
+
+  /// No description provided for @openNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get openNow;
+
+  /// No description provided for @revealFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Can\'t show where the file is'**
+  String get revealFailed;
+
   /// No description provided for @openFailed.
   ///
   /// In en, this message translates to:

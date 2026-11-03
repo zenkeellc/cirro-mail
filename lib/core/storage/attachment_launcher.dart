@@ -1,8 +1,8 @@
 import 'dart:io';
-import 'dart:ui' show Rect;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,10 +10,22 @@ import 'package:url_launcher/url_launcher.dart';
 /// 把一个**已经在磁盘上**的文件交给操作系统。
 ///
 /// 与 [AttachmentRepository] 的分工：那边负责「字节落盘」，这里负责
-/// 「落盘之后拿它怎么办」—— 打开、分享、另存为。分开是因为这一层的
-/// 依赖（`open_filex` / `share_plus` / `file_picker`）会拉起原生活动或
-/// 系统对话框，而下载逻辑需要能在后台（无 UI）跑。
+/// 「落盘之后拿它怎么办」—— 打开、分享、另存为、在文件管理器里显示。
+/// 分开是因为这一层的依赖（`open_filex` / `share_plus` / `file_picker`）
+/// 会拉起原生活动或系统对话框，而下载逻辑需要能在后台（无 UI）跑。
 abstract final class AttachmentLauncher {
+  /// 「在文件管理器里显示」这条通道。
+  ///
+  /// 只有 macOS 需要原生实现：`NSWorkspace.activateFileViewerSelecting` 能
+  /// **选中文件**地打开 Finder 窗口，而 App 是开了沙盒的（见
+  /// `macos/Runner/*.entitlements`），走 `Process.run('open', ['-R', …])`
+  /// 那种野路子不可靠。Windows / Linux 在 Dart 这侧直接拉系统命令就够了
+  /// （那两个平台没有沙盒）。
+  ///
+  /// 通道名与 `macos/Runner/AppDelegate.swift` 里注册的字符串必须逐字一致。
+  static const MethodChannel _desktopChannel =
+      MethodChannel('com.zenkee.cirromail/desktop');
+
   /// 用系统关联的应用打开。
   ///
   /// Linux 上没有 `open_filex` 的实现，退回 `url_launcher` 的 `file://`
@@ -25,6 +37,42 @@ abstract final class AttachmentLauncher {
     }
     final result = await OpenFilex.open(path, type: mimeType);
     return result.type == ResultType.done;
+  }
+
+  /// 在文件管理器里显示这个文件 —— Finder（macOS）/ 资源管理器（Windows）/
+  /// 文件管理器（Linux，打开所在目录）。
+  ///
+  /// 返回 false 表示没拉起来（窗口管理器不支持、通道没接上、路径失效）。
+  /// 调用方据此给一条回执，而不是静默失败。
+  static Future<bool> revealInFileManager(String path) async {
+    if (path.isEmpty) return false;
+    try {
+      if (Platform.isMacOS) {
+        final ok = await _desktopChannel.invokeMethod<bool>(
+          'revealInFileManager',
+          <String, Object?>{'path': path},
+        );
+        return ok ?? false;
+      }
+      if (Platform.isWindows) {
+        // `explorer.exe /select,<path>` 会打开资源管理器并选中该文件。
+        // 注意：成功时它也可能返回 1，所以不看退出码，只看「能不能拉起来」。
+        // explorer 只认反斜杠路径。
+        final windowsPath = path.replaceAll('/', r'\');
+        await Process.run('explorer.exe', <String>['/select,$windowsPath']);
+        return true;
+      }
+      if (Platform.isLinux) {
+        // Linux 没有「选中某个文件」的统一入口，退一步：打开所在目录。
+        return await launchUrl(
+          Uri.file(File(path).parent.path),
+          mode: LaunchMode.externalApplication,
+        );
+      }
+    } catch (_) {
+      // 拉起原生界面失败不值得冒泡 —— 回执条会提示用户。
+    }
+    return false;
   }
 
   /// 拉起系统分享面板。
