@@ -23,8 +23,6 @@ void main() {
 
     test('版本名只留 semver 认得的字符（否则 --build-name 会被拆错）', () {
       expect(normalizeVersionName('0.1.0'), '0.1.0');
-      // 商业版的 tag 形如 v0.1.0-pro.1。
-      expect(normalizeVersionName('0.1.0-pro.1'), '0.1.0-pro.1');
       expect(normalizeVersionName('release/1.2.3'), 'release-1.2.3');
       expect(normalizeVersionName(' a b '), 'a-b');
       expect(normalizeVersionName(null), '');
@@ -48,6 +46,26 @@ void main() {
       // 环境变量里塞分支名时不该硬砍 7 个字符 —— 截断只会得到更难认的东西。
       expect(shortCommit('feature/x'), 'feature-x');
       expect(shortCommit(null), '');
+    });
+  });
+
+  group('渠道标记（tag 上的 -pro.N 不进版本号）', () {
+    test('认得出结尾的渠道标记；别的预发布标识也算一段「标记」', () {
+      expect(channelMarkerOf('0.1.4-pro.1'), 'pro');
+      expect(channelMarkerOf('0.1.4-PRO.12'), 'pro');
+      expect(channelMarkerOf('0.1.0-beta.1'), 'beta');
+      expect(channelMarkerOf('0.1.4'), isNull);
+      expect(channelMarkerOf('dev'), isNull);
+      // 不带数字段的 `-pro` 不是这套约定里的标记（tag 约定一定带 .N）。
+      expect(channelMarkerOf('0.1.4-pro'), isNull);
+    });
+
+    test('与当前渠道对得上才去掉；别的渠道的标记原样留着', () {
+      expect(stripChannelMarker('0.1.4-pro.1', 'pro'), '0.1.4');
+      expect(stripChannelMarker('0.1.4-PRO.1', 'PRO'), '0.1.4');
+      expect(stripChannelMarker('0.1.4-pro.1', 'public'), '0.1.4-pro.1');
+      expect(stripChannelMarker('0.1.4-beta.1', 'pro'), '0.1.4-beta.1');
+      expect(stripChannelMarker('0.1.4', 'pro'), '0.1.4');
     });
   });
 
@@ -182,6 +200,61 @@ void main() {
       expect(version.shallow, isTrue);
       expect(versionWarnings(context, version).join('\n'), contains('浅克隆'));
     });
+
+    test('商业渠道：tag 上的 -pro.N 不进版本号（关于页 / 清单 / 产物名同一个数）',
+        () {
+      final version = resolveBuildVersion(
+        _context(
+          tag: 'v0.1.4-pro.1',
+          commitCount: '86',
+          commit: 'ad6234b',
+          pubspecVersion: '0.1.0',
+        ),
+        channelOverride: 'pro',
+      );
+      expect(version.channel, 'pro');
+      expect(version.versionName, '0.1.4');
+      expect(version.display, '0.1.4+86');
+      expect(version.dartDefines['APP_VERSION_NAME'], '0.1.4');
+      expect(version.dartDefines['APP_UPDATE_CHANNEL'], 'pro');
+      expect(version.bundleVersionName, '0.1.4');
+      // 没有对不上的标记 → 不该为此报警。
+      expect(
+        versionWarnings(
+          _context(tag: 'v0.1.4-pro.1', commitCount: '86'),
+          version,
+        ).join('\n'),
+        isNot(contains('渠道标记')),
+      );
+    });
+
+    test('tag 的渠道标记与构建渠道对不上：保留标记并警告（多半漏了 --channel）',
+        () {
+      // 商业检出没加 --channel 时默认 public —— 版本名会带着 -pro.1，
+      // 这类包发出去就是「商业版里显示 0.1.4-pro.1」，所以要在日志里响。
+      final context = _context(tag: 'v0.1.4-pro.1', commitCount: '86');
+      final version = resolveBuildVersion(context);
+      expect(version.channel, 'public');
+      expect(version.versionName, '0.1.4-pro.1');
+      expect(
+        versionWarnings(context, version).join('\n'),
+        contains('--channel=pro'),
+      );
+    });
+
+    test('显式 APP_VERSION_NAME 原样采信（发版补包时钉版），不被标记规则改写',
+        () {
+      final version = resolveBuildVersion(
+        _context(
+          tag: 'v0.1.4-pro.1',
+          commitCount: '86',
+          envVersionName: '0.1.4-pro.1',
+        ),
+        channelOverride: 'pro',
+      );
+      expect(version.versionNameSource, VersionSource.explicit);
+      expect(version.versionName, '0.1.4-pro.1');
+    });
   });
 
   group('resolveBuildTime / formatBuildTime', () {
@@ -302,20 +375,21 @@ void main() {
     });
 
     test('预发布标识不进 --build-name，但完整版本名仍走 dart-define', () {
-      // 商业版的 tag 形如 v0.1.0-pro.1：CFBundleShortVersionString 只允许数字
-      // 与点，Windows 的 CMake 也要按 . 拆成整数的 major/minor/patch。
-      final pro = _sampleVersion(versionName: '0.1.0-pro.1');
-      expect(pro.bundleVersionName, '0.1.0');
-      // 关于页 / 窗口标题 / 更新检查读的是完整版本名，不能被这里抹掉。
-      expect(pro.dartDefines['APP_VERSION_NAME'], '0.1.0-pro.1');
-      expect(pro.display, '0.1.0-pro.1+24');
-      expect(buildArgsText(pro), contains('--build-name=0.1.0'));
+      // CFBundleShortVersionString 只允许数字与点，Windows 的 CMake 也要按 .
+      // 拆成整数的 major/minor/patch。
+      final beta = _sampleVersion(versionName: '0.1.0-beta.1');
+      expect(beta.bundleVersionName, '0.1.0');
+      // 关于页 / 窗口标题 / 更新检查读的是完整版本名，不能被这里抹掉
+      // （渠道标记是另一回事：它在更早一步就没了，见上面的「渠道标记」组）。
+      expect(beta.dartDefines['APP_VERSION_NAME'], '0.1.0-beta.1');
+      expect(beta.display, '0.1.0-beta.1+24');
+      expect(buildArgsText(beta), contains('--build-name=0.1.0'));
       expect(
-        buildArgsText(pro),
-        contains('--dart-define=APP_VERSION_NAME=0.1.0-pro.1'),
+        buildArgsText(beta),
+        contains('--dart-define=APP_VERSION_NAME=0.1.0-beta.1'),
       );
       expect(
-        withVersionArgs(<String>['macos'], pro),
+        withVersionArgs(<String>['macos'], beta),
         contains('--build-name=0.1.0'),
       );
     });

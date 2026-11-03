@@ -12,7 +12,7 @@ App 怎么知道「自己是什么版本」、怎么知道「有没有新版」�
 
 | 值 | 来源 | 注入的编译期变量 |
 |---|---|---|
-| 版本名（`0.1.0`、`0.1.0-pro.1`） | 最近的 git tag，**去掉前缀 `v`**；没有 tag 时退回 `pubspec.yaml` 的版本 | `APP_VERSION_NAME` |
+| 版本名（`0.1.0`） | 最近的 git tag，**去掉前缀 `v` 与渠道标记**（`v0.1.0-pro.1` → `0.1.0`，见下）；没有 tag 时退回 `pubspec.yaml` 的版本 | `APP_VERSION_NAME` |
 | build 号（正整数） | `git rev-list --count HEAD` | `APP_BUILD_NUMBER` |
 | 提交（短 sha） | `git rev-parse --short HEAD` | `APP_GIT_SHA` |
 | 构建时间（UTC，ISO 8601，秒精度） | 构建那一刻，如 `2026-11-02T02:39:46Z` | `APP_BUILD_TIME` |
@@ -20,9 +20,19 @@ App 怎么知道「自己是什么版本」、怎么知道「有没有新版」�
 
 **build 号 = 提交数**是这套东西的根：每提交一次，tag 不用动，build 号自己 +1，所以两个不同 build 的产物一定对应不同的提交。打新版本的 tag 只决定「版本名」，不决定 build 号。
 
+### 渠道标记只活在 tag 上
+
+两个客户端是一条代码线的两份构建，tag 是唯一会撞名的地方：商业检出里同一版必须叫 `v0.1.4-pro.1`（否则与公开仓的 `v0.1.4` 在 fetch 时会打架）。但 `-pro.1` **不属于版本号**：
+
+- 用户看到的版本号（关于页、窗口标题、更新清单）描述的是软件本身，渠道由 `APP_UPDATE_CHANNEL` 表达；
+- 商业版的产品名里已经有一个 `Pro`，`Cirro Mail Pro v0.1.4-pro.1+86` 里的第二个 `pro` 只是噪音；
+- 产物名 / 清单 / 注入值必须是**同一个数**，否则「App 里显示 0.1.4、清单里写着 0.1.4-pro.1」的版本比较会判反方向。
+
+规则写在 `tool/src/version_core.dart` 的 `stripChannelMarker`：tag 结尾是 `-<本次渠道>.<数字>` 时把它去掉（`v0.1.4-pro.1` + `--channel=pro` → `0.1.4`）。**渠道对不上时不去**，并且 `tool/version.dart` 会打一条警告 —— 那多半是忘了 `--channel=pro`，发出去的包会显示 `0.1.4-pro.1`。显式 `APP_VERSION_NAME`（发版补包时钉版）永远原样采信。
+
 ⚠️ **CI 里 checkout 必须 `fetch-depth: 0`**（完整历史）。浅克隆算出来的 `git rev-list --count HEAD` 永远是 1 —— 工具会为此在 stderr 打一条警告，但出来的包 build 号就是错的，而且不容易发现。
 
-**平台包的版本字段只写数字主体**：`--build-name` 用的是版本名去掉预发布标识之后的 `0.1.0`（`0.1.0-pro.1` → `0.1.0`）。原因是平台各有硬性规则 —— Apple 的 `CFBundleShortVersionString` 只允许数字与点，Windows 的 CMake 还要按 `.` 把它拆成整数的 major/minor/patch。完整版本名（含 `-pro.N`）只走 `APP_VERSION_NAME`，所以关于页、窗口标题、更新检查看到的仍是 `0.1.0-pro.1+131`。`dart tool/version.dart --format=build-args` 的输出里能同时看到这两种形态。
+**平台包的版本字段只写数字主体**：`--build-name` 用版本名去掉预发布标识之后的数字主体（`0.1.0`）。原因是平台各有硬性规则 —— Apple 的 `CFBundleShortVersionString` 只允许数字与点，Windows 的 CMake 还要按 `.` 把它拆成整数的 major/minor/patch。`dart tool/version.dart --format=build-args` 的输出里能同时看到版本名与这个数字主体。
 
 这些值在编译期用 `--dart-define` 注入。**没注入时**（直接 `flutter run`、或没走包装脚本的 `flutter build`）App 退回 `PackageInfo`，也就是 `pubspec.yaml` 里那个 `0.1.0+1` —— 能跑、能显示，但 build 号不会随提交走。所以**要发出去的包一律走第三节的包装脚本**。
 
@@ -123,7 +133,7 @@ https://cirro.zenkee.com/app-version.json
 | `schema` | number | 固定 `1`；改结构才升，客户端不认别的值 |
 | `updatedAt` | string | 清单最近一次被改的时间（ISO 8601，带时区） |
 | `channels` | object | 渠道名 → 该渠道的最新版本；`public` 与 `pro` 两个键都在 |
-| `version` | string | 版本名 = tag 去掉 `v`，如 `0.1.0` / `0.1.0-pro.1` |
+| `version` | string | 版本名 = tag 去掉 `v` 与渠道标记，如 `0.1.0`（`v0.1.4-pro.1` 写 `0.1.4`） |
 | `buildNumber` | number | 正整数，`git rev-list --count HEAD` |
 | `publishedAt` | string | 这个版本发布的时间（ISO 8601，带时区） |
 | `notes` | string | 一句话更新说明，**纯文本**（可空串）；客户端直接显示，不放 HTML |
@@ -132,7 +142,7 @@ https://cirro.zenkee.com/app-version.json
 
 **字段名与类型是契约**：客户端按 `schema: 1` 校验，认不出的 schema 按坏数据处理（**不猜**），文件不是合法 JSON 时提示「检查失败」。所以改清单时宁可留 `null`、留空 `notes`，也别省字段、别改类型 —— 类型错了客户端不会当没事发生。
 
-**客户端怎么判断「有没有新版」**：先比 `version`（semver；预发布按 semver §11 排序，所以 `0.1.0-pro.1 < 0.1.0`），版本名相同才比 `buildNumber`。**不是**「buildNumber 大就新」——`0.2.0+1` 比 `0.1.0+999` 新。当前运行版本未知时不做判断，按「已是最新」处理、不弹提示。
+**客户端怎么判断「有没有新版」**：先比 `version`（semver；预发布按 semver §11 排序，所以 `0.1.0-beta.1 < 0.1.0`），版本名相同才比 `buildNumber`。**不是**「buildNumber 大就新」——`0.2.0+1` 比 `0.1.0+999` 新。当前运行版本未知时不做判断，按「已是最新」处理、不弹提示。渠道标记不进 `version`（见第一节），所以同一版的两个渠道各自比的是同一个数字、靠 `buildNumber` 分先后。
 
 `channels` 里为什么有两个渠道：同一份构建参数只注入一个 `APP_UPDATE_CHANNEL`，客户端只读自己那个渠道。`public` 是公开仓库发的版本；`pro` 是另一个发行渠道（自己的发布仓库）的版本，两边各自独立比较。
 

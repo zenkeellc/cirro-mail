@@ -46,7 +46,9 @@ class BuildVersion {
     this.buildNumberSource = VersionSource.gitCount,
   });
 
-  /// 形如 `0.1.0`，带预发布标识也行（商业版是 `0.1.0-pro.1`）。
+  /// 形如 `0.1.0`。带上别的预发布标识也行（`0.1.0-beta.1`），但**渠道标记
+  /// 不会留在这里**：tag 写成 `v0.1.0-pro.1` 只是为了两个渠道的 tag 不撞名，
+  /// 版本名取的是 `0.1.0`（规则见 [stripChannelMarker]）。
   final String versionName;
 
   /// 构建号。定义为 `git rev-list --count HEAD`，所以每提交一次 +1。
@@ -77,15 +79,16 @@ class BuildVersion {
   ///
   /// 为什么不能把 `versionName` 原样塞进 `--build-name`：
   ///
-  /// - Apple 的 `CFBundleShortVersionString` 规范只允许数字与点，商业版的 tag
-  ///   是 `0.1.0-pro.1`，原样写进去会被 App Store 校验打回（Developer ID 分发
-  ///   目前不卡，但 Apple 的校验规则不值得赌）；
+  /// - Apple 的 `CFBundleShortVersionString` 规范只允许数字与点，版本名带
+  ///   预发布标识（tag 写 `v0.1.0-pro.1` 时曾经是 `0.1.0-pro.1`）原样写进去
+  ///   会被 App Store 校验打回（Developer ID 分发目前不卡，但 Apple 的校验
+  ///   规则不值得赌）；
   /// - Windows 的 CMake 模板会把 `--build-name` 按 `.` 拆成 major/minor/patch
   ///   填进 `Runner.rc` 的版本资源，`0.1.0-pro.1` 拆出来的 patch 段不是数字。
   ///
-  /// 完整版本名（含 `-pro.N`）仍然通过 `APP_VERSION_NAME` 注入，关于页、窗口
-  /// 标题与更新检查读的都是**完整**的那一个 —— 这里丢掉的只是平台包元数据里
-  /// 的预发布标识，那是 semver 进包元数据时的通行做法。
+  /// 这里丢掉的只是**预发布标识**，那是 semver 进包元数据时的通行做法。
+  /// 渠道标记（`-pro.1`）在更早一步就没了 —— 它不属于版本号，见
+  /// [stripChannelMarker]。
   ///
   /// 抽不出数字主体（比如版本名是分支名）时退回完整版本名：宁可让平台包里的
   /// 版本串怪一点，也不要凭空造一个和 tag 无关的号。
@@ -164,12 +167,22 @@ class VersionContext {
 /// * build 号：环境变量 > 提交数 > pubspec 的 `+N`
 /// * 提交 / 时间：环境变量 > git / `SOURCE_DATE_EPOCH` > 当前时间
 /// * 渠道：`--channel` > 环境变量 > `public`
+///
+/// **tag → 版本名这一步会去掉渠道标记**（`v0.1.4-pro.1` → `0.1.4`）：
+/// 标记只是为了两个渠道的 tag 不撞名，不属于用户看到的版本号，见
+/// [stripChannelMarker]。显式给的环境变量与 pubspec 版本名不动 —— 那是
+/// 调用方自己写的值，不在这条约定里。
 BuildVersion resolveBuildVersion(
   VersionContext context, {
   String? channelOverride,
 }) {
+  final channel = normalizeChannel(channelOverride ?? context.envChannel);
+
   final envName = _trimOrNull(context.envVersionName);
-  final tagName = normalizeVersionName(stripTagPrefix(context.tag));
+  final tagName = stripChannelMarker(
+    normalizeVersionName(stripTagPrefix(context.tag)),
+    channel,
+  );
   final pubspecName = normalizeVersionName(context.pubspecVersion);
 
   final String versionName;
@@ -217,7 +230,6 @@ BuildVersion resolveBuildVersion(
     envBuildTime: context.envBuildTime,
     now: context.now,
   );
-  final channel = normalizeChannel(channelOverride ?? context.envChannel);
 
   return BuildVersion(
     versionName: versionName,
@@ -256,6 +268,18 @@ List<String> versionWarnings(VersionContext context, BuildVersion version) {
     warnings.add('没有可用的提交历史（没有 .git / 空仓库 / 浅克隆）：'
         'build 号退回 pubspec 的 ${version.buildNumber}，不会随提交递增');
   }
+  // 渠道标记只在构建渠道对得上时才去掉。对不上时版本名会带着标记 —— 那多半
+  // 是漏了 `--channel`，发出去就是「商业版包显示 0.1.4-pro.1」。让它在日志里响。
+  final tagChannel = channelMarkerOf(
+    normalizeVersionName(stripTagPrefix(context.tag)),
+  );
+  if (tagChannel != null &&
+      tagChannel != version.channel &&
+      version.versionNameSource == VersionSource.tag) {
+    warnings.add('tag 带渠道标记 -$tagChannel，但本次构建渠道是 '
+        '${version.channel}：版本名保留了标记。要发 $tagChannel 渠道请加 '
+        '--channel=$tagChannel');
+  }
   return warnings;
 }
 
@@ -286,6 +310,48 @@ String normalizeChannel(String? raw) {
   final normalized = cleaned.toLowerCase().replaceAll(RegExp(r'[^a-z0-9._-]+'), '-');
   return normalized.isEmpty ? defaultUpdateChannel : normalized;
 }
+
+/// 版本名里那个「渠道标记」词的形状：`-pro.1` 里的 `pro`。
+///
+/// 只认**结尾**的 `-<词>.<数字>[.<数字>…]`。不认识任何具体渠道 —— 是不是
+/// 标记由调用方拿它跟当前渠道比（见 [stripChannelMarker]）；对不上的
+/// `0.1.0-beta.1` 里那截 `beta` 是真正的预发布标识，会原样留下。
+///
+/// 没有标记时返回 null。
+String? channelMarkerOf(String name) {
+  final match = _channelMarkerPattern.firstMatch(name);
+  return match?.group(2)?.toLowerCase();
+}
+
+/// 去掉与 [channel] 对得上的渠道标记：`0.1.4-pro.1` + `pro` → `0.1.4`。
+///
+/// ## 为什么版本号里不该出现它
+///
+/// 两个客户端是**一条代码线**的两份构建，tag 是它们唯一会撞名的地方 ——
+/// 商业检出里同一版必须叫 `v0.1.4-pro.1`（否则与公开仓的 `v0.1.4` 在
+/// fetch 时会打架），但这只是 tag 的命名约定，不是版本号的一部分：
+///
+/// - 用户看到的版本号描述的是**软件本身**（关于页、窗口标题、更新清单），
+///   渠道由 `APP_UPDATE_CHANNEL` 表达，两者不该混进同一个串；
+/// - 商业版的产品名里已经有一个 `Pro`，`Cirro Mail Pro v0.1.4-pro.1+86`
+///   里的第二个 `pro` 只是噪音；
+/// - 产物名 / 清单 / 注入值必须**是同一个数**，否则「App 里显示 0.1.4、
+///   清单里写着 0.1.4-pro.1」的版本比较会直接判错方向。
+///
+/// channel 对不上时原样返回（那是另一条渠道的标记，见 [versionWarnings]
+/// 里那条警告）。
+String stripChannelMarker(String name, String channel) {
+  final match = _channelMarkerPattern.firstMatch(name);
+  if (match == null) return name;
+  final body = match.group(1)!;
+  final marker = match.group(2)!.toLowerCase();
+  if (body.isEmpty || marker != normalizeChannel(channel)) return name;
+  return body;
+}
+
+/// 结尾的 `-<渠道>.<数字>` 形状。见 [channelMarkerOf]。
+final RegExp _channelMarkerPattern =
+    RegExp(r'^(.*?)-([0-9A-Za-z][0-9A-Za-z_-]*)((?:\.\d+)+)$');
 
 /// 7 位短 sha。已经是短的（CI 传进来的）就不动。
 ///
