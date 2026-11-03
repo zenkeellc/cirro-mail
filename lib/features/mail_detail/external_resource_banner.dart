@@ -429,7 +429,7 @@ class BlockedImageTile extends StatelessWidget {
             );
           }
 
-          return ClipRect(
+          final tile = ClipRect(
             child: Container(
               constraints: const BoxConstraints(minHeight: 24),
               padding: compact
@@ -444,6 +444,21 @@ class BlockedImageTile extends StatelessWidget {
               child: child,
             ),
           );
+
+          // 高度可能是无界的：fwfh 把 `<img>` 放进 `WidgetSpan`（正文 inline
+          // 混排）或做表格最小宽度探测时，子 widget 拿到的是「宽度受限、
+          // 高度无界」的约束。而 `Container.alignment` 生成的 `Align` 与紧凑
+          // 分支里的 `OverflowBox` 都会撑到 `constraints.biggest` —— 无界高度
+          // 就变成 Infinity，整帧布局断言（`RenderConstrainedOverflowBox` /
+          // `RenderClipRect` … object was given an infinite size during layout）。
+          //
+          // 占位块本身是**有确定尺寸**的东西（一张图的替身），所以无界时按内容
+          // 高度收紧：`IntrinsicHeight` 取子树固有高度（紧凑分支即 `minHeight:
+          // 24`，完整分支即三行 labelSmall + 内边距），作为紧约束后 Align /
+          // OverflowBox 都不再往外撑。宽度受限、高度有界时（正常渲染路径）行为
+          // 完全不变。
+          if (constraints.hasBoundedHeight) return tile;
+          return IntrinsicHeight(child: tile);
         },
       ),
     );

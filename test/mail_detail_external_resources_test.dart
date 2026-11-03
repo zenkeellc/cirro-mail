@@ -283,4 +283,44 @@ void main() {
 
     expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
   });
+
+  // ── 高度无界的布局 ────────────────────────────────────────────────
+  //
+  // fwfh 把 `<img>` 放进 `WidgetSpan`（正文 inline 混排）或做表格最小宽度
+  // 探测时，子 widget 拿到的是「宽度受限、高度无界」的约束。占位块里的
+  // `Align`（Container.alignment）与紧凑分支的 `OverflowBox` 都会撑到
+  // `constraints.biggest`，无界高度就变成 Infinity ——
+  // `RenderConstrainedOverflowBox object was given an infinite size`。真机上会
+  // 连着重抛 RenderClipRect / RenderPositionedBox / … 一长串，并让后续绘制
+  // 拿到 NaN。这里用完全相同的约束钉住。
+
+  testWidgets('窄且高度无界时占位块自己定高，不会撑成无限', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SizedBox(
+              width: 30,
+              child: const BlockedImageTile(
+                url: 'https://cdn.example.com/a.png',
+                host: 'cdn.example.com',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 关键断言：没有布局异常（修复前这里会抛 infinite size）。
+    expect(tester.takeException(), isNull);
+
+    final size = tester.getSize(find.byType(BlockedImageTile));
+    expect(size.width, 30);
+    expect(size.height.isFinite, isTrue);
+    expect(size.height, greaterThanOrEqualTo(24));
+  });
+
 }
