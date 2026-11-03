@@ -80,7 +80,7 @@ void main() {
       MailRow(
         emailId: 103,
         profileId: h.profileId,
-        toEmail: 'kedong@example.net',
+        toEmail: 'tester@example.net',
         subject: '还没补正文的',
         type: MailType.receive,
       ),
@@ -135,7 +135,7 @@ Map<String, Object?> _row({
       'emailId': emailId,
       'sendEmail': '',
       'name': '张三',
-      'toEmail': 'kedong@example.net',
+      'toEmail': 'tester@example.net',
       'subject': subject,
       'type': MailType.receive,
       'status': 0,
@@ -207,15 +207,15 @@ class _Harness {
     await profiles.markLoggedIn(
       profile.id,
       userId: 42,
-      email: 'kedong@example.net',
-      userName: 'kedong',
+      email: 'tester@example.net',
+      userName: 'tester',
     );
     await tokens.write(profile.id, 'fake-jwt');
     await db.profileDao.upsertMailboxes(profile.id, <MailboxAccount>[
       const MailboxAccount(
         accountId: 10,
-        email: 'kedong@example.net',
-        name: 'kedong',
+        email: 'tester@example.net',
+        name: 'tester',
       ),
     ]);
 

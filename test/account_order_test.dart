@@ -7,7 +7,7 @@
 //   网页端那个邮箱跳到最前，
 //   App 里它**跳到最末**。
 // 本机 App 库 `mailboxes` 表里就是这样：`admin@example.com`（sort=3）排在
-// `kedong@example.com`（sort=0）后面，而网页端它排第一位。
+// `tester@example.com`（sort=0）后面，而网页端它排第一位。
 //
 // 为什么改方向是安全的：`sort` 列**只有置顶语义**，唯一的写者是
 // `upsertMailboxes`（服务端行整行覆盖），而服务端从不写 0 以外的值 ——
@@ -30,7 +30,7 @@ void main() {
     // 其余都是 0。
     await db.profileDao.upsertMailboxes(profileId, <MailboxAccount>[
       const MailboxAccount(accountId: 3, email: 'admin@example.com', sort: 3),
-      const MailboxAccount(accountId: 8, email: 'kedong@example.com'),
+      const MailboxAccount(accountId: 8, email: 'tester@example.com'),
       const MailboxAccount(accountId: 12, email: 'hello@example.com'),
       const MailboxAccount(accountId: 26, email: 'archive@example.com'),
     ]);
@@ -61,7 +61,7 @@ void main() {
     // 这正是服务端 `asc(accountId)` 那个第二关键字存在的理由。
     await db.profileDao.upsertMailboxes(profileId, <MailboxAccount>[
       const MailboxAccount(accountId: 3, email: 'admin@example.com', sort: 4),
-      const MailboxAccount(accountId: 8, email: 'kedong@example.com', sort: 3),
+      const MailboxAccount(accountId: 8, email: 'tester@example.com', sort: 3),
     ]);
     final rows = await db.profileDao.mailboxesOf(profileId);
     expect(rows.map((m) => m.accountId).toList(), <int>[3, 8, 12, 26]);

@@ -49,7 +49,7 @@ void main() {
     h.respondLatest(<Map<String, Object?>>[
       // 真实载荷形态：`emailBriefColumns` 里没有 accountId。
       row(emailId: 101, toEmail: 'api-trial-archive@example.net', subject: '归档'),
-      row(emailId: 102, toEmail: 'kedong@example.net', subject: '给我的'),
+      row(emailId: 102, toEmail: 'tester@example.net', subject: '给我的'),
     ]);
 
     await h.sync();
@@ -57,23 +57,23 @@ void main() {
     final byArchive = await h.mailDao
         .watchMailbox(h.profileId, h.archiveAccountId, type: MailType.receive)
         .first;
-    final byKedong = await h.mailDao
-        .watchMailbox(h.profileId, h.kedongAccountId, type: MailType.receive)
+    final byTester = await h.mailDao
+        .watchMailbox(h.profileId, h.testerAccountId, type: MailType.receive)
         .first;
 
     expect(byArchive.map((m) => m.subject), <String>['归档']);
-    expect(byKedong.map((m) => m.subject), <String>['给我的']);
+    expect(byTester.map((m) => m.subject), <String>['给我的']);
   });
 
   test('带 +tag 的投递地址退到基址仍能归位', () async {
     h.respondLatest(<Map<String, Object?>>[
-      row(emailId: 103, toEmail: 'kedong+news@example.net', subject: '订阅'),
+      row(emailId: 103, toEmail: 'tester+news@example.net', subject: '订阅'),
     ]);
 
     await h.sync();
 
     final rows = await h.mailDao
-        .watchMailbox(h.profileId, h.kedongAccountId, type: MailType.receive)
+        .watchMailbox(h.profileId, h.testerAccountId, type: MailType.receive)
         .first;
     expect(rows.map((m) => m.emailId), <int>[103]);
   });
@@ -112,7 +112,7 @@ void main() {
     expect(before!.accountId, 0, reason: '夹具前提：这行确实是「无归属」的');
 
     h.respondLatest(<Map<String, Object?>>[
-      row(emailId: 202, toEmail: 'kedong@example.net', subject: '新来的'),
+      row(emailId: 202, toEmail: 'tester@example.net', subject: '新来的'),
     ]);
     await h.sync();
 
@@ -135,7 +135,7 @@ void main() {
     ]);
 
     h.respondLatest(<Map<String, Object?>>[
-      row(emailId: 302, toEmail: 'kedong@example.net', subject: '新来的'),
+      row(emailId: 302, toEmail: 'tester@example.net', subject: '新来的'),
     ]);
     await h.sync();
 
@@ -225,15 +225,15 @@ class _Harness {
     await profiles.markLoggedIn(
       profile.id,
       userId: 42,
-      email: 'kedong@example.net',
-      userName: 'kedong',
+      email: 'tester@example.net',
+      userName: 'tester',
     );
     await tokens.write(profile.id, 'fake-jwt');
     await db.profileDao.upsertMailboxes(profile.id, <MailboxAccount>[
       const MailboxAccount(
         accountId: 10,
-        email: 'kedong@example.net',
-        name: 'kedong',
+        email: 'tester@example.net',
+        name: 'tester',
       ),
       const MailboxAccount(
         accountId: 26,
@@ -278,7 +278,7 @@ class _Harness {
   final AuthEvents authEvents;
 
   final int archiveAccountId = 26;
-  final int kedongAccountId = 10;
+  final int testerAccountId = 10;
   final int helloAccountId = 30;
 
   void respondLatest(List<Map<String, Object?>> rows) =>
@@ -293,7 +293,7 @@ class _Harness {
     ).find(profileId);
     return repo.syncMailbox(
       profile: profile!,
-      accountId: kedongAccountId,
+      accountId: testerAccountId,
       type: MailType.receive,
       allReceive: true,
     );

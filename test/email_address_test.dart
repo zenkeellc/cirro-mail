@@ -17,7 +17,7 @@ void main() {
       for (final ok in <String>[
         'a@b.co',
         'admin@example.com',
-        'kedong+tag@example.com',
+        'tester+tag@example.com',
         "o'brien@example.org",
         'a!#\$%&\'*+/=?^_`{|}~-@example.com',
         'x@sub.domain.example.com',

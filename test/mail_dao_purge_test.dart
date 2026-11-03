@@ -29,7 +29,7 @@ void main() {
   Future<void> seed() async {
     db = AppDatabase.forTesting(NativeDatabase.memory());
     await db.profileDao.upsertMailboxes(profileId, <MailboxAccount>[
-      const MailboxAccount(accountId: target, email: 'kedong@example.com'),
+      const MailboxAccount(accountId: target, email: 'tester@example.com'),
       const MailboxAccount(accountId: other, email: 'hello@example.com'),
     ]);
     await db.mailDao.upsertPage(<MailRow>[
@@ -37,14 +37,14 @@ void main() {
         emailId: 101,
         profileId: profileId,
         accountId: target,
-        mailboxEmail: 'kedong@example.com',
+        mailboxEmail: 'tester@example.com',
         subject: '目标邮箱的收件',
       ),
       MailRow(
         emailId: 102,
         profileId: profileId,
         accountId: target,
-        mailboxEmail: 'kedong@example.com',
+        mailboxEmail: 'tester@example.com',
         subject: '目标邮箱的软删行',
         isDel: 1,
       ),
@@ -52,7 +52,7 @@ void main() {
         emailId: 103,
         profileId: profileId,
         accountId: target,
-        mailboxEmail: 'kedong@example.com',
+        mailboxEmail: 'tester@example.com',
         subject: '目标邮箱的已发送',
         type: MailType.send,
       ),
@@ -92,7 +92,7 @@ void main() {
         ));
     await db.into(db.drafts).insert(DraftsCompanion.insert(
           profileId: profileId,
-          accountEmail: const Value('kedong@example.com'),
+          accountEmail: const Value('tester@example.com'),
           recipientsJson: const Value('[]'),
           content: const Value('用户自己写了一半的信'),
           updatedAt: DateTime.utc(2026, 10, 13),
@@ -203,7 +203,7 @@ void main() {
     await db.mailDao.purgeMailbox(profileId, target);
     final drafts = await db.select(db.drafts).get();
     expect(drafts, hasLength(1));
-    expect(drafts.single.accountEmail, 'kedong@example.com');
+    expect(drafts.single.accountEmail, 'tester@example.com');
   });
 
   test('删掉 mailboxes 那一行', () async {
@@ -224,7 +224,7 @@ void main() {
         () async {
       await seedOrphan(
         emailId: 301,
-        toEmail: 'kedong@example.com',
+        toEmail: 'tester@example.com',
         attachId: 9301,
       );
       await db.into(db.reminders).insert(RemindersCompanion.insert(
@@ -268,7 +268,7 @@ void main() {
         () async {
       await seedOrphan(
         emailId: 303,
-        toEmail: 'kedong@example.com',
+        toEmail: 'tester@example.com',
         isDel: 1,
       );
 

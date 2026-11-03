@@ -103,7 +103,7 @@ void main() {
         emailId: 603,
         profileId: h.profile.id,
         accountId: 0,
-        toEmail: 'kedong@example.net',
+        toEmail: 'tester@example.net',
         type: MailType.receive,
         subject: '归属未知的老信',
       ),
@@ -153,7 +153,7 @@ void main() {
       ..thenList(<Map<String, Object?>>[
         <String, Object?>{
           'accountId': h.targetId,
-          'email': 'kedong@example.net',
+          'email': 'tester@example.net',
           'sort': 3,
         },
         <String, Object?>{
@@ -290,7 +290,7 @@ class _Harness {
       ),
       const MailboxAccount(
         accountId: 8,
-        email: 'kedong@example.net',
+        email: 'tester@example.net',
         sort: 3,
       ),
     ]);

@@ -86,7 +86,7 @@ void main() {
       name: 'admin',
       sort: 3,
     ),
-    MailboxAccount(accountId: 8, email: 'kedong@example.net'),
+    MailboxAccount(accountId: 8, email: 'tester@example.net'),
   ];
 
   group('添加按钮的三条闸门', () {
@@ -261,12 +261,12 @@ void main() {
       await h.openAddDialog(tester);
       await tester.enterText(
         find.byKey(const ValueKey('mailbox-prefix')),
-        'kedong',
+        'tester',
       );
       await tester.tap(find.widgetWithText(FilledButton, zh.mailboxAdd));
       await tester.pumpAndSettle();
 
-      expect(h.accounts.added, <String>['kedong@example.com']);
+      expect(h.accounts.added, <String>['tester@example.com']);
     });
 
     testWidgets('domainList 为空 → 换成「完整地址」单框', (tester) async {
@@ -331,7 +331,7 @@ void main() {
       await h.openAddDialog(tester);
       await tester.enterText(
         find.byKey(const ValueKey('mailbox-prefix')),
-        'kedong',
+        'tester',
       );
       await tester.tap(find.widgetWithText(FilledButton, zh.mailboxAdd));
       await tester.pumpAndSettle();
@@ -348,7 +348,7 @@ void main() {
       await h.openAddDialog(tester);
       await tester.enterText(
         find.byKey(const ValueKey('mailbox-prefix')),
-        'kedong',
+        'tester',
       );
       await tester.tap(find.widgetWithText(FilledButton, zh.mailboxAdd));
       await tester.pumpAndSettle();
@@ -382,7 +382,7 @@ void main() {
 
       expect(find.byType(AlertDialog), findsOneWidget,
           reason: '确认框就该停在那儿等一个答复，点了删除不该直接打接口');
-      expect(find.text(zh.mailboxRemoveConfirm('kedong@example.net')), findsOneWidget,
+      expect(find.text(zh.mailboxRemoveConfirm('tester@example.net')), findsOneWidget,
           reason: '删错邮箱的代价是那里面全部邮件一起没了，确认框必须指名道姓');
       expect(h.accounts.calls, isEmpty,
           reason: '框还没答，一行都不该动 —— 取消了就什么都不发生');
@@ -436,7 +436,7 @@ void main() {
       // 删完必须重拉：本地那行要等下一轮 `/account/list` 才消失，顺序也以
       // 服务端为准 —— 少了这一步，用户删掉的邮箱会一直留在屏幕上。
       expect(h.accounts.calls, contains('refresh:${_Harness.loggedIn.id}'));
-      expect(find.text(zh.mailboxRemoved('kedong@example.net')), findsOneWidget,
+      expect(find.text(zh.mailboxRemoved('tester@example.net')), findsOneWidget,
           reason: '删成功要给一句回执，不然用户不知道刚才那下生效了没');
     });
   });
@@ -528,7 +528,7 @@ void main() {
       await h.openAddDialog(tester);
       await tester.enterText(
         find.byKey(const ValueKey('mailbox-prefix')),
-        'kedong',
+        'tester',
       );
       await tester.tap(find.widgetWithText(FilledButton, zh.mailboxAdd));
       await tester.pumpAndSettle();
@@ -551,7 +551,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, zh.mailboxAdd));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);
-      expect(h.accounts.added, <String>['kedong@example.com']);
+      expect(h.accounts.added, <String>['tester@example.com']);
     });
 
     testWidgets('删除时抛 NetworkException → 有 SnackBar，不是静默', (tester) async {
