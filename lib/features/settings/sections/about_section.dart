@@ -151,7 +151,7 @@ class _AboutHeader extends StatelessWidget {
     final theme = Theme.of(context);
     return Padding(
       key: const ValueKey<String>('about-version'),
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -188,7 +188,7 @@ class _AboutGroupHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
       child: Text(
         title,
         style: theme.textTheme.titleSmall?.copyWith(
@@ -230,7 +230,7 @@ class _AboutGroup extends StatelessWidget {
       children: <Widget>[
         _AboutGroupHeader(title: title),
         Card(
-          margin: const EdgeInsets.symmetric(horizontal: 12),
+          margin: const EdgeInsets.symmetric(horizontal: 16),
           elevation: 0,
           color: scheme.surfaceContainerLow,
           clipBehavior: Clip.antiAlias,
@@ -266,7 +266,7 @@ class _OpenSourceGroup extends StatelessWidget {
       children: <Widget>[
         _AboutGroupHeader(title: l10n.aboutGroupOpenSource),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Text(
             l10n.aboutOpenSourceHint,
             style: theme.textTheme.bodySmall?.copyWith(
@@ -276,7 +276,7 @@ class _OpenSourceGroup extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: GithubStarCard(
             onOpen: () => openGithubRepo(context, openUrl: openUrl),
           ),
