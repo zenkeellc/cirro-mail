@@ -6,13 +6,14 @@ one codebase for Android, iOS, macOS, Windows and Linux.
 **English** · [简体中文](README.zh-CN.md)
 
 The display name is **Cirro Mail** on every platform and language. The icon is a **black
-card with a white cloud and a blue envelope**: `assets/branding/cirro-mail-master.png` holds
-only the envelope mark (transparent, 1254²) and `tool/gen_icons.py` composes card + cloud +
-envelope into every platform icon. iOS icons are exported opaque with the black card running
-to the edge (a platform requirement — App Store rejects alpha, and iOS rounds the corners
-itself); Android, macOS, Windows and Linux use the rounded black card with transparent
-corners, plus a transparent foreground layer for Android adaptive icons over a black
-background. Android ships five variants each of legacy, round and adaptive icons; Linux
+card with a white cloud and a blue envelope**: `assets/branding/cirro-mail-icon.svg` is the
+single design source (1024²), and `assets/branding/cirro-mail-master.png` is that artwork
+with the card layer stripped (transparent cloud + envelope, 1024²). `tool/gen_icons.py`
+composes card + master into every platform icon; iOS icons are exported opaque with the
+black card running to the edge (a platform requirement — App Store rejects alpha, and iOS
+rounds the corners itself); Android, macOS, Windows and Linux use the rounded black card
+with transparent corners, plus a transparent foreground layer for Android adaptive icons
+over a black background. Android ships five variants each of legacy, round and adaptive icons; Linux
 provides nine sizes of desktop theme icons (16–512 px). `mail_app` remains the Dart package
 name and the desktop executable name.
 

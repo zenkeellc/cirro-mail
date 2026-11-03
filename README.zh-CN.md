@@ -4,7 +4,7 @@
 
 **简体中文** · [English](README.md)
 
-应用显示名在所有语言和平台统一为 **Cirro Mail**。图标是「**黑底卡片 + 白色云朵 + 蓝色信封**」：`assets/branding/cirro-mail-master.png` 里只有信封标志（透明底，1254²），黑底与云朵由 `tool/gen_icons.py` 在出图标时合成。iOS 图标因平台要求导出为**不透明** PNG（黑底铺满，圆角由 iOS 自己切，App Store 不收带 alpha 的图）；Android、macOS、Windows 和 Linux 使用透明圆角黑卡，Android 自适应图标的前景层是透明的云朵 + 信封、背景为纯黑。Android 包含五档普通、圆形和自适应图标；Linux 提供 16–512 像素的九档桌面主题图标。`mail_app` 仍是 Dart 包名和桌面可执行文件名。
+应用显示名在所有语言和平台统一为 **Cirro Mail**。图标是「**黑底卡片 + 白色云朵 + 蓝色信封**」：`assets/branding/cirro-mail-icon.svg` 是唯一设计源（1024² 画布），`assets/branding/cirro-mail-master.png` 是它摘掉卡片层后的母版（透明底「云 + 信封」，1024²）；黑底卡片由 `tool/gen_icons.py` 按平台规则合成。iOS 图标因平台要求导出为**不透明** PNG（黑底铺满，圆角由 iOS 自己切，App Store 不收带 alpha 的图）；Android、macOS、Windows 和 Linux 使用透明圆角黑卡，Android 自适应图标的前景层是透明的云朵 + 信封、背景为纯黑。Android 包含五档普通、圆形和自适应图标；Linux 提供 16–512 像素的九档桌面主题图标。`mail_app` 仍是 Dart 包名和桌面可执行文件名。
 
 它**不改动 `mail-worker`**，只用现有的 HTTP API 说话。配套的推送中转 Worker（`mail-push`）与 cloud-mail 服务端同属上游仓库，本项目只与它的 HTTP 接口对话。
 

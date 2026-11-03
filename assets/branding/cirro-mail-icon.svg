@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Cirro Mail app icon (open-source, blue)</title>
+  <desc id="desc">Rounded black app tile: a white cloud peeks from behind the upper-right corner of a blue envelope.</desc>
+  <defs>
+    <linearGradient id="blueBody" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#69c8ff"/>
+      <stop offset="0.52" stop-color="#168de0"/>
+      <stop offset="1" stop-color="#0755a8"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+      <feOffset dy="4"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".42"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <g id="cloud">
+      <path d="M0 31c-8 0-14-6-14-14S-8 3 0 3c3-10 12-16 23-16 13 0 23 9 25 21 9-2 18 5 18 14 0 9-7 16-17 16H1z"
+            fill="#fff" stroke="#e9f2fb" stroke-width="2"/>
+      <path d="M5 2c4-7 10-10 18-9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+    </g>
+    <g id="envelope" filter="url(#shadow)">
+      <rect x="0" y="0" width="126" height="88" rx="13" fill="url(#blueBody)" stroke="#8edaff" stroke-width="2"/>
+      <path d="M3 11 63 55 123 11" fill="none" stroke="#b9ebff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
+      <path d="M3 81 47 43M123 81 79 43" fill="none" stroke="#0b65b8" stroke-width="4" opacity=".7"/>
+      <path d="M3 84 48 45 63 57 78 45 123 84" fill="#1378c8" stroke="#7ed2ff" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M3 11 63 55 123 11" fill="none" stroke="#d4f4ff" stroke-width="2.5" stroke-linecap="round" opacity=".8"/>
+    </g>
+  </defs>
+
+  <!-- 卡片层：图标生成脚本按 `id="card"` 整组摘掉，得到透明底的「云 + 信封」母版 -->
+  <g id="card">
+    <rect x="0" y="0" width="256" height="256" rx="57.2672" fill="#030405"/>
+  </g>
+
+  <!-- 云朵 + 信封：整体包围盒宽 = 画布 86%、居中 -->
+  <g id="art" transform="translate(19.21 99.71) scale(1.19968)">
+    <use href="#cloud" transform="translate(112 -27) scale(1.05)"/>
+    <use href="#envelope"/>
+  </g>
+</svg>

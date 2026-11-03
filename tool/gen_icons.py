@@ -1,42 +1,49 @@
 #!/usr/bin/env python3
-"""从公开标志母版生成全平台应用图标。
+"""从公开标志 SVG 生成全平台应用图标。
 
 ## 图标长什么样
 
-黑底卡片 + 白色云朵 + 蓝色信封：
+黑底圆角卡片 + 白色云朵 + 蓝色信封：
 
 ```
-┌──────────────┐  黑色圆角卡片（macOS / Linux / Windows / Android legacy）
-│              │  ├─ 后层：白色云朵（一朵，平底，三个云包）
-│  ┌────────┐  │  └─ 前层：蓝色信封（母版 `cirro-mail-master.png`）
-│  │  信封  │  │
-│  └────────┘  │
-│   ☁☁☁☁☁     │
-└──────────────┘
+┌──────────────────┐  黑色圆角卡片（macOS / Linux / Windows / Android legacy）
+│            ☁☁☁☁  │  ├─ 后层：白色云朵（从信封右上角探出来）
+│  ┌──────────┐    │  └─ 前层：蓝色信封
+│  │  信封    │    │
+│  └──────────┘    │
+└──────────────────┘
 ```
 
 深色 Dock / 深色壁纸上，纯黑图标会和背景融成一块；所以**云朵是白色的**：它把
-剪影边界画出来，信封再靠颜色对比落在云上。换配色只动 `BLUE` / `palette()` 一处：
-卡片、云朵、信封的尺寸与位置全是常量，换一种色相不用碰构图。
+剪影边界画出来，信封再靠颜色对比落在云上。
 
-## 母版
+## 源文件
 
-`assets/branding/cirro-mail-master.png` —— 1254²、透明底、**只有信封标志**，
-不含黑底和云朵；黑底与云朵由本脚本在出图标时合成。母版本身由 `--master` 按
-矢量几何重渲染：信封是 180:128 的圆角矩形 + 翻盖折线 + 纸面，颜色全部走
-`palette(s)` 这一条映射，所以改配色/比例只要动上面的常量。
+| 文件 | 角色 |
+|---|---|
+| `assets/branding/cirro-mail-icon.svg` | **唯一设计源**：1024² 画布，黑底卡片 + 白云 + 蓝信封 |
+| `assets/branding/cirro-mail-master.png` | 由它导出的母版：透明底「云 + 信封」，位置与 SVG 逐像素一致 |
 
-## 用法（在仓库根目录，需要 Pillow）
+母版是**摘掉卡片层**（SVG 里 `id="card"` 那个 `<g>`）之后光栅化的结果。卡片必须由
+本脚本按平台规则现画 —— iOS 要方形铺满、Android 要透明前景、各家圆角也不同 ——
+所以母版不能带底。母版已入库，平时出图标只依赖 Pillow；只有**改了 SVG**才需要
+重新导出母版（那一步需要 SVG 光栅器）。
 
-    python3 tool/gen_icons.py             # 母版 → 全部平台图标
-    python3 tool/gen_icons.py --master    # 先按常量重渲染母版，再出图标
-    python3 tool/gen_icons.py --check     # 只核对产物清单，不写文件
+## 用法（在 `mail-app/` 根目录，需要 Pillow）
+
+    python3 tool/gen_icons.py              # 母版 → 全部平台图标
+    python3 tool/gen_icons.py --from-svg   # 先由 SVG 重导母版，再出图标（需要光栅器）
+    python3 tool/gen_icons.py --check      # 只核对产物清单，不写文件
+
+`--from-svg` 按 **cairosvg → rsvg-convert → sips(macOS) → inkscape** 的顺序找
+光栅器，找到一个就用；一个都没有就报错退出。SVG 的 `width`/`height` 是 1024，
+所以导出的母版是 1024²。
 
 ## 产物
 
 | 文件 | 说明 |
 |---|---|
-| `assets/branding/cirro-mail-master.png` | 标志母版（1254²，透明底），**唯一源文件** |
+| `assets/branding/cirro-mail-master.png` | 母版（1024²，透明底），**由 SVG 导出、入库** |
 | `macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_*.png` | macOS，7 档，透明圆角卡片 |
 | `ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-*.png` | iOS，15 档，**不透明**（App Store 不收带 alpha 的图），方形铺满、由系统切圆角 |
 | `android/app/src/main/res/mipmap-*/ic_launcher{,_round,_foreground}.png` | Android，5 档 × {legacy 卡片 / 圆形 / 自适应前景} |
@@ -49,228 +56,170 @@
   且必须不透明。
 - **Android 自适应**：背景色在 `mipmap-anydpi-v26/*.xml` 里
   （`@color/ic_launcher_background` = 纯黑）；前景层是**去掉黑底**的云朵 + 信封，
-  缩到 **67.8%** 留安全区。
+  缩到 **67.8%** 留安全区（与母版相同的构图，只是整体缩小）。
 - **Android 圆形**：黑色正圆 + 圆内缩进 86% 的构图，圆外透明。
-- 其它平台：**22.37% 圆角**的黑色卡片，四角透明（macOS 11 以来的图标形状）。
+- 其它平台：**22.37% 圆角**的黑色卡片，四角透明（macOS 11 以来的图标形状）——
+  这个圆角与设计稿 SVG 里的卡片一致，别改成别的比例。
+- 母版里「云朵 + 信封」的**构图是设计稿定的**（整体包围盒宽 = 画布 86%、居中）。
+  脚本不重排、不缩放构图，只把母版铺到各平台画布上。
 
 ## 改完之后
 
     python3 tool/gen_icons.py --check
 
-改配色或比例之后重跑 `--master` 就是全新的一套图标；`--check` 负责核对清单。
+改 SVG 之后重跑 `--from-svg` 就是全新的一套图标；`--check` 负责核对清单。
 """
 
 from __future__ import annotations
 
 import argparse
+import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 
+SOURCE_SVG = ROOT / 'assets/branding/cirro-mail-icon.svg'
 MASTER = ROOT / 'assets/branding/cirro-mail-master.png'
-MASTER_SIZE = 1254
+MASTER_SIZE = 1024
 
-# ---- 标志几何：信封在 192×192 的参考网格里 -----------------------------------
-# 外框 180×128（1.406:1）、圆角 14；翻盖从左上/右上两角折到 (95.5, 100)，折线宽
-# 8；纸面是 45° 的倒三角，尖在 (95.5, 68.5)。这些数是从上游 192px 原图量出来的，
-# 改之前先按 512px 预览核对。
-BOXX = (6, 32, 186, 160)
-BOX_R = 14
-APEX = (95.5, 100.0)
-PAPER_APEX = (95.5, 68.5)
-BAND = 8
-
-# 明暗分层：s = 0 最深（折线阴影 / 主体下沿），s = 1 最亮（翻盖高光）。同一套 s
-# 值统一映射成蓝；换一档色相（比如金）只改 `BLUE`，层次关系自动跟着走。
-S_BODY_TOP, S_BODY_BOT = 0.63, 0.02
-S_PAPER_TOP, S_PAPER_BOT = 0.76, 0.55
-S_FLAP_TOP, S_FLAP_BOT = 1.00, 0.86
-S_BAND = 0.22
-
-# 蓝：s=0 → #0075FF，s=1 → #00C0FF（标志原色：青色到蓝的渐变）
-BLUE = ((0, 117, 255), (0, 192, 255))
+# 卡片层在 SVG 里是 `<g id="card">…</g>`；出母版时整组摘掉。
+CARD_RE = re.compile(r'\s*<g id="card">.*?</g>', re.S)
 
 # ---- 图标构图（全部相对目标画布的比例） -------------------------------------
-TILE_RADIUS = 0.2237        # macOS 11+ 图标的圆角
-CARD = (0, 0, 0)            # 卡片/背景：纯黑
-CLOUD_COLOR = (255, 255, 255)
-CLOUD_W = 0.98              # 云宽；底边落在 0.83 处，信封从云里升出来
-CLOUD_BOTTOM = 0.83
-CLOUD_BASE_H = 0.21         # 平底厚度（云宽的倍数）：三个云包的交点约在 0.187
-                            # 处，底座再薄就会在包与包之间漏出黑三角
-ENV_W = 0.60                # 信封宽度；中心 0.42 —— 云包的肩正好露在信封两侧
-ENV_CY = 0.42
-ADAPTIVE_SCALE = 0.6778     # Android 自适应前景缩放（沿用既有安全区）
+TILE_RADIUS = 0.2237        # macOS 11+ / 圆角黑卡片的圆角（与设计稿 SVG 一致）
+CARD = (3, 4, 5)            # 卡片/背景：设计稿的 #030405
 CIRCLE_SCALE = 0.86         # Android 圆形图标里构图的缩放，云朵四角才不被圆切掉
+ADAPTIVE_SCALE = 0.6778     # Android 自适应前景缩放（沿用既有安全区）
 
-SS = 4                      # 合成超采样倍数
-
-
-def _lerp(c0: tuple[int, int, int], c1: tuple[int, int, int], t: float) -> tuple[int, int, int]:
-    t = max(0.0, min(1.0, t))
-    return tuple(round(a + (b - a) * t) for a, b in zip(c0, c1))
-
-
-def palette(s: float) -> tuple[int, int, int]:
-    """明暗 s（0 深、1 亮）→ 颜色。改配色只动 `BLUE` 这一处。"""
-    return _lerp(BLUE[0], BLUE[1], s)
-
-
-def _envelope(width: int, ss: int = SS) -> Image.Image:
-    """按参考网格渲染透明底信封，`width` 是信封外框宽度（像素）。"""
-    u = width / (BOXX[2] - BOXX[0])
-    w, h = width, round((BOXX[3] - BOXX[1]) * u)
-    cw, ch = w * ss, h * ss
-
-    def X(x: float) -> float:
-        return (x - BOXX[0]) * u * ss
-
-    def Y(y: float) -> float:
-        return (y - BOXX[1]) * u * ss
-
-    out = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
-
-    body = Image.new('L', (cw, ch), 0)
-    ImageDraw.Draw(body).rounded_rectangle(
-        [X(BOXX[0]), Y(BOXX[1]), X(BOXX[2]), Y(BOXX[3])], radius=BOX_R * u * ss, fill=255)
-
-    paper = Image.new('L', (cw, ch), 0)
-    ImageDraw.Draw(paper).polygon(
-        [(X(PAPER_APEX[0]), Y(PAPER_APEX[1])), (X(BOXX[2]), Y(BOXX[3])),
-         (X(BOXX[0]), Y(BOXX[3]))], fill=255)
-
-    flap = Image.new('L', (cw, ch), 0)
-    ImageDraw.Draw(flap).polygon(
-        [(X(BOXX[0]), Y(BOXX[1])), (X(APEX[0]), Y(APEX[1])),
-         (X(BOXX[2]), Y(BOXX[1]))], fill=255)
-
-    band = Image.new('L', (cw, ch), 0)
-    dband = ImageDraw.Draw(band)
-    cap = BAND * u * ss / 2
-    for corner in ((BOXX[0], BOXX[1]), (BOXX[2], BOXX[1])):
-        dband.line([X(corner[0]), Y(corner[1]), X(APEX[0]), Y(APEX[1])],
-                   fill=255, width=round(BAND * u * ss), joint='curve')
-        dband.ellipse([X(APEX[0]) - cap, Y(APEX[1]) - cap,
-                       X(APEX[0]) + cap, Y(APEX[1]) + cap], fill=255)
-
-    def shade(s_top: float, s_bot: float) -> Image.Image:
-        strip = Image.new('RGBA', (1, ch))
-        for y in range(ch):
-            strip.putpixel((0, y), palette(s_top + (s_bot - s_top) * y / (ch - 1)) + (255,))
-        return strip.resize((cw, ch), Image.NEAREST)
-
-    for layer, mask in (
-        (shade(S_BODY_TOP, S_BODY_BOT), body),
-        (shade(S_PAPER_TOP, S_PAPER_BOT), paper),
-        (shade(S_FLAP_TOP, S_FLAP_BOT), flap),
-        (Image.new('RGBA', (cw, ch), palette(S_BAND) + (255,)), band),
-    ):
-        layer.putalpha(mask)
-        out.alpha_composite(layer)
-
-    return out.resize((w, h), Image.LANCZOS)
-
-
-def _cloud_mask(px: int) -> Image.Image:
-    """白色云朵的 alpha：平底 + 三个云包。"""
-    m = Image.new('L', (px, px), 0)
-    d = ImageDraw.Draw(m)
-    u = CLOUD_W * px
-    x0 = px / 2 - u / 2
-    y1 = CLOUD_BOTTOM * px
-
-    def puff(lx: float, ly: float, r: float) -> None:
-        cx, cy, rr = x0 + lx * u, y1 - ly * u, r * u
-        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=255)
-
-    d.rounded_rectangle([x0 + 0.05 * u, y1 - CLOUD_BASE_H * u, x0 + 0.95 * u, y1],
-                        radius=0.09 * u, fill=255)
-    puff(0.20, 0.28, 0.175)
-    puff(0.50, 0.34, 0.215)
-    puff(0.80, 0.28, 0.175)
-    return m
-
-
-def _mark(master: Image.Image, width: int, ss: int = 1) -> Image.Image:
-    """把母版裁到内容 bbox，再缩成指定宽度的信封。"""
-    bbox = master.getchannel('A').getbbox()
-    if bbox is None:
-        raise SystemExit('!! 母版是空的')
-    mark = master.crop(bbox)
-    return mark.resize((width, max(1, round(width * mark.height / mark.width))), Image.LANCZOS)
-
-
-def _scene(px: int, master: Image.Image) -> Image.Image:
-    """透明底构图（白色云朵 + 信封），直接画在 px×px 上。"""
-    out = Image.new('RGBA', (px, px), (0, 0, 0, 0))
-    cloud = Image.new('RGBA', (px, px), CLOUD_COLOR + (255,))
-    cloud.putalpha(_cloud_mask(px))
-    out.alpha_composite(cloud)
-    mark = _mark(master, round(ENV_W * px))
-    out.alpha_composite(mark, ((px - mark.width) // 2, round(ENV_CY * px - mark.height / 2)))
-    return out
-
-
-def _icon(size: int, master: Image.Image, bg: str) -> Image.Image:
-    """`bg`：`card` 黑色圆角卡片 / `square` 黑色方形（iOS）/ `circle` 黑色正圆。"""
-    big = size * SS
-    out = Image.new('RGBA', (big, big), (0, 0, 0, 0))
-    card = Image.new('RGBA', (big, big), CARD + (255,))
-    if bg == 'square':
-        out.alpha_composite(card)
-    else:
-        mask = Image.new('L', (big, big), 0)
-        radius = big / 2 if bg == 'circle' else TILE_RADIUS * big
-        ImageDraw.Draw(mask).rounded_rectangle([0, 0, big - 1, big - 1],
-                                               radius=radius, fill=255)
-        out.alpha_composite(Image.composite(card, Image.new('RGBA', (big, big), (0, 0, 0, 0)), mask))
-    out.alpha_composite(_scene(big, master))
-    return out.resize((size, size), Image.LANCZOS)
-
-
-def _circle_icon(size: int, master: Image.Image) -> Image.Image:
-    """圆形图标：黑色正圆 + 缩进一圈的构图（云朵四角不会被圆切掉）。"""
-    big = size * SS
-    out = Image.new('RGBA', (big, big), (0, 0, 0, 0))
-    ImageDraw.Draw(out).rounded_rectangle([0, 0, big - 1, big - 1], radius=big / 2,
-                                          fill=CARD + (255,))
-    inner = round(big * CIRCLE_SCALE)
-    scene = _scene(inner, master)
-    out.alpha_composite(scene, ((big - inner) // 2, (big - inner) // 2))
-    return out.resize((size, size), Image.LANCZOS)
-
-
-def _adaptive_foreground(size: int, master: Image.Image) -> Image.Image:
-    """自适应图标前景：去掉黑底的构图，缩到安全区，透明底。"""
-    big = size * SS
-    scene = _scene(big, master)
-    inner = round(size * ADAPTIVE_SCALE)
-    scene = scene.resize((inner, inner), Image.LANCZOS)
-    canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    canvas.alpha_composite(scene, ((size - inner) // 2, (size - inner) // 2))
-    return canvas
+SS = 4                      # 卡片合成超采样倍数（母版是 1024² 位图，不再矢量绘制）
 
 
 def _save(im: Image.Image, path: Path, *, opaque: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if opaque:
-        im.convert('RGB').save(path)
+        im.convert('RGB').save(path, optimize=True)
     else:
-        im.save(path)
+        im.save(path, optimize=True)
+
+
+def _load_master() -> Image.Image:
+    if not MASTER.exists():
+        raise SystemExit(f'!! 缺母版 {MASTER.relative_to(ROOT)}，先跑 --from-svg')
+    im = Image.open(MASTER).convert('RGBA')
+    if im.size != (MASTER_SIZE, MASTER_SIZE):
+        raise SystemExit(f'!! 母版 {im.size}，应为 {MASTER_SIZE}²')
+    return im
+
+
+def _rasterize(svg_text: str, out: Path) -> None:
+    """把（已摘掉卡片层的）SVG 光栅化成 MASTER_SIZE² 透明底 PNG。"""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='gen_icons_') as tmp:
+        src = Path(tmp) / 'icon.svg'
+        src.write_text(svg_text, encoding='utf-8')
+
+        def sh(*cmd: str) -> bool:
+            try:
+                subprocess.run(cmd, check=True, capture_output=True)
+                return True
+            except (OSError, subprocess.CalledProcessError):
+                return False
+
+        if _try_cairosvg(src, out):
+            pass
+        elif (rsvg := _which('rsvg-convert')) and sh(
+                rsvg, '-w', str(MASTER_SIZE), '-h', str(MASTER_SIZE), '-o', str(out), str(src)):
+            pass
+        elif (sips := _which('sips')) and sh(sips, '-s', 'format', 'png', str(src), '--out', str(out)):
+            pass
+        elif (inkscape := _which('inkscape')) and sh(
+                inkscape, '--export-type=png', f'--export-width={MASTER_SIZE}',
+                f'--export-filename={out}', str(src)):
+            pass
+        else:
+            raise SystemExit('!! 没有可用的 SVG 光栅器（cairosvg / rsvg-convert / sips / inkscape 都没有）')
+
+    im = Image.open(out).convert('RGBA')
+    if im.size != (MASTER_SIZE, MASTER_SIZE):
+        im = im.resize((MASTER_SIZE, MASTER_SIZE), Image.LANCZOS)
+    _save(im, out)
+
+
+def _try_cairosvg(src: Path, out: Path) -> bool:
+    try:
+        import cairosvg  # type: ignore
+    except ImportError:
+        return False
+    try:
+        cairosvg.svg2png(url=str(src), write_to=str(out),
+                         output_width=MASTER_SIZE, output_height=MASTER_SIZE)
+        return out.exists()
+    except OSError:
+        return False
+
+
+def _which(name: str) -> str | None:
+    import shutil
+    return shutil.which(name)
+
+
+def _card(size: int, bg: str) -> Image.Image:
+    """`bg`：`card` 黑色圆角卡片 / `square` 黑色方形（iOS）/ `circle` 黑色正圆。"""
+    big = size * SS
+    out = Image.new('RGBA', (big, big), (0, 0, 0, 0))
+    layer = Image.new('RGBA', (big, big), CARD + (255,))
+    if bg == 'square':
+        out.alpha_composite(layer)
+    else:
+        mask = Image.new('L', (big, big), 0)
+        radius = big / 2 if bg == 'circle' else TILE_RADIUS * big
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, big - 1, big - 1],
+                                               radius=radius, fill=255)
+        out.alpha_composite(Image.composite(layer, Image.new('RGBA', (big, big), (0, 0, 0, 0)), mask))
+    return out.resize((size, size), Image.LANCZOS)
+
+
+def _art(master: Image.Image, px: int) -> Image.Image:
+    """母版缩到 `px`²：构图/位置原样保留。"""
+    return master.resize((px, px), Image.LANCZOS)
+
+
+def _icon(size: int, master: Image.Image, bg: str) -> Image.Image:
+    """黑色底 + 母版（平台图标：卡片 / 方形）。"""
+    out = _card(size, bg)
+    out.alpha_composite(_art(master, size))
+    return out
+
+
+def _circle_icon(size: int, master: Image.Image) -> Image.Image:
+    """圆形图标：黑色正圆 + 缩进一圈的构图（云朵四角不会被圆切掉）。"""
+    out = _card(size, 'circle')
+    inner = round(size * CIRCLE_SCALE)
+    out.alpha_composite(_art(master, inner), ((size - inner) // 2, (size - inner) // 2))
+    return out
+
+
+def _adaptive_foreground(size: int, master: Image.Image) -> Image.Image:
+    """自适应图标前景：去掉黑底的构图，缩到安全区，透明底。"""
+    inner = round(size * ADAPTIVE_SCALE)
+    canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    canvas.alpha_composite(_art(master, inner), ((size - inner) // 2, (size - inner) // 2))
+    return canvas
 
 
 def write_master() -> None:
-    """按矢量几何重渲染标志母版（1254²，透明底）。"""
-    width = round(0.87 * MASTER_SIZE)
-    mark = _envelope(width)
-    master = Image.new('RGBA', (MASTER_SIZE, MASTER_SIZE), (0, 0, 0, 0))
-    master.alpha_composite(mark, ((MASTER_SIZE - mark.width) // 2,
-                                  (MASTER_SIZE - mark.height) // 2))
-    _save(master, MASTER)
-    print(f'母版  {MASTER.relative_to(ROOT)}  {master.size[0]}²（信封宽 {width}px）')
+    """由 SVG 重导母版：摘掉卡片层，只留透明底「云 + 信封」。"""
+    text = SOURCE_SVG.read_text(encoding='utf-8')
+    art = CARD_RE.sub('', text)
+    if '<g id="card">' in art:
+        raise SystemExit(f'!! {SOURCE_SVG.relative_to(ROOT)} 里没找到 <g id="card">，无法摘掉卡片层')
+    _rasterize(art, MASTER)
+    print(f'母版  {MASTER.relative_to(ROOT)}  {MASTER_SIZE}²（透明底「云 + 信封」）')
 
 
 def write_icons(master: Image.Image) -> None:
@@ -316,10 +265,16 @@ def write_icons(master: Image.Image) -> None:
     print('图标  已重写（macOS 7 + iOS 15 + Android 5×3 + Linux 9 + Windows 7 档 ICO）')
 
 
-def check(master: Image.Image) -> int:
+def check() -> int:
     """核对产物清单：尺寸、iOS 不透明、ICO 帧。"""
     bad = 0
     expect: list[tuple[Path, int, bool]] = []
+    if not MASTER.exists():
+        print(f'!! 缺母版 {MASTER.relative_to(ROOT)}', file=sys.stderr)
+        bad += 1
+    elif Image.open(MASTER).size != (MASTER_SIZE, MASTER_SIZE):
+        print(f'!! 母版尺寸 {Image.open(MASTER).size}，应为 {MASTER_SIZE}²', file=sys.stderr)
+        bad += 1
     for size in (16, 32, 64, 128, 256, 512, 1024):
         expect.append((ROOT / 'macos/Runner/Assets.xcassets/AppIcon.appiconset'
                        / f'app_icon_{size}.png', size, False))
@@ -373,20 +328,15 @@ def check(master: Image.Image) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--check', action='store_true', help='只检查，不写文件')
-    ap.add_argument('--master', action='store_true', help='先按常量重渲染标志母版')
+    ap.add_argument('--from-svg', action='store_true', help='先由 SVG 重导母版（需要光栅器）')
     args = ap.parse_args()
 
-    if args.master and not args.check:
-        write_master()
-    if not MASTER.exists():
-        print(f'!! 缺母版 {MASTER.relative_to(ROOT)}，先跑 --master', file=sys.stderr)
-        return 2
-    master = Image.open(MASTER).convert('RGBA')
-    if master.size != (MASTER_SIZE, MASTER_SIZE):
-        print(f'!! 母版 {master.size}，应为 {MASTER_SIZE}²', file=sys.stderr)
-        return 2
     if args.check:
-        return 1 if check(master) else 0
+        return 1 if check() else 0
+
+    if args.from_svg:
+        write_master()
+    master = _load_master()
     write_icons(master)
     return 0
 
