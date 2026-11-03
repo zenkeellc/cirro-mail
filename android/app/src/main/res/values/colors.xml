@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自适应图标的背景色：图标是「黑底 + 白云 + 信封」，前景层只放云和信封，
+         所以这里必须是纯黑（曾经是白色）。改这里要跟 tool/gen_icons*.py 的 CARD 对齐。 -->
+    <color name="ic_launcher_background">#000000</color>
+</resources>

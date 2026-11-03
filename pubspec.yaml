@@ -147,8 +147,8 @@ flutter:
     # 是**官方 Mark（octicon `mark-github`）栅格化出来的 256px 黑色透明图**，
     # 用 `ColorFilter` 跟着主题着色（见 `NoSelectionPane`）—— 所以只要一张，
     # 不要另存浅色版。这里按**文件**而不是 `assets/branding/` 整个目录声明：
-    # 同目录下还有一张 850 KB 的 `cirro-mail-master.png`（市场用主视觉），
-    # 打进包里没有任何用处。
+    # 同目录下还有图标源文件 `cirro-mail-master.png`（只被 `tool/gen_icons.py`
+    # 读取，见该脚本），打进包里没有任何用处。
     - assets/branding/github-mark.png
 
 # `third_party/riverpod` 是**上游 3.4.3 的源码副本 + 一处补丁**，不是我们自己写的
