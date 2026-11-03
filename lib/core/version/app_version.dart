@@ -24,7 +24,9 @@ class AppVersion {
   /// 什么都不知道的版本。`name` 为空即「未知」。
   static const AppVersion unknown = AppVersion(name: '');
 
-  /// 版本名，例如 `0.1.0`、`0.1.0-pro.1`（tag 去掉前缀 `v`）。
+  /// 版本名，例如 `0.1.0`。可能带语义化的预发布标识（`0.1.0-beta.1`），但
+  /// **不会带渠道标记** —— tag 上的 `-pro.N` 在 `tool/version.dart` 那一步就
+  /// 去掉了（见 `stripChannelMarker`），渠道是单独一项（[channel]）。
   final String name;
 
   /// 构建号：官方构建里是 `git rev-list --count HEAD`。0 = 不知道。

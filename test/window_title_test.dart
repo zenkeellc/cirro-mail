@@ -99,14 +99,14 @@ void main() {
       );
     });
 
-    test('预发布标识原样保留（商业版 tag 形如 v0.1.0-pro.1）', () {
+    test('预发布标识原样保留（渠道标记在更早一步已经去掉了）', () {
       expect(
         windowTitleFor(
           appName: 'Cirro Mail',
-          version: '0.1.0-pro.1',
+          version: '0.1.0-beta.1',
           buildNumber: 7,
         ),
-        'Cirro Mail v0.1.0-pro.1+7',
+        'Cirro Mail v0.1.0-beta.1+7',
       );
     });
   });

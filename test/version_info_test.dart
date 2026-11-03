@@ -83,7 +83,10 @@ void main() {
       expect(pro.name, '0.1.0-pro.1');
     });
 
-    test('注入的版本名原样保留（tag 去掉 v 之后可能带 -pro.N）', () {
+    test('注入的版本名原样保留（显式钉版时可能是任意预发布形态）', () {
+      // 注意：正常的构建不会注入 `-pro.N`（工具那一步就去掉了，见
+      // tool/src/version_core.dart 的 stripChannelMarker）。这里只验证
+      // 「显式 APP_VERSION_NAME 不被 App 侧改写」这条边界。
       final v = composeAppVersion(
         defineVersion: ' 0.1.0-pro.1 ',
         defineBuild: ' 9 ',

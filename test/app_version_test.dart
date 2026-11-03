@@ -15,13 +15,14 @@ void main() {
     });
 
     test('主体版本相同时，正式版 > 预发布版', () {
-      // 商业版的 tag 形如 `v0.1.0-pro.1`。
+      // 渠道标记（tag 上的 `-pro.N`）不会出现在版本名里；这里测的是通用的
+      // semver 预发布标识。
       expect(
-        const AppVersion(name: '0.1.0').isNewerThan(const AppVersion(name: '0.1.0-pro.1')),
+        const AppVersion(name: '0.1.0').isNewerThan(const AppVersion(name: '0.1.0-beta.1')),
         isTrue,
       );
       expect(
-        const AppVersion(name: '0.1.0-pro.1').isNewerThan(const AppVersion(name: '0.1.0')),
+        const AppVersion(name: '0.1.0-beta.1').isNewerThan(const AppVersion(name: '0.1.0')),
         isFalse,
       );
     });
@@ -83,7 +84,7 @@ void main() {
     });
 
     test('coreName 去掉预发布与 build 元数据', () {
-      expect(const AppVersion(name: '0.1.0-pro.1').coreName, '0.1.0');
+      expect(const AppVersion(name: '0.1.0-beta.1').coreName, '0.1.0');
       expect(const AppVersion(name: '1.2.3+45').coreName, '1.2.3');
       // 解析不出来的原样返回，不是空串。
       expect(const AppVersion(name: 'dev').coreName, 'dev');
