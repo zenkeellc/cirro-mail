@@ -286,11 +286,10 @@ class AppDelegate: FlutterAppDelegate {
     // 核心代码里不该出现那一个的标识符（公开仓库有 `no-commercial-refs` 在扫），
     // 所以 Dart 侧固定用公开版前缀，原生这侧按**当前** bundle id 再挂一条：
     // 两个名字共用同一个 handler，谁在用都能对上。
-    let names = <String>[
+    let bundleId = Bundle.main.bundleIdentifier
+    let names: [String] = [
       "com.zenkee.cirromail/desktop",
-      if let bundleId = Bundle.main.bundleIdentifier {
-        "\(bundleId)/desktop"
-      },
+      bundleId.map { "\($0)/desktop" } ?? "com.zenkee.cirromail/desktop",
     ]
 
     let handler: FlutterMethodCallHandler = { call, result in
