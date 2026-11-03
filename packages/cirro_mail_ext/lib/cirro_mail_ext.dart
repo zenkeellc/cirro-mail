@@ -20,6 +20,8 @@ library;
 
 import 'package:flutter/widgets.dart';
 
+export 'src/ai_transport.dart'
+    show AiCall, AiChannelState, AiTransport, AiTransportException;
 export 'src/app_extension.dart' show AppExtension;
 export 'src/app_extension_registry.dart' show AppExtensionRegistry;
 export 'src/mail_store.dart'

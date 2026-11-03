@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -232,6 +233,10 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
     // 所以「三样」在界面上是两条输入 + 一个下拉。
     final fieldsReady = urlValid && keyPresent;
 
+    // 托管通道。公开版恒为 null —— 「通道」那一段与「隐藏 BYOK 区」的整支
+    // 都不会出现，这一页与从前逐字节相同（`ai_transport_gate_test.dart` 钉着）。
+    final transport = ref.watch(aiTransportProvider);
+
     return ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: <Widget>[
@@ -258,7 +263,7 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
               ],
             ),
           ),
-          if (!settings.isUsable)
+          if (transport == null && !settings.isUsable)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Text(
@@ -268,7 +273,10 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
                 ),
               ),
             ),
-          if (ref.watch(aiSettingsStoreProvider).isKeychainDegraded)
+          // 托管模式下不显示「钥匙串存不住 Key」：那条提示关心的是 BYOK 的
+          // Key，而这一页在托管模式下连 Key 输入框都没有。
+          if (transport == null &&
+              ref.watch(aiSettingsStoreProvider).isKeychainDegraded)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Text(
@@ -279,10 +287,24 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
               ),
             ),
 
-          // 「服务商」这一段就是「三样齐了才能拉取/测试」在版面上的落点：
-          // 地址 → 格式 → Key，顺序即填的顺序，缺哪样下面那行小字就说哪样。
-          const Divider(),
-          SettingsSectionHeader(title: l10n.aiProviderSection),
+          // 托管通道（商业版注册了 `AppExtension.aiTransport`）：「通道」一行
+          // 就是这整页在托管模式下的全部内容 —— 地址 / Key / 模型 / 拉取 /
+          // 测试连接整段隐藏（可用性由 `state()` 表达，不跑 BYOK 那套探测）。
+          // 公开版 `transport` 恒为 null，走的仍是下面那支，界面一个像素不变。
+          if (transport != null) ...[
+            const Divider(),
+            SettingsSectionHeader(title: l10n.aiChannelSection),
+            _ChannelTile(
+              transport: transport,
+              checking: l10n.aiChannelChecking,
+              ready: l10n.aiChannelReady,
+              unavailable: l10n.aiChannelUnavailable,
+            ),
+          ] else ...[
+            // 「服务商」这一段就是「三样齐了才能拉取/测试」在版面上的落点：
+            // 地址 → 格式 → Key，顺序即填的顺序，缺哪样下面那行小字就说哪样。
+            const Divider(),
+            SettingsSectionHeader(title: l10n.aiProviderSection),
           _TextTile(
             fieldKey: const ValueKey('ai-base-url'),
             label: l10n.aiBaseUrlLabel,
@@ -404,6 +426,7 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
             testError: _testError,
             testChars: _testChars,
           ),
+          ],
 
           const Divider(),
           SettingsSectionHeader(title: l10n.aiFeaturesSection),
@@ -667,6 +690,111 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
           _testError = message;
       }
     });
+  }
+}
+
+/// 「通道」那一行：**名字与状态全由实现方给**。
+///
+/// 公开仓库的 ARB 里只有这一行自己的通用词（「通道」/「正在检查…」/「可用」/
+/// 「暂不可用」），没有也不该有任何实现方那边的概念（§6.1：商业文案进商业包）。
+/// [AiTransport.channelLabel] 是显示名（可以是产品名），
+/// [AiChannelState.detail] 是那句给人看的话 —— 核心都**原样显示**。
+///
+/// 为什么是 `FutureBuilder` 而不是把状态提到 `AiSettingsSection` 里：这一行
+/// 只在托管模式下存在，它自己的 `state()` 调用（可能是一次网络往返）不该拖住
+/// 整页别的字段；谁等谁的边界就在这个 widget 上。
+class _ChannelTile extends StatefulWidget {
+  const _ChannelTile({
+    required this.transport,
+    required this.checking,
+    required this.ready,
+    required this.unavailable,
+  });
+
+  final AiTransport transport;
+
+  /// 还在问 `state()`。
+  final String checking;
+
+  /// `detail` 为空、但 `usable == true` 时的兜底。
+  final String ready;
+
+  /// `detail` 为空、且 `usable == false` 时的兜底。
+  final String unavailable;
+
+  @override
+  State<_ChannelTile> createState() => _ChannelTileState();
+}
+
+class _ChannelTileState extends State<_ChannelTile> {
+  late Future<AiChannelState> _state = _load();
+
+  /// **不让 `state()` 的异常把这一页打成红屏**（契约说它不该抛，但坏掉的
+  /// 实现方也不该毁掉设置页）。异常按「不可用、没有说明」处理 —— 文案由
+  /// [widget.unavailable] 兜底。
+  Future<AiChannelState> _load() async {
+    try {
+      return await widget.transport.state();
+    } catch (_) {
+      return const AiChannelState(usable: false, detail: '');
+    }
+  }
+
+  @override
+  void didUpdateWidget(_ChannelTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 换了一个实现方（理论上只发生在测试里）才重问；同一实现方不重刷 ——
+    // 每次父级 setState 都重发一次 `state()` 就是给实现方喂请求风暴。
+    if (!identical(oldWidget.transport, widget.transport)) {
+      setState(() => _state = _load());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FutureBuilder<AiChannelState>(
+      future: _state,
+      builder: (context, snapshot) {
+        final state = snapshot.data;
+        final String detail;
+        if (state == null) {
+          detail = widget.checking;
+        } else if (state.detail.trim().isNotEmpty) {
+          detail = state.detail;
+        } else {
+          detail = state.usable ? widget.ready : widget.unavailable;
+        }
+        return ListTile(
+          key: const ValueKey('ai-channel'),
+          dense: true,
+          leading: Icon(
+            Icons.hub_outlined,
+            color: state != null && !state.usable
+                ? theme.colorScheme.error
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+          title: Text(
+            widget.transport.channelLabel,
+            key: const ValueKey('ai-channel-label'),
+          ),
+          subtitle: Text(
+            detail,
+            key: const ValueKey('ai-channel-detail'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          trailing: state == null
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+        );
+      },
+    );
   }
 }
 

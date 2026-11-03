@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart' as ext;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/ai/ai_service.dart';
@@ -26,11 +27,26 @@ final Provider<AiUsageCounter> aiUsageProvider = Provider<AiUsageCounter>(
   name: 'aiUsage',
 );
 
+/// 扩展注册的**托管 AI 通道**（`AppExtension.aiTransport`）。
+///
+/// 公开版恒为 null —— [aiServiceProvider] 于是走 BYOK，设置页也没有「通道」
+/// 那一行。做成 provider 而不是让各处直接读注册表：测试可以 override 它来
+/// 模拟「注册了商业扩展」的进程，不必动那个全局单例。
+///
+/// 注册发生在 `runApp` 之前、之后不再变，所以同步 `Provider` 就够（不需要
+/// 监听，也没有可监听的信号）。
+final Provider<ext.AiTransport?> aiTransportProvider =
+    Provider<ext.AiTransport?>(
+  (ref) => ext.AppExtensionRegistry.instance.aiTransport,
+  name: 'aiTransport',
+);
+
 /// 四项能力共用的接线层。
 final Provider<AiService> aiServiceProvider = Provider<AiService>(
   (ref) => AiService(
     store: ref.watch(aiSettingsStoreProvider),
     usage: ref.watch(aiUsageProvider),
+    transport: ref.watch(aiTransportProvider),
   ),
   name: 'aiService',
 );

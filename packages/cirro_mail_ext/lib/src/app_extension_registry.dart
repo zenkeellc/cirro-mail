@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import 'ai_transport.dart';
 import 'app_extension.dart';
 import 'mail_store.dart';
 import 'notification_policy.dart';
@@ -138,6 +139,22 @@ class AppExtensionRegistry {
   List<SettingsSection> settingsSections(BuildContext context) => <SettingsSection>[
         for (final ext in _extensions) ...ext.settingsSections(context),
       ];
+
+  // ---- AI 托管通道 ----
+
+  /// 扩展提供的 AI 托管通道（见 [AppExtension.aiTransport]），按注册顺序取
+  /// **第一个**非 null。
+  ///
+  /// 取第一个而不是「全部跑一遍」：一项 AI 能力只能有一个实现，两条通道同时
+  /// 生效意味着同一次点击发两份请求、计两份费。空注册表（公开版）恒为 null，
+  /// 核心于是照旧走 BYOK。
+  AiTransport? get aiTransport {
+    for (final ext in _extensions) {
+      final transport = ext.aiTransport;
+      if (transport != null) return transport;
+    }
+    return null;
+  }
 
   // ---- 邮件正文外联资源 ----
 

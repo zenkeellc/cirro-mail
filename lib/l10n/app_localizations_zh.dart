@@ -1468,6 +1468,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiProviderSection => '服务商';
 
   @override
+  String get aiChannelSection => '通道';
+
+  @override
+  String get aiChannelChecking => '正在检查…';
+
+  @override
+  String get aiChannelReady => '可用';
+
+  @override
+  String get aiChannelUnavailable => '暂不可用';
+
+  @override
   String get aiModelSection => '模型';
 
   @override

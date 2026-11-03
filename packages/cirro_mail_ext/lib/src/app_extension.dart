@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import 'ai_transport.dart';
 import 'notification_policy.dart';
 import 'push_defaults.dart';
 import 'settings_section.dart';
@@ -26,6 +27,7 @@ import 'settings_section.dart';
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
 /// | [securityExtras] | `security_section.dart`（「设置 → 安全」页的正文末尾） |
+/// | [aiTransport] | `ai_providers.dart`（AI 能力改走托管通道）/ `ai_section.dart`（设置页「通道」行） |
 /// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
 /// | [autoLoadExternalResources] / [rewriteExternalResourceUrl] | `external_resource_banner.dart#_HtmlBodyViewState` / `html_body_view.dart`（读信页外联资源） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
@@ -181,6 +183,25 @@ abstract class AppExtension {
   /// 可以公开、可以编进客户端；能伪造 webhook 的 `webhookSecret` **绝不**从
   /// 这里进来（它在实例后台那一侧）。见 [PushDefaults] 的注释。
   PushDefaults? get pushDefaults => null;
+
+  /// AI 能力的**托管通道**（见 [AiTransport]）。
+  ///
+  /// 返回非 null 时，核心那七项 AI 能力（改写 / 成文 / 续写 / 标题 / 检查 /
+  /// 回复建议 / 邮件建议）改走这个实现：入参由核心翻成 [AiCall] 交过去，
+  /// 拿回来的是一段文本增量。设置 → AI 里同时多一行「通道」（名字取
+  /// [AiTransport.channelLabel]），并且**隐藏**地址 / Key / 模型 / 拉取 /
+  /// 测试连接 —— 托管通道的可用性由 [AiTransport.state] 表达，不再跑 BYOK 那
+  /// 套探测。
+  ///
+  /// 返回 `null`（公开版的默认）时，AI 一切照旧走用户自己的端点与 Key，设置页
+  /// 一个字都不变。**公开仓库里没有实现方** —— 开源版的行为因此逐字不变，
+  /// 这正是这条接缝存在的形状：商业代码不改核心，核心只需要在若干处问一次
+  /// 注册表。
+  ///
+  /// 多个扩展都返回非 null 时，注册表按注册顺序取**第一个** —— 一个进程里
+  /// 只该有一条托管通道（与 [appDisplayName] / [rewriteExternalResourceUrl]
+  /// 同一口径）。
+  AiTransport? get aiTransport => null;
 
   /// 把通知规则的**内存快照**准备好（读一次配置，之后 [allowsNotification]
   /// 就只查内存）。

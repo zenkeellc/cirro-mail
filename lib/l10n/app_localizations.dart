@@ -2738,6 +2738,30 @@ abstract class AppLocalizations {
   /// **'Provider'**
   String get aiProviderSection;
 
+  /// No description provided for @aiChannelSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel'**
+  String get aiChannelSection;
+
+  /// No description provided for @aiChannelChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get aiChannelChecking;
+
+  /// No description provided for @aiChannelReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get aiChannelReady;
+
+  /// No description provided for @aiChannelUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get aiChannelUnavailable;
+
   /// No description provided for @aiModelSection.
   ///
   /// In en, this message translates to:

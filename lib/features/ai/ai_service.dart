@@ -1,8 +1,13 @@
+import 'dart:async';
+
+import 'package:cirro_mail_ext/cirro_mail_ext.dart' as ext;
+
 import 'ai_client.dart';
 import 'ai_prompts.dart';
 import 'ai_provider.dart';
 import 'ai_settings.dart';
 import 'ai_settings_store.dart';
+import 'ai_task.dart';
 
 /// 一次 AI 调用的结果，或者「没法调用」的原因。
 ///
@@ -67,6 +72,14 @@ class AiTestFailed extends AiTestResult {
 /// 是最容易出错的地方（先记次数还是先发请求？Key 读失败了怎么办？）。所以它
 /// 全部可单测：注入假传输，断言「发出去的请求体里有该有的东西、没有不该有的
 /// 东西」。
+///
+/// ## 两种通道，同一套状态机
+///
+/// [transport] 非 null 时（商业版注册了 `AppExtension.aiTransport`），七项能力
+/// 改走**托管通道**：入参由 `AiTask` 翻成 `AiCall` 交过去，拿回一段文本增量，
+/// 就绪判断交给 `state()`。为 null 时（公开版）走原有的 BYOK 路径，**一字
+/// 不变**。两条路共用「每日调用计数」与上层 `AiRun` 的 UI 状态机 —— 界面完全
+/// 不需要知道自己接的是哪一条。
 class AiService {
   // 计划原文的字段名是私有的 `_store`/`_usage`，而构造参数名必须是公开的
   // （测试按名字传参）—— 两者不能合并成 `this._store` 这个 initializing
@@ -75,22 +88,39 @@ class AiService {
     required AiSettingsStore store,
     required AiUsageCounter usage,
     AiClient? client,
+    ext.AiTransport? transport,
   })
       // ignore: prefer_initializing_formals
       : _store = store,
         // ignore: prefer_initializing_formals
         _usage = usage,
-        _client = client ?? AiClient();
+        _client = client ?? AiClient(),
+        // ignore: prefer_initializing_formals
+        _transport = transport;
 
   final AiSettingsStore _store;
   final AiUsageCounter _usage;
   final AiClient _client;
+
+  /// 托管通道（见 [AiTransport]）。null = 公开版的 BYOK 路径。
+  final ext.AiTransport? _transport;
 
   /// 没配好时那句给人看的话。**四处引用共用同一句话**（`_start` 里两处：可用性
   /// 检查与钥匙串降级各一，四项能力都走它；`listModels` 与 `testConnection` 各
   /// 一处），改了文案不会有人漏掉。
   static const String notConfiguredMessage =
       '还没有配置 AI —— 去「设置 → AI」里填上服务商、接口地址与 API Key';
+
+  /// 托管通道「这一次调不了、但实现方没给具体原因」时的兜底提示。
+  ///
+  /// 正常路径上**用不到它**：`state().detail` 非空时核心原样显示实现方那句话
+  /// （具体的出口由实现方给）。它只在两种劣化情形出现：`state()` 抛了异常，
+  /// 或者返回了 `usable: false` 却一个字都没说。措辞刻意保持**中性、可操作**
+  /// —— 公开仓库的代码里不写实现方那边的商业概念（§6.1：公开 ARB 不出现
+  /// 「订阅」「积分」这类词），用户至少知道「这里现在不能用，还有自带 Key 这
+  /// 条路」。
+  static const String channelUnavailableMessage =
+      'AI 通道暂不可用，可在「设置 → AI」里改用自带 Key';
 
   /// 四项能力的**输出上限**（请求体里的 `max_tokens`）。
   ///
@@ -139,6 +169,11 @@ class AiService {
           tone: tone,
           extraInstruction: extraInstruction,
         ),
+        managed: () => AiTask.rewrite(
+          selection: selection,
+          tone: tone,
+          extraInstruction: extraInstruction,
+        ),
         temperature: 0.4,
       );
 
@@ -153,6 +188,13 @@ class AiService {
       _start(
         maxTokens: _maxOutputTokens,
         build: (settings) => AiPrompts.draft(
+          points: points,
+          tone: tone,
+          length: length,
+          subject: subject,
+          recipient: recipient,
+        ),
+        managed: () => AiTask.draft(
           points: points,
           tone: tone,
           length: length,
@@ -174,6 +216,10 @@ class AiService {
           context: context,
           subject: subject,
         ),
+        managed: () => AiTask.continuation(
+          context: context,
+          subject: subject,
+        ),
         temperature: 0.3,
       );
 
@@ -186,6 +232,7 @@ class AiService {
       _start(
         maxTokens: _maxOutputTokens,
         build: (settings) => AiPrompts.subject(body: body, current: current),
+        managed: () => AiTask.subject(body: body, current: current),
       );
 
   /// ④b 发送前检查的**模型那一半**。本地那一半在 `preflight.dart`，
@@ -198,6 +245,11 @@ class AiService {
       _start(
         maxTokens: _maxOutputTokens,
         build: (settings) => AiPrompts.preflightReview(
+          subject: subject,
+          body: body,
+          attachmentCount: attachmentCount,
+        ),
+        managed: () => AiTask.review(
           subject: subject,
           body: body,
           attachmentCount: attachmentCount,
@@ -217,6 +269,7 @@ class AiService {
         maxTokens: _maxOutputTokens,
         build: (settings) =>
             AiPrompts.replySuggestions(incoming: incoming, count: count),
+        managed: () => AiTask.replySuggestions(incoming: incoming, count: count),
         temperature: 0.9,
       );
 
@@ -239,6 +292,7 @@ class AiService {
         maxTokens: _maxOutputTokens,
         build: (settings) =>
             AiPrompts.suggest(input: input, actionIds: actionIds),
+        managed: () => AiTask.suggest(input: input, actionIds: actionIds),
         temperature: 0.3,
         system: _suggestSystem,
       );
@@ -359,15 +413,25 @@ class AiService {
   /// 3. 发请求**之前**记一次调用 —— 记在之后的话，「请求发出去了但进程被杀」
   ///    这一次就不计数了，而钱是真花了；
   /// 4. `maxTokens` 与温度由各能力给，不放在 prompt 里。
+  ///
+  /// **[managed] 只在有托管通道时才被读**（`build` 是 BYOK 那半的 prompt，
+  /// 托管那半不拼 prompt）。两支在 `_start` 的第一行就分开，所以 BYOK 路径
+  /// 连「多调一次 `managed()`」都不会发生。
   Future<AiStart> _start({
     required int maxTokens,
     required String Function(AiSettings settings) build,
+    required ext.AiCall Function() managed,
     double temperature = 0.7,
     /// 这一路的 system。**默认值就是原来那句**，所以既有六条路一个字没变。
     /// 只有 [suggest] 传自己的那一句 —— 它要的是「只输出 JSON」，
     /// 而 `_system` 那句「不要任何寒暄与说明」对 JSON 不够（模型仍会包围栏）。
     String system = _system,
   }) async {
+    // 托管通道优先：注册了实现方，就**完全**不碰设置与钥匙串（那两样在托管
+    // 模式下没有意义，设置页也把它们藏起来了）。
+    final transport = _transport;
+    if (transport != null) return _startManaged(transport, managed);
+
     final settings = await _store.load();
     if (!settings.isUsable) {
       return const AiNotStarted(notConfiguredMessage);
@@ -392,6 +456,133 @@ class AiService {
       ),
       apiKey: key,
     ));
+  }
+
+  /// 托管通道那一半：问可用性 → 记一次调用 → 把 `transport.run()` 包成
+  /// 与 BYOK 完全同形的 [AiStream]。
+  ///
+  /// **就绪判断改问 [ext.AiTransport.state]**（§6.2）：托管模式下没有「地址填
+  /// 没填、Key 存没存」这回事，可用性完全由实现方表达 —— 没激活、到期、余额
+  /// 不足、离线，在核心这边一律是 `usable == false` 加一句实现方给的话。
+  ///
+  /// **调用计数照记**：`AiUsageCounter` 这个软上限是「这个 App 今天调了几次
+  /// AI」，与走哪条通道无关；不记的话托管用户的设置页会永远显示 0 次。
+  Future<AiStart> _startManaged(
+    ext.AiTransport transport,
+    ext.AiCall Function() buildCall,
+  ) async {
+    final ext.AiChannelState channel;
+    try {
+      channel = await transport.state();
+    } catch (_) {
+      // `state()` 的契约是「不可用别抛」，但坏掉的实现方不该让点一下按钮就
+      // 冒一个未处理异常 —— 退到一句通用提示。
+      return const AiNotStarted(channelUnavailableMessage);
+    }
+    if (!channel.usable) {
+      final detail = channel.detail.trim();
+      return AiNotStarted(
+        detail.isEmpty ? channelUnavailableMessage : channel.detail,
+      );
+    }
+
+    final ext.AiCall call;
+    final Stream<String> source;
+    try {
+      call = buildCall();
+      source = transport.run(call);
+    } on ext.AiTransportException catch (error) {
+      // 流开始前就失败（签名、激活、参数）：实现方给的那句话**原样**显示。
+      return AiNotStarted(error.message);
+    } catch (_) {
+      return const AiNotStarted(channelUnavailableMessage);
+    }
+
+    await _usage.record();
+    return AiStarted(_managedStream(source));
+  }
+
+  /// 把实现方的文本增量流包成 [AiStream]。
+  ///
+  /// 与 `AiClient.stream()` 的约定保持一致（界面那一层只认 [AiStream]，
+  /// 完全不知道自己接的是哪条通道）：
+  ///
+  /// - [AiStream.text] 是增量（空串丢弃）；
+  /// - [AiStream.done] 在流正常结束时给出**拼好的完整结果**；实现方报错时带着
+  ///   那个错误失败（[AiRun] 从 `done` 与 `text` 两处都能拿到它）；
+  /// - [AiStream.cancel] 取消订阅（实现方在 `onCancel` 里停上游、正常收尾），
+  ///   `done` 以**已拿到的部分**结束 —— 「拿到什么算什么」，与 BYOK 的取消
+  ///   语义相同；
+  /// - [AiStream.truncated] 恒为 null：截断是实现方自己的事，核心没有依据
+  ///   猜（BYOK 那条路才有 `finish_reason`）。
+  static AiStream _managedStream(Stream<String> source) {
+    final controller = StreamController<String>();
+    final buffer = StringBuffer();
+    final done = Completer<String>();
+    StreamSubscription<String>? subscription;
+
+    /// 已经收场（正常、出错、取消各算一次）。之后到达的事件一律忽略。
+    var finished = false;
+
+    void closeText() {
+      if (controller.isClosed) return;
+      unawaited(controller.close().catchError((Object _) {}));
+    }
+
+    void completeText() {
+      if (!done.isCompleted) done.complete(buffer.toString());
+    }
+
+    void fail(Object error, StackTrace stack) {
+      if (finished) return;
+      finished = true;
+      closeText();
+      if (!done.isCompleted) done.completeError(error, stack);
+    }
+
+    subscription = source.listen(
+      (part) {
+        if (finished || part.isEmpty) return;
+        buffer.write(part);
+        if (!controller.isClosed) controller.add(part);
+      },
+      onError: fail,
+      // **有人听才等 close**：单订阅 controller 的 `close()` future 要等 done
+      // 事件真的投递出去才完成，没人听就永远不完成 —— 与 `AiClient.stream()`
+      // 里那条注释同一个坑。等它，是为了让「增量铺完」严格早于「done 给出
+      // 完整结果」，调用方不会看到最后几个字被重复追加一遍。
+      onDone: () {
+        if (finished) return;
+        finished = true;
+        if (controller.hasListener) {
+          controller.close().then<void>(
+            (_) => completeText(),
+            onError: (Object _) => completeText(),
+          );
+        } else {
+          closeText();
+          completeText();
+        }
+      },
+    );
+
+    final future = done.future;
+    // 只监听 text 的调用方不会给 `done` 挂 onError —— 少了这个处理器，失败时
+    // 它会在 zone 里冒成「未处理异常」（与 `AiClient.stream()` 同一条处理）。
+    unawaited(future.catchError((Object _) => ''));
+
+    return AiStream(
+      text: controller.stream,
+      done: future,
+      truncated: null,
+      cancel: () {
+        if (finished) return;
+        finished = true;
+        unawaited(subscription?.cancel());
+        closeText();
+        completeText();
+      },
+    );
   }
 
   /// 所有请求共用的 system。厂商差异（Anthropic 的 `system` 是顶层字段、

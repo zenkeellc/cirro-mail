@@ -1561,6 +1561,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiProviderSection => 'Provider';
 
   @override
+  String get aiChannelSection => 'Channel';
+
+  @override
+  String get aiChannelChecking => 'Checking…';
+
+  @override
+  String get aiChannelReady => 'Available';
+
+  @override
+  String get aiChannelUnavailable => 'Unavailable';
+
+  @override
   String get aiModelSection => 'Model';
 
   @override

@@ -4,6 +4,7 @@
 
 import 'dart:async';
 
+import 'package:cirro_mail_ext/cirro_mail_ext.dart' as ext;
 import 'package:flutter/foundation.dart';
 
 import 'ai_client.dart';
@@ -171,6 +172,10 @@ class AiRun {
   /// 带着请求 URL 与响应体，而 `AiTransportException` 的 message 是厂商写的
   /// 原因（例如「invalid api key」）。两样都保留一层，但都不含 Key 本身。
   static String describeError(Object error) {
+    // 托管通道的实现方只给「一句给人看的话」（`AiTransportException`），核心
+    // **原样显示**（§6.1）：文案是它自己的营销/客服口径，公开仓库的 ARB 里
+    // 不写。**不加状态码前缀、不拼任何核心的话** —— 实现方已经说清楚了。
+    if (error is ext.AiTransportException) return error.message;
     if (error is AiTransportException) {
       final status = error.statusCode;
       return status == null ? error.message : 'AI 返回 $status：${error.message}';
