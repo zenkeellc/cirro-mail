@@ -30,6 +30,7 @@ import 'package:mail_app/core/version/window_title.dart';
 import 'package:mail_app/data/models/mailbox_account.dart';
 import 'package:mail_app/data/models/profile.dart';
 import 'package:mail_app/features/settings/sections/about_section.dart';
+import 'package:mail_app/core/storage/window_channel.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
 import 'package:mail_app/providers/core_providers.dart';
 import 'package:mail_app/providers/mail_providers.dart';
@@ -228,7 +229,8 @@ void main() {
   });
 
   group('显示位：桌面窗口标题', () {
-    const windowChannel = MethodChannel('com.zenkee.cirromail/window');
+    // 通道名从实现里取：商业版检出会把它换成自己的 bundle id（见 WindowChannel）。
+  const windowChannel = MethodChannel(WindowChannel.channelName);
 
     List<MethodCall> captureWindowCalls() {
       final calls = <MethodCall>[];

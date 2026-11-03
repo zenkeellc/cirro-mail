@@ -23,8 +23,15 @@ import 'package:flutter/services.dart';
 /// 非桌面平台、以及原生侧还没跟上（旧构建）时，这里全是**静默空操作** ——
 /// 窗口起不来是小事，因为「叫窗口」失败而把导航也带崩才是大事。
 abstract final class WindowChannel {
-  static const MethodChannel _channel =
-      MethodChannel('com.zenkee.cirromail/window');
+  /// 通道名。反向域名跟着 **bundle id** 走，所以这个字符串在商业版检出里是
+  /// 不同的（`com.zenkee.cirromailpro/window`，与那边原生注册的名字一致）——
+  /// 商业版只改这一行，原生侧三个 runner 里的注册串跟着一起改。
+  ///
+  /// 放在公开常量里而不是内联进 [_channel]：测试要照着它挂 mock 处理器，
+  /// 各抄一遍的话，商业版检出里每份测试都得改一次（以前就是这样）。
+  static const String channelName = 'com.zenkee.cirromail/window';
+
+  static const MethodChannel _channel = MethodChannel(channelName);
 
   /// 把主窗口显示出来并抢到前台。窗口本来就开着时是幂等的。
   static Future<void> show() async {
