@@ -82,6 +82,25 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   /// [inFlightByProfileProvider] 反映，两者一起决定标题栏转不转圈。
   bool _syncing = false;
 
+  /// 正文选区的键盘焦点。
+  ///
+  /// **必须有这一颗显式的焦点节点**（见 [_focusReaderOnce] 上面那段）：
+  /// `SelectableRegion` 的 `Actions`（`复制` / `全选` 就挂在那里）只对
+  /// **焦点在它里面**的按键生效。`SelectionArea` 自己的局部焦点节点在
+  /// 「谁都没点过」时不持有焦点，于是打开一封信直接按 `Cmd/Ctrl+C` 什么
+  /// 都不会发生 —— 而右键菜单里的「复制」照常好使，因为右键那条路
+  /// （`selectable_region.dart` 的 `_handleRightClickDown`）自己会
+  /// `requestFocus()`。
+  final FocusNode _readerFocus =
+      FocusNode(debugLabel: 'mail-detail-selection');
+
+  /// 上一次把焦点交给正文时**是哪一封**（`profileId/emailId`）。
+  ///
+  /// 焦点只在这一封**第一次显示**（以及换邮件）时抢：页面内部的重建
+  /// （同步状态、外联资源开关、附件到位……）不该把用户正点的按钮 / 菜单
+  /// 的焦点抢回来。
+  String? _focusedMailKey;
+
   MailRef get _ref =>
       MailRef(profileId: widget.profileId, emailId: widget.emailId);
 
@@ -105,6 +124,64 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
       _syncing = false;
       WidgetsBinding.instance.addPostFrameCallback((_) => _openOnce());
     }
+  }
+
+  @override
+  void dispose() {
+    _readerFocus.dispose();
+    super.dispose();
+  }
+
+  /// 把**键盘焦点**交给这一封的正文选区。
+  ///
+  /// ## 为什么需要它（用户报的那个 bug）
+  ///
+  /// 现象：点开一封信，选中字之后按 `Cmd/Ctrl+C` 没有任何反应，只能用右键
+  /// 菜单里的「复制」。
+  ///
+  /// 根因在 Flutter 的分发路径上，不在菜单：`Cmd/Ctrl+C` 经
+  /// `DefaultTextEditingShortcuts` 解成 `CopySelectionTextIntent`，再由
+  /// `Actions.maybeFind` **从 `primaryFocus` 的 context 往上找**执行者
+  /// （`actions.dart`）。而那个执行者（`_CopySelectionAction`）挂在
+  /// `SelectableRegion` 自己的 `Actions` 上
+  /// （`selectable_region.dart:353-354`）。焦点不在选区里时找不到它，
+  /// 按键就被静默忽略 —— 没有报错、没有提示，看起来就是「快捷键坏了」。
+  ///
+  /// `SelectableRegion` 在**鼠标**路径上只有两处把焦点要过来：
+  /// `_startNewMouseSelectionGesture` 的**第一次单击**那一支（`:741`）与
+  /// `_handleRightClickDown`（`:1050`；触摸的长按在 `:1007`）。所以：
+  /// - 用右键 → 焦点一定在里面 → 菜单里的「复制」永远好使；
+  /// - 打开邮件后**什么都没点**就按键 → 焦点还在别处（列表、或干脆没有）
+  ///   → `Cmd+A`/`Cmd+C` 一起失效 —— 这正是「必须用右键」的来源；
+  /// - 在**普通正文**上按一下或拖选 → 顺带拿到了焦点 → 这时快捷键又好了，
+  ///   于是这个 bug 时灵时不灵，很难复现。
+  ///
+  /// 修法就是补上「打开这一封时主动把焦点交给正文」这一步 —— 与 macOS
+  /// 原生邮件客户端一致（点一封信，阅读区就是键盘焦点所在）。焦点一旦
+  /// 在选区里，`Cmd+A`/`Cmd+C` 与右键菜单走的是同一套 `Actions`，
+  /// 不再有「快捷键不行、右键才行」的差别。
+  ///
+  /// ## 为什么在 build 里排 post-frame 回调、而不是在 initState 里要焦点
+  ///
+  /// `initState` 那一刻正文还没建出来（`mailDetailProvider` 是异步的），
+  /// `FocusNode` 还没挂到 `Focus` 上；对着一个没挂上的节点 `requestFocus()`
+  /// 是空操作。排到这一帧建完之后，节点一定在树上。
+  ///
+  /// 用 [_focusedMailKey] 去重：只有「这一封第一次显示 / 换了一封」才抢焦点，
+  /// 同封邮件的后续重建（同步转圈、外联资源开关、附件到位）不抢 —— 否则
+  /// 用户正在点的按钮、正开着的菜单会被无声地剥掉焦点。
+  void _focusReaderOnce(MailRow row) {
+    final key = '${row.profileId}/${row.emailId}';
+    if (_focusedMailKey == key) return;
+    _focusedMailKey = key;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 页面被别的路由盖住时**不抢**：那会把焦点从弹层（写邮件页、对话框）
+      // 拽回下面这一页。`ModalRoute` 对整页形态是详情自己，对内嵌形态是
+      // 外壳所在的那条路由 —— 两种形态都成立。
+      if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+      _readerFocus.requestFocus();
+    });
   }
 
   /// 只跑一次。`build` 里不能直接做（会重复标已读 + 重复拉详情），
@@ -509,6 +586,13 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   /// 所以测试永远是绿的，这条只有真人手抖着点才验得到。
   ///
   /// 先接受：macOS 原生文本视图同样是「拖 2px 就是选字」。
+  ///
+  /// ## 键盘焦点：打开这一封就要在选区上
+  ///
+  /// 见 [_focusReaderOnce]：`Cmd/Ctrl+A` 与 `Cmd/Ctrl+C` 的执行者挂在
+  /// `SelectableRegion` 的 `Actions` 上，焦点不在选区里就静默失效。
+  /// `SelectionArea` 只有在鼠标点过之后才持有焦点，而打开一封邮件的那一下
+  /// 点的是**列表里的行** —— 所以必须由页面自己把这颗焦点交过去。
   Widget _body(
     MailRow row,
     String ossBase,
@@ -519,7 +603,13 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
     // 打开邮件时按它决定哪些外链图直接加载。这里 `watch` 是合法的 ——
     // `_body` 只在 build 里被调用。
     final allowedHosts = ref.watch(externalAllowedHostsProvider);
+    // 拉起焦点是 build 里的副作用，但 `_focusReaderOnce` 自己按
+    // `(profileId, emailId)` 去重，一封信只排一次。
+    _focusReaderOnce(row);
     return SelectionArea(
+      // 键盘焦点归页面持有（见 [_focusReaderOnce]）；右键 / 单击时
+      // `SelectableRegion` 会把焦点收进同一个节点，两者不打架。
+      focusNode: _readerFocus,
       // 右键菜单：**不能再套一个 `GestureDetector(onSecondaryTapUp:)`** ——
       // macOS 上 `SelectableRegion` 的右键是 `onSecondaryTapDown`
       // （`selectable_region.dart:455`），它不看竞技场结果，一定会

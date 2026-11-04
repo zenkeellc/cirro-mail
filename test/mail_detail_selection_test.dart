@@ -458,4 +458,69 @@ void main() {
     await disposeDetail(tester);
     debugDefaultTargetPlatformOverride = null;
   });
+
+  testWidgets('⑧ 打开详情页后不先点正文：Ctrl+A + Ctrl+C 也能复制', (tester) async {
+    // 用户报的就是这一幕：点开一封信，直接按复制快捷键，什么都没发生；
+    // 右键菜单里的「复制」却是好的。根因是**键盘焦点不在选区上** ——
+    // `SelectableRegion` 只在鼠标左键按下（且是第一次点击）和右键时
+    // `requestFocus()`，而详情页打开时从不把焦点交给正文。`CopySelectionTextIntent`
+    // 的 Action 挂在 `SelectableRegion` 的 `Actions` 上，焦点不在里面就
+    // 找不到，于是静默无事；右键那条路自己会 requestFocus，所以菜单里的
+    // 「复制」一直好使。
+    final writes = captureClipboard(tester);
+    await pumpDetail(tester, embedded: true);
+
+    // 一次都不点正文：打开就该能直接按。
+    await pressWithCtrl(tester, LogicalKeyboardKey.keyA);
+    await pressWithCtrl(tester, LogicalKeyboardKey.keyC);
+
+    expect(writes, isNotEmpty, reason: '打开一封邮件后 Ctrl+C 没有发出 Clipboard.setData');
+    expect(writes.last, contains(bodyText));
+    expect(writes.last, contains(subject));
+
+    await disposeDetail(tester);
+  });
+
+  testWidgets('⑨ 整页形态（push 上来的路由）同样一打开就能按快捷键复制', (tester) async {
+    // [_focusReaderOnce] 里有一道 `ModalRoute.isCurrent` 守卫（页面被别的
+    // 路由盖住时不抢焦点）。整页形态下详情自己就是那条路由，守卫必须在这里
+    // 成立 —— 写反了的话整页形态永远抢不到焦点，这条用例会红。
+    final writes = captureClipboard(tester);
+    await pumpDetail(tester, embedded: false);
+
+    await pressWithCtrl(tester, LogicalKeyboardKey.keyA);
+    await pressWithCtrl(tester, LogicalKeyboardKey.keyC);
+
+    expect(writes, isNotEmpty, reason: '整页形态打开后 Ctrl+C 没有发出 Clipboard.setData');
+    expect(writes.last, contains(bodyText));
+
+    await disposeDetail(tester);
+  });
+  testWidgets('⑩ macOS：打开后不点正文，Cmd+A 再 Cmd+C 也能复制', (tester) async {
+    // 用户报的是 macOS。⑧ 跑在 flutter_tester 默认的 android 上（Ctrl 那一支），
+    // 这一条换成 macOS 的 meta 表（`default_text_editing_shortcuts.dart` 里
+    // 是另一张 `_macShortcuts`），证明焦点修好之后 meta 键走的是同一条
+    // `Actions` 路径 —— 而不是只修好了 Ctrl。
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    final writes = captureClipboard(tester);
+    await pumpDetail(tester, embedded: true);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+
+    expect(writes, isNotEmpty,
+        reason: 'macOS 上打开一封邮件后 Cmd+C 没有发出 Clipboard.setData');
+    expect(writes.last, contains(bodyText));
+    expect(writes.last, contains(subject));
+
+    await disposeDetail(tester);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
 }
