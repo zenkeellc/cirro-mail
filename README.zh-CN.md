@@ -199,6 +199,60 @@ GNOME 3.26 起把内置的状态栏图标整个去掉了，只有走 AppIndicato
 
 ⚠️ **这一段同样没有在本机验证过** —— 这台是 macOS，`flutter build linux` 跑不了。做到的只有：用 `clang++ -fsyntax-only -Wall -Werror`（跟工程里 `apply_standard_settings` 同一套开关）把三个源文件在**两个后端各过了一遍**（全绿），Dart 侧 `flutter analyze` 干净。要在真机上确认的是：「关窗进顶栏 / 菜单两项 / 再次启动只开一个」，外加 configure 那行提示说的是哪套后端。
 
+## 图标未读角标（Dock / 菜单栏 / 任务栏 / 托盘 / 桌面图标）
+
+未读数也会写到**系统图标**上，不用点开窗口就能看见还有多少封没读：
+
+| 平台 | 落点 |
+|---|---|
+| macOS | Dock 图标角标 + 菜单栏信封图标右侧的数字 |
+| Windows | 任务栏窗口图标右下角的红底数字 + 通知区托盘图标 |
+| Linux | 顶栏托盘图标 + 启动器角标（Unity LauncherEntry，仅支持的桌面） |
+| Android | 桌面启动器图标角标（按 launcher 能力尽力而为） |
+| iOS | 桌面图标角标 |
+
+口径与 App 里的聚合角标是同一个数：**全部实例的收件未读总数**
+（`totalUnreadProvider`），一直显示、未读归零就清空。桌面三端（Dock / 菜单栏 /
+任务栏 / 托盘）超过 99 显示 `99+`；iOS / Android 传原始数字，显示多少交给
+系统 / launcher（各有各的截断规则）。
+
+Dart 侧只有两层：`lib/core/notify/icon_badge.dart`（通道
+`com.zenkee.cirromail/badge` / 方法 `setBadge` / 参数 map `{"count": int}`，
+`count <= 0` 表示清除）和 `lib/features/notifications/icon_badge_host.dart`
+（挂 provider、变了就推、相同值去重、首帧补推一次）。五个 runner 注册的是
+**同一条通道、同一个方法名、同一种参数**，Dart 只写一份；任何一侧失败都静默
+（徽章是装饰，不许影响收信）。
+
+三个不那么显然的行为：
+
+- **冷启动会先推一次 0**，把上一次进程留下的旧角标抹掉（iOS 的
+  `applicationIconBadgeNumber` 是跨启动持久的），等本地库出结果再推真实数字。
+  桌面端基本看不出来，手机上可能看到角标闪一下。
+- **后台轮询不更新角标**：workmanager 起的后台引擎里没有 UI 树，那个数要等
+  App 回到前台、drift watch 重新出值之后才会同步到图标上。
+- **归零是清除，不是显示 0**：五个落点都是这样，包括菜单栏那个数字（清空
+  标题，而不是留一个「0」）。
+
+各平台的实现要点和**真机验证清单**见 [`docs/icon-badge.md`](docs/icon-badge.md)。
+这里有两条必须如实说的限制：
+
+- **Windows / Linux 的角标没有在本机验证过** —— 同上面两段 ⚠️，这台是
+  macOS。Windows 只做到 mingw-w64 `-fsyntax-only`，Linux 只做到
+  `clang++ -fsyntax-only`（含用上游头文件模拟 appindicator 的那一支），外加
+  Dart 侧 `flutter analyze` 干净。
+- **Android 没有公开的数字角标 API**：`AppIconBadge.kt` 按华为/荣耀、小米、
+  华硕/LG（通用广播）、索尼、vivo 的 launcher 私有协议挨个试，能设就设、设不了
+  静默跳过；三星新 One UI 走私有 provider，本实现没做，基本别指望。Google 系
+  launcher 只显示「有通知」的点，而且本实现**不 post 通知**，所以那些设备上
+  连点都不会有 —— 这是有意的取舍（不往通知栏塞用户清不掉的垃圾通知）。
+- **iOS 的角标依赖通知授权**（App 申请权限时已带 `badge: true`），用户拒绝时
+  系统静默不显示；而且本 App 只在「用户主动开推送」「第一封新信要弹通知」时
+  才申请权限，所以首装且未授权时桌面图标上没有数字。这是刻意不在启动时弹
+  权限框（很讨人厌），不是实现漏了。
+
+商业版检出合并这条功能时，把 `icon_badge.dart` 里的通道名前缀和五个 runner
+里注册的字符串一起换掉即可（与窗口通道同一规矩）。
+
 ## 附件预览
 
 预览的**唯一**入口是 `features/attachment/attachment_preview.dart`：一个判据

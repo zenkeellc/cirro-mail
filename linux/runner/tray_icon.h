@@ -49,7 +49,16 @@ class TrayIcon {
   // 从顶栏摘掉。**退出之前必须调**，否则图标要等进程消失、Shell 才发现。
   void Hide();
 
+  // 把未读数画到图标上；0（或负数）= 恢复普通图标，不是「显示 0」。幂等。
+  //
+  // 图标可能**还没建**（Linux 是第一次藏窗才建托盘）：这时只把数字记下来，
+  // 等 [Show] 建好图标之后补画 —— 见 `my_application_hide_to_tray`。
+  void SetBadgeCount(int count);
+
  private:
+  // 按当前 [badge_count_] 重画 / 恢复图标。图标对象还没建时什么都不做。
+  void ApplyBadge();
+
   // 菜单只建一次。**必须活得比图标久**：两套后端都只是拿着这个 GtkMenu 的
   // 引用，菜单一析构，点出来的就是空壳。
   void BuildMenu();
@@ -67,6 +76,10 @@ class TrayIcon {
 
   // 菜单里的两项。两套后端共用同一份菜单。
   GtkWidget* menu_;
+
+  // 当前未读数（0 = 没有角标）。**活得比图标对象长**：Dart 侧可能在托盘还
+  // 没建的时候就把数字推过来了，[Show] 建好图标时要靠它补画。
+  int badge_count_;
 
 #ifdef CIRRO_HAVE_AYATANA_APPINDICATOR
   AppIndicator* indicator_;

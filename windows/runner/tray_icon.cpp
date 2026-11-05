@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "badge_icon.h"
 #include "resource.h"
 
 namespace {
@@ -17,6 +18,17 @@ constexpr UINT kCommandQuit = 2;
 // 自己选的语言走，和 App 里的中英文切换口径一致。
 bool PrefersChinese() {
   return (::GetUserDefaultUILanguage() & 0xFF) == LANG_CHINESE;
+}
+
+// 悬停提示。没有未读时保持原来的产品名 —— 通知区图标本身只有 16px，角标
+// 再清楚也只能是个概数；用户把鼠标放上去就能读到确切数字。
+std::wstring TooltipForCount(int count) {
+  if (count <= 0) {
+    return L"Cirro Mail";
+  }
+  return PrefersChinese()
+             ? L"Cirro Mail — " + std::to_wstring(count) + L" 封未读"
+             : L"Cirro Mail — " + std::to_wstring(count) + L" unread";
 }
 
 std::wstring OpenLabel() {
@@ -44,9 +56,20 @@ TrayIcon::TrayIcon(HWND owner, UINT callback_message)
 
 TrayIcon::~TrayIcon() {
   Remove();
+  // 三份句柄都是 `LoadImage` / `CreateBadgeIcon` 出来的自己的一份，没有
+  // `LR_SHARED` 的共享句柄，所以必须逐个 `DestroyIcon`。先 `Remove()` 再销毁：
+  // 顺序反了的话，Shell 那边还有一瞬间在引用已经释放的图标。
   if (icon_) {
     ::DestroyIcon(icon_);
     icon_ = nullptr;
+  }
+  if (badge_source_icon_) {
+    ::DestroyIcon(badge_source_icon_);
+    badge_source_icon_ = nullptr;
+  }
+  if (badge_icon_) {
+    ::DestroyIcon(badge_icon_);
+    badge_icon_ = nullptr;
   }
 }
 
@@ -92,14 +115,18 @@ bool TrayIcon::AddOrModify() {
                                             MAKEINTRESOURCEW(IDI_APP_ICON),
                                             IMAGE_ICON, 0, 0,
                                             LR_DEFAULTSIZE));
-    if (!icon_) {
-      return false;
-    }
   }
-  data.hIcon = icon_;
+  // 有角标就优先用画好的那一份；画不出来（`CreateBadgeIcon` 失败）时退回
+  // 原图标 —— 数字是装饰，图标本身不能没有。两份都没载到时只能放弃这次
+  // 下发，等下一次未读数变化或 Explorer 重启再来。
+  data.hIcon = badge_icon_ ? badge_icon_ : icon_;
+  if (!data.hIcon) {
+    return false;
+  }
   // `lstrcpynW` 而不是 `wcscpy_s`：`szTip` 是定长数组，名字长了要截断而不是
   // 崩（`wcscpy_s` 的「安全」版本会直接触发 invalid parameter handler）。
-  ::lstrcpynW(data.szTip, L"Cirro Mail", ARRAYSIZE(data.szTip));
+  const std::wstring tooltip = TooltipForCount(badge_count_);
+  ::lstrcpynW(data.szTip, tooltip.c_str(), ARRAYSIZE(data.szTip));
 
   // 第一次是 `NIM_ADD`，之后再进来就是 `NIM_MODIFY` —— 直接 `NIM_ADD`
   // 一个已经在里面的图标是静默失败（返回值 false），Explorer 重启之后
@@ -132,6 +159,78 @@ void TrayIcon::ReAddIfWanted() {
   // Shell 把图标丢了，`added_` 这份记录也跟着作废。
   added_ = false;
   AddOrModify();
+}
+
+void TrayIcon::SetBadgeCount(int count) {
+  const int value = count > 0 ? count : 0;
+  if (value == badge_count_) {
+    return;  // 幂等：数字没变就不重画，也不去惊动 Shell。
+  }
+  badge_count_ = value;
+
+  // 旧句柄先留着：它此刻可能还挂在通知区上，而 Windows **不会**在
+  // `NIM_MODIFY` 时拷贝图标 —— 换句柄的那一刻旧的那一份必须还是活的。
+  HICON previous = badge_icon_;
+  if (badge_count_ > 0) {
+    RebuildBadgeIcon();
+  } else {
+    badge_icon_ = nullptr;
+  }
+
+  if (!added_) {
+    // 图标还没进通知区（窗口还开着，见 [wanted_]）：没有句柄交给 Shell，
+    // 旧的那份可以直接回收；等 `Add()` 时会按当前状态一次画好。
+    if (previous) {
+      ::DestroyIcon(previous);
+    }
+    return;
+  }
+
+  if (!AddOrModify()) {
+    // 下发失败（Explorer 刚重启、Shell 还没准备好）时退回旧句柄：宁可让
+    // 通知区停在上一个数字上，也不能销毁一个可能正在被 Shell 画着的 HICON。
+    // 下一次未读数变化、或 Explorer 重启补图标时会再走一遍。
+    if (badge_icon_) {
+      ::DestroyIcon(badge_icon_);
+    }
+    badge_icon_ = previous;
+    return;
+  }
+  if (previous) {
+    ::DestroyIcon(previous);
+  }
+}
+
+void TrayIcon::EnsureBadgeSourceIcon() {
+  if (badge_source_icon_) {
+    return;
+  }
+  // 底图按通知区**实际显示**的那一档载入（`SM_CXSMICON`，100% 下 16px）。
+  // 不复用 [icon_]：那一份是 `LR_DEFAULTSIZE` 的 32px，缩到 16 会先糊一道。
+  // `.ico` 里 16/24/32/48 几档都在，高 DPI 下也能挑到正好的一档。
+  const int size = ::GetSystemMetrics(SM_CXSMICON);
+  if (size <= 0) {
+    return;
+  }
+  badge_source_icon_ = static_cast<HICON>(::LoadImageW(
+      ::GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON,
+      size, size, 0));
+}
+
+void TrayIcon::RebuildBadgeIcon() {
+  badge_icon_ = nullptr;
+  if (badge_count_ <= 0) {
+    return;
+  }
+  EnsureBadgeSourceIcon();
+  if (!badge_source_icon_) {
+    // 底图都没有，画不出来就当没有角标（`AddOrModify` 会退回原图标）。
+    return;
+  }
+  // 与底图同尺寸：16px 的图直接画在 16px 的画布上，全程不经过缩放。
+  badge_icon_ =
+      CreateBadgeIcon(badge_source_icon_, badge_count_,
+                      ::GetSystemMetrics(SM_CXSMICON));
 }
 
 bool TrayIcon::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {

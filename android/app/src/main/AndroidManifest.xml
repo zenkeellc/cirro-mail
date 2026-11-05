@@ -9,6 +9,26 @@
          如果被卡，退路是把 Dart 侧的 androidScheduleMode 降成
          inexactAllowWhileIdle —— 晚几分钟弹，权限一个字都不用改。 -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <!-- 应用图标数字角标（见 AppIconBadge.kt）。原生 Android 没有公开角标
+         API，只能各家 launcher 的私有协议挨个试。下面三条都是 launcher/厂商
+         侧声明的 normal 级权限，安装即授予、不弹运行时授权框；没有它们只会让
+         对应厂商的角标静默不显示，不影响别家：
+         - com.huawei.android.launcher.permission.CHANGE_BADGE：华为/荣耀老
+           协议的广播（AppIconBadge.kt 里的 HUAWEI_ACTION）需要它才能被
+           launcher 接收（来源：ShortcutBadger 的 AndroidManifest.xml，那一份
+           还带 READ_SETTINGS/WRITE_SETTINGS，是给华为 provider 路径用的，本
+           实现没走 provider，所以只声明这一条）。
+         - PROVIDER_INSERT_BADGE：索尼新机型的角标走
+           com.sonymobile.home.resourceprovider 的 badge 表 insert，该 provider
+           只接受持有这条权限的应用（来源：ShortcutBadger 的 SonyHomeBadger）。
+         - BROADCAST_BADGE：老 Xperia 的
+           com.sonyericsson.home.action.UPDATE_BADGE 广播需要它（来源：
+           ShortcutBadger 的 AndroidManifest.xml）。
+         小米走 ContentProvider、vivo 走广播，两条都不需要额外权限；三星新
+         One UI 走私有 provider，本实现没做（见 AppIconBadge.kt 文件头）。 -->
+    <uses-permission android:name="com.huawei.android.launcher.permission.CHANGE_BADGE"/>
+    <uses-permission android:name="com.sonymobile.home.permission.PROVIDER_INSERT_BADGE"/>
+    <uses-permission android:name="com.sonyericsson.home.permission.BROADCAST_BADGE"/>
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"

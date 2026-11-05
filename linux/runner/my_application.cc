@@ -7,8 +7,29 @@
 
 #include <cstring>
 
+#include <gio/gio.h>
+
 #include "flutter/generated_plugin_registrant.h"
 #include "tray_icon.h"
+
+namespace {
+
+// 启动器角标（Unity LauncherEntry）用到的坐标。这条协议是 Unity 定的、
+// KDE 等启动器也认：应用在 session bus 上**广播** `Update` 信号，启动器按
+// `.desktop` 的 uri 找到对应图标、把数字挂上去。
+//
+// 为什么不用 libunity：那是额外的链接依赖，而且很多发行版根本不装。协议本身
+// 只有一次 GDBus 调用。桌面不认（GNOME 默认就没有）时没人收这条信号，
+// 没有任何副作用。
+constexpr const char kLauncherEntryInterface[] =
+    "com.canonical.Unity.LauncherEntry";
+constexpr const char kLauncherEntryObjectPath[] =
+    "/com/canonical/Unity/LauncherEntry";
+
+// 与 `linux/cirro-mail.desktop` 的文件名逐字一致 —— 对不上启动器就找不到图标。
+constexpr const char kLauncherAppUri[] = "application://cirro-mail.desktop";
+
+}  // namespace
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -35,6 +56,20 @@ struct _MyApplication {
   // Dart 用来「把窗口叫回来」的通道。见 `lib/core/storage/window_channel.dart`，
   // macOS / Windows / Linux 三边注册的是同名同方法的通道。
   FlMethodChannel* window_channel;
+
+  // 图标徽章那条通道（Dart 侧 `lib/core/notify/icon_badge.dart`）。与
+  // `window_channel` 一样必须强持有 —— 通道对象一释放，挂在上面的 handler
+  // 就跟着没了，表现是「未读数变了但图标不动」。
+  FlMethodChannel* badge_channel;
+
+  // Dart 推来的未读数。**托盘图标可能还没建**（Linux 是第一次藏窗才建），
+  // 所以这里先存着；`my_application_hide_to_tray` 建好图标之后靠它补画。
+  gint badge_count;
+
+  // 启动器角标要往 session bus 发信号。第一次真正用到时才取；取不到就记下
+  // 「这台机器没有会话总线」，不再反复重试。
+  GDBusConnection* session_bus;
+  gboolean session_bus_unavailable;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -85,6 +120,11 @@ static void my_application_hide_to_tray(MyApplication* self) {
     self->tray->set_on_quit([self]() { on_tray_quit(self); });
   }
   self->tray->Show();
+
+  // 托盘可能是**这次才建**的：Dart 侧首帧就把未读数推过来了（那时图标还
+  // 不存在，只存进了 `badge_count`），这里补画一次，不然用户看到的是
+  // 「藏进托盘之后图标上没有数字」。
+  self->tray->SetBadgeCount(self->badge_count);
 
   if (self->window != nullptr) {
     gtk_widget_hide(GTK_WIDGET(self->window));
@@ -161,6 +201,85 @@ static void window_method_call_cb(FlMethodChannel* channel,
   g_autoptr(GError) error = nullptr;
   if (!fl_method_call_respond(method_call, response, &error)) {
     g_warning("Failed to respond to window channel: %s", error->message);
+  }
+}
+
+// 把未读数推给启动器（Unity LauncherEntry 协议，常量见文件顶部）。
+//
+// 好消息是「发出去就算」：这条信号本来就是广播，没有接收方也不算错，所以
+// 唯一的失败点是拿不到 session bus。那种机器（裸 WM、无 D-Bus 会话）上托盘
+// 数字照样工作，这里静默跳过即可 —— 徽章是装饰，不能因为启动器不支持就
+// 把通道回调卡住。
+static void my_application_update_launcher_badge(MyApplication* self,
+                                                 gint count) {
+  if (self->session_bus == nullptr) {
+    if (self->session_bus_unavailable) {
+      return;
+    }
+    g_autoptr(GError) error = nullptr;
+    self->session_bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
+    if (self->session_bus == nullptr) {
+      // 记住失败：别每来一封新信就再试一次、刷一屏 warning。
+      self->session_bus_unavailable = TRUE;
+      return;
+    }
+  }
+
+  // body 是 `(sa{sv})`：desktop uri + 一个属性字典。`count-visible` 是独立
+  // 开关 —— 归零时保留数字、只把它关掉也行，但这里直接传 0 更直白。
+  GVariantBuilder properties;
+  g_variant_builder_init(&properties, G_VARIANT_TYPE("a{sv}"));
+  g_variant_builder_add(&properties, "{sv}", "count",
+                        g_variant_new_int64(count));
+  g_variant_builder_add(&properties, "{sv}", "count-visible",
+                        g_variant_new_boolean(count > 0));
+
+  g_dbus_connection_emit_signal(
+      self->session_bus, nullptr, kLauncherEntryObjectPath,
+      kLauncherEntryInterface, "Update",
+      g_variant_new("(sa{sv})", kLauncherAppUri, &properties), nullptr);
+}
+
+// Dart 侧那条「图标角标」通道。方法名与参数格式（map `{"count": int}`）五个
+// 平台逐字一致，见 `lib/core/notify/icon_badge.dart`。
+//
+// 失败一律静默：图标没建好、桌面没有启动器角标，都只表现为「不显示数字」，
+// 不许把通道回调卡住 —— Dart 侧本来也吞掉所有异常。
+static void badge_method_call_cb(FlMethodChannel* channel,
+                                 FlMethodCall* method_call,
+                                 gpointer user_data) {
+  static_cast<void>(channel);
+  MyApplication* self = MY_APPLICATION(user_data);
+  g_autoptr(FlMethodResponse) response = nullptr;
+
+  if (strcmp(fl_method_call_get_name(method_call), "setBadge") == 0) {
+    gint count = 0;
+    FlValue* args = fl_method_call_get_args(method_call);
+    if (args != nullptr && fl_value_get_type(args) == FL_VALUE_TYPE_MAP) {
+      FlValue* value = fl_value_lookup_string(args, "count");
+      if (value != nullptr && fl_value_get_type(value) == FL_VALUE_TYPE_INT) {
+        // 负数按 0（清除）处理：Dart 侧不会传，但把负数画上图标更糟；
+        // `99+` 那条上限在 TrayIcon 里统一收，这里只防 int64 溢出 gint。
+        const int64_t raw = fl_value_get_int(value);
+        if (raw > 0) {
+          count = raw > G_MAXINT ? G_MAXINT : static_cast<gint>(raw);
+        }
+      }
+    }
+    self->badge_count = count;
+    // 托盘可能还没建（用户还没藏过窗）：里面会先记下数字，等图标建好再补画。
+    if (self->tray != nullptr) {
+      self->tray->SetBadgeCount(count);
+    }
+    my_application_update_launcher_badge(self, count);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+
+  g_autoptr(GError) error = nullptr;
+  if (!fl_method_call_respond(method_call, response, &error)) {
+    g_warning("Failed to respond to badge channel: %s", error->message);
   }
 }
 
@@ -256,6 +375,13 @@ static void my_application_activate(GApplication* application) {
   fl_method_channel_set_method_call_handler(
       self->window_channel, window_method_call_cb, self, nullptr);
 
+  // 图标徽章通道：与窗口通道同一个 messenger、同一份 codec。见
+  // [badge_method_call_cb]。
+  self->badge_channel = fl_method_channel_new(
+      messenger, "com.zenkee.cirromail/badge", FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(
+      self->badge_channel, badge_method_call_cb, self, nullptr);
+
   self->window = window;
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
@@ -314,6 +440,8 @@ static void my_application_dispose(GObject* object) {
   self->tray = nullptr;
 
   g_clear_object(&self->window_channel);
+  g_clear_object(&self->badge_channel);
+  g_clear_object(&self->session_bus);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
 
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
@@ -332,6 +460,10 @@ static void my_application_init(MyApplication* self) {
   self->window = nullptr;
   self->tray = nullptr;
   self->window_channel = nullptr;
+  self->badge_channel = nullptr;
+  self->badge_count = 0;
+  self->session_bus = nullptr;
+  self->session_bus_unavailable = FALSE;
 }
 
 MyApplication* my_application_new() {

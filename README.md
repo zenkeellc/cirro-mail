@@ -482,6 +482,74 @@ through `clang++ -fsyntax-only -Wall -Werror` (the same switch set as the projec
 bar / two menu items / only one instance on relaunch", plus which backend the configure line
 says was selected.
 
+## Unread badge on the app icon (Dock / menu bar / taskbar / tray / home screen)
+
+The unread count is also written onto **system icons**, so you can see how many
+unread messages you have without opening the window:
+
+| Platform | Where it shows |
+|---|---|
+| macOS | Dock icon badge + digits to the right of the envelope in the menu bar |
+| Windows | Red digit on the taskbar window icon + notification-area tray icon |
+| Linux | Top-bar tray icon + launcher badge (Unity LauncherEntry, supported desktops only) |
+| Android | Launcher icon badge (best effort, depends on the launcher) |
+| iOS | Home-screen icon badge |
+
+It is the same number as the aggregate badge inside the app: **total unread
+received mail across all profiles** (`totalUnreadProvider`). Always visible,
+cleared when the count reaches 0. The desktop three (Dock / menu bar / taskbar /
+tray) cap the display at `99+`; iOS / Android pass the raw number and leave the
+display to the system / launcher (each has its own truncation rules).
+
+There are only two Dart layers: `lib/core/notify/icon_badge.dart` (channel
+`com.zenkee.cirromail/badge` / method `setBadge` / arguments map
+`{"count": int}`, where `count <= 0` clears) and
+`lib/features/notifications/icon_badge_host.dart` (subscribes to the provider,
+pushes on change, dedupes equal values, pushes once after the first frame). All
+five runners register **the same channel, method and argument shape**, so Dart
+only has one copy; every failure path is silent (a badge is decoration and must
+never break mail retrieval).
+
+Three less obvious behaviours:
+
+- **A cold start pushes 0 first**, clearing a stale badge left by the previous
+  process (iOS `applicationIconBadgeNumber` survives restarts), then pushes the
+  real number once the local database has it. On desktop you will not notice;
+  on mobile you may see the badge flash.
+- **Background polling does not update the badge**: the workmanager background
+  engine has no UI tree; the number reaches the icon only after the app returns
+  to the foreground and the drift watch emits again.
+- **Zero means clear, not "show 0"** — on all five targets, including the
+  menu-bar digits (the title is emptied rather than showing "0").
+
+Per-platform implementation notes and a **real-device checklist** live in
+[`docs/icon-badge.md`](docs/icon-badge.md). Two limitations must be stated
+honestly:
+
+- **The Windows / Linux badges have not been verified on this machine** — same
+  as the two ⚠️ sections above, this is macOS. Windows got mingw-w64
+  `-fsyntax-only` only; Linux got `clang++ -fsyntax-only` (including the branch
+  compiled against upstream appindicator headers), plus a clean
+  `flutter analyze` on the Dart side.
+- **Android has no public numeric badge API**: `AppIconBadge.kt` tries the
+  private launcher protocols of Huawei/Honor, Xiaomi, ASUS/LG (generic
+  broadcast), Sony and vivo, one by one — whatever works, works; everything else
+  is skipped silently. New Samsung One UI uses a private provider, which this
+  implementation does not talk to, so do not expect digits there. Google
+  launchers only show a "has notifications" dot, and this implementation
+  deliberately **posts no notification**, so those devices show no dot either:
+  that is the trade-off (no junk notification the user cannot clear).
+- **The iOS badge depends on notification authorization** (the app already
+  requests `badge: true`); when the user denies it the system silently shows
+  nothing. Moreover the app only asks for permission when the user enables push
+  or when the first new mail wants to show a notification — so on a fresh
+  install without authorization the home-screen icon has no number. That is
+  deliberate (no permission prompt at launch), not a missing implementation.
+
+When the commercial checkout merges this feature, change the channel-name prefix
+in `icon_badge.dart` and the strings registered in the five runners (same rule
+as the window channel).
+
 ## Attachment preview
 
 The **only** entry point for preview is `features/attachment/attachment_preview.dart`: one

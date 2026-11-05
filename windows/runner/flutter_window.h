@@ -53,6 +53,20 @@ class FlutterWindow : public Win32Window {
   // `SetQuitOnClose(true)` → `PostQuitMessage` 的路径。
   void QuitApplication();
 
+  // 图标徽章的统一入口：Dart 侧 `lib/core/notify/icon_badge.dart` 每次未读数
+  // 变化推一条 `{"count": int}`，`count <= 0` 表示清除。两个落点（任务栏窗口
+  // 图标、通知区托盘图标）都从这里更新，保证它们永远同一个数。
+  void ApplyBadgeCount(int count);
+
+  // 按 [badge_count_] 重画窗口图标。`WM_SETICON` 只认 HICON，所以要自己
+  // `LoadImage` 原图、自己 `CreateBadgeIcon`、自己销毁换下来的句柄 ——
+  // Windows 不接管图标所有权。任何一档画不出来都退回原图，绝不设成空。
+  void ApplyWindowIconBadge();
+
+  // 换上这对窗口图标并回收上一对（nullptr 表示那一档不动）。见
+  // [window_icon_small_] 那两个成员上的注释。
+  void SetWindowIcons(HICON small, HICON big);
+
   // The project to run.
   flutter::DartProject project_;
 
@@ -69,10 +83,31 @@ class FlutterWindow : public Win32Window {
   // 任务栏通知区里的那个图标。关窗之前一直是 nullptr。
   std::unique_ptr<TrayIcon> tray_icon_;
 
+  // 未读总数（0 = 不显示角标）。放在窗口这一层而不是 [TrayIcon] 里：托盘
+  // 图标要等第一次关窗才建（[EnsureTrayIcon]），而徽章可能在窗口还开着时
+  // 就到了；这个数在两个落点之间共用，「补建托盘」时拿它补画。
+  int badge_count_ = 0;
+
+  // 窗口图标的句柄。两份都是本类 `LoadImage` / `CreateBadgeIcon` 出来的
+  // **自己的一份**（不是窗口类里那个 `LoadIcon` 的共享图标），换下来当场
+  // `DestroyIcon`，析构时也要销毁。`WM_SETICON` 的返回值是**先前那个**句柄，
+  // 它可能指向共享图标、不能拿去销毁，所以「当前装的是谁」得另外记在这里。
+  HICON window_icon_small_ = nullptr;
+  HICON window_icon_big_ = nullptr;
+
   // 「把窗口叫回来」的通道。持有它才有 handler —— 见
   // `lib/core/storage/window_channel.dart`，两个平台共用那一个 Dart 类。
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_channel_;
+
+  // 图标徽章那条通道。和 [window_channel_] 一样必须强持有：通道对象一释放，
+  // handler 就跟着没了，表现是「未读数变了但角标永远不动」。
+  //
+  // 单独一条通道而不是塞进 window 通道，理由与 macOS 那边 `setUpBadgeChannel`
+  // 相同：`window` 的语义是「桌面外壳的窗口能力」，而徽章在手机上（iOS）也
+  // 走同一个 Dart 类，塞进去等于让 iOS 继承一个名不副实的通道名。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      badge_channel_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

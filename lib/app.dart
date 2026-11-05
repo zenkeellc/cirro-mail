@@ -5,6 +5,7 @@ import 'core/branding/app_brand.dart';
 import 'core/theme/app_theme.dart';
 import 'core/version/window_title.dart';
 import 'features/deeplink/external_link_host.dart';
+import 'features/notifications/icon_badge_host.dart';
 import 'features/notifications/notification_host.dart';
 import 'features/shortcuts/shortcut_host.dart';
 import 'features/update/update_host.dart';
@@ -69,18 +70,26 @@ class MailApp extends ConsumerWidget {
       // 必须逐字节相同）。空注册表（公开版）时它一个流都不订阅、一个像素都
       // 不画，挂在链上的位置因此在视觉与行为上都不可观测。
       //
-      // 最外面两层是「版本」的两个出口，都是**不改布局**的接线柱：
+      // 最外面两层是「版本」的两个出口，再外面是图标徽章，都是**不改布局**的
+      // 接线柱：
       // - `UpdateHost`：启动后每天最多一次查官网版本清单，发现新版本弹一条
       //   SnackBar（下载 / 查看）。它要 `ScaffoldMessenger`，所以必须在这
       //   里面（`MaterialApp` 提供），放外面不会崩、但 SnackBar 静默不弹。
       // - `WindowTitleHost`：把版本写进**原生**窗口标题栏。它不碰
       //   `MaterialApp.title` —— 那只影响任务切换器显示的名字（见
       //   `core/version/window_title.dart` 与三个 runner 的 `setWindowTitle`）。
-      builder: (context, child) => WindowTitleHost(
-        child: UpdateHost(
-          child: MailShortcutHost(
-            child: ExternalLinkHost(
-              child: NotificationHost(child: child ?? const SizedBox.shrink()),
+      // - `IconBadgeHost`：把全部实例的未读总数写进系统图标角标（Dock / 菜单栏 /
+      //   任务栏 / 托盘 / 手机桌面图标）。它只要 `ref`，放在最外面 —— 越靠外
+      //   越早挂上，冷启动时的首推才不会漏掉（见
+      //   `features/notifications/icon_badge_host.dart`）。
+      builder: (context, child) => IconBadgeHost(
+        child: WindowTitleHost(
+          child: UpdateHost(
+            child: MailShortcutHost(
+              child: ExternalLinkHost(
+                child:
+                    NotificationHost(child: child ?? const SizedBox.shrink()),
+              ),
             ),
           ),
         ),

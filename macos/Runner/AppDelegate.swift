@@ -24,6 +24,16 @@ class AppDelegate: FlutterAppDelegate {
   /// （Windows 那侧注册的是同名同方法的通道，两边共用那一份 Dart）。
   private var windowChannel: FlutterMethodChannel?
 
+  /// 图标徽章那条通道（Dart 侧 `lib/core/notify/icon_badge.dart`）。
+  ///
+  /// 与 `windowChannel` 一样必须强持有 —— 通道对象一释放，挂在上面的 handler
+  /// 就跟着没了，表现是「未读数变了但角标永远不动」。
+  ///
+  /// **单独一条通道**而不是塞进 `windowChannel`：那条的名字叫 window，语义是
+  /// 「桌面外壳的窗口能力」；徽章在手机上（iOS）也走同一个 Dart 类，塞进
+  /// window 通道会让 iOS 那边继承一个名不副实的名字。见 [setUpBadgeChannel]。
+  private var badgeChannel: FlutterMethodChannel?
+
   /// 给 Dart 侧的桌面外壳能力（目前只有「在 Finder 里显示附件」）。
   ///
   /// 与 `windowChannel` 一样必须强持有：通道一释放，handler 就没了。
@@ -74,6 +84,7 @@ class AppDelegate: FlutterAppDelegate {
     retainedWindow = mainFlutterWindow
     setUpStatusItem()
     setUpWindowChannel()
+    setUpBadgeChannel()
     setUpDesktopChannel()
     setUpWindowObservers()
     updateWindowlessActivity()
@@ -183,7 +194,11 @@ class AppDelegate: FlutterAppDelegate {
   // MARK: - 菜单栏
 
   private func setUpStatusItem() {
-    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    // `variableLength` 而不是 `squareLength`：有未读时要在信封旁边显示数字，
+    // 方形槽位会把数字裁掉。没有未读时它照样缩到图标本身的宽度，外观不变
+    // （见 [applyBadge]）。
+    let item = NSStatusBar.system.statusItem(
+      withLength: NSStatusItem.variableLength)
     if let button = item.button {
       // 用 SF Symbol 而不是 App 图标：App 图标是彩色的、且不是 template，
       // 塞进菜单栏会又大又花；SF Symbol 会跟着浅/深色和菜单栏高亮自动反色。
@@ -193,6 +208,9 @@ class AppDelegate: FlutterAppDelegate {
       )
       image?.isTemplate = true
       button.image = image
+      // 数字（如果此刻有未读）画在信封右侧，而不是盖在图标上：菜单栏图标是
+      // template 单色图，覆盖一层红底白字会和系统配色打架。见 [applyBadge]。
+      button.imagePosition = .imageLeading
       button.toolTip = statusItemLabel
     }
 
@@ -217,6 +235,9 @@ class AppDelegate: FlutterAppDelegate {
     }
     item.menu = menu
     statusItem = item
+    // 幂等：此刻 badgeCount 通常还是 0（Dart 侧还没推首帧的值），这一句是给
+    // 「图标晚于通道被重建」这种理论情形兜底的。
+    applyBadge(badgeCount)
   }
 
   // MARK: - 给 Dart 的通道
@@ -263,6 +284,90 @@ class AppDelegate: FlutterAppDelegate {
       }
     }
     windowChannel = channel
+  }
+
+  // MARK: - 图标徽章
+
+  /// 图标徽章（Dock 角标 + 菜单栏数字）当前的未读数。
+  ///
+  /// 单独记一份而不是每次从 `badgeLabel` 里读回来：菜单栏与 Dock 是两个落点，
+  /// 统一从这一个值画出去；而且图标被重建（理论上不会）时要能补画。
+  private var badgeCount = 0
+
+  /// 把「未读数」推到两个系统落点：
+  /// - **Dock 图标角标**：`NSApp.dockTile.badgeLabel`，就是用户说的「数字徽章」；
+  /// - **菜单栏信封图标右侧的数字**：`NSStatusItem.button.attributedTitle`。
+  ///
+  /// 0 表示**清除**（`badgeLabel = nil` + 空标题）。超过 99 显示 `99+`：
+  /// Dock 角标与菜单栏都放不下三位数。
+  private func applyBadge(_ count: Int) {
+    let value = max(0, count)
+    badgeCount = value
+
+    // `nil` 才是「没有角标」；空串在部分 macOS 版本上会画一个空胶囊。
+    NSApp.dockTile.badgeLabel = value > 0 ? badgeText(value) : nil
+
+    guard let button = statusItem?.button else { return }
+    button.attributedTitle =
+      value > 0
+      ? NSAttributedString(
+        string: " " + badgeText(value),
+        attributes: [
+          // 11pt：菜单栏高度 22pt，这是带数字的菜单栏应用通行的字号。
+          .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+          // 动态系统色：菜单栏浅/深色下各自解析成黑/白。菜单栏按钮的
+          // `effectiveAppearance` 带 vibrant 语义，颜色是画的时候才解析的。
+          .foregroundColor: NSColor.labelColor,
+        ])
+      : NSAttributedString(string: "")
+    button.toolTip = unreadTooltip(value)
+  }
+
+  /// 角标/菜单栏上的文字。上限 99：三位数在 Dock 角标里会被裁成「…」。
+  private func badgeText(_ count: Int) -> String {
+    count > 99 ? "99+" : "\(count)"
+  }
+
+  /// 图标悬停提示。没有未读时保持原来的产品名。
+  private func unreadTooltip(_ count: Int) -> String {
+    guard count > 0 else { return statusItemLabel }
+    return prefersChinese
+      ? "\(statusItemLabel) — \(count) 封未读"
+      : "\(statusItemLabel) — \(count) unread"
+  }
+
+  /// 图标徽章那条通道的 macOS 实现（Dart 侧 `lib/core/notify/icon_badge.dart`）。
+  ///
+  /// 为什么单独一条通道、而不是并进 `windowChannel`：那条的语义是「桌面外壳
+  /// 的窗口能力」，而徽章在 iOS 上也存在（同一个 Dart 类），塞进去等于让 iOS
+  /// 继承一个名不副实的通道名。方法名与参数格式（`{"count": int}`）五个平台
+  /// 完全一致，Dart 侧只写一份。
+  ///
+  /// 失败一律静默：Dart 侧本来就吞 `MissingPluginException`，这边也不许因为
+  /// 图标没建好、系统不认某个 API 就把通道回调挂住 —— 徽章是装饰。
+  private func setUpBadgeChannel() {
+    guard let window = retainedWindow ?? mainFlutterWindow,
+      let controller = window.contentViewController as? FlutterViewController
+    else { return }
+    let channel = FlutterMethodChannel(
+      name: "com.zenkee.cirromail/badge",
+      binaryMessenger: controller.engine.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "setBadge" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      // 参数是 map `{"count": int}`（Dart 的 int 到这边是 NSNumber）。
+      let arguments = call.arguments as? [String: Any]
+      let count = (arguments?["count"] as? NSNumber)?.intValue ?? 0
+      // AppKit 只认主线程；Dart 侧未读数一变就推一条，这里不能阻塞。
+      DispatchQueue.main.async {
+        self?.applyBadge(count)
+        result(nil)
+      }
+    }
+    badgeChannel = channel
   }
 
   /// 「在 Finder 里显示附件」这条通道的 macOS 实现。

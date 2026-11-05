@@ -25,6 +25,14 @@ class TrayIcon {
   // 把图标放进通知区。幂等（已经在里面时走 `NIM_MODIFY`）。析构时会自动摘掉。
   void Add();
 
+  // 把「未读数」叠到通知区图标上：红底白字的数字，悬停提示里也写确切数量。
+  // `count <= 0` 表示恢复原图标（不是显示 0）。
+  //
+  // 窗口还没藏进通知区时也照收：那时候图标根本不存在（见 [wanted_]），数字
+  // 只记下来，等 `Add()` 时按当前状态一次画好 —— 否则「先关窗、后收到通知」
+  // 这个顺序下角标会丢。
+  void SetBadgeCount(int count);
+
   // 从通知区摘掉。**退出之前必须调**，否则图标会一直挂在那儿，要等鼠标划过
   // 才消失 —— 那是 Shell 发现「这个窗口没了」之后才回收的。
   void Remove();
@@ -49,6 +57,10 @@ class TrayIcon {
   bool AddOrModify();
   void ReAddIfWanted();
 
+  // 按当前 [badge_count_] 载入/绘制角标图标。只在数字变化或第一次用时调。
+  void RebuildBadgeIcon();
+  void EnsureBadgeSourceIcon();
+
   HWND owner_;
   UINT callback_message_;
 
@@ -68,7 +80,21 @@ class TrayIcon {
   // 图标句柄。用 `LoadImage`（**不带** `LR_SHARED`）而不是 `LoadIcon`：
   // `LoadIcon` 只会给最大的那一档，缩到 16×16 很糊。代价是拿到的是自己的一份，
   // 所以析构里要 `DestroyIcon`（带 `LR_SHARED` 的句柄则**绝不能**销毁）。
+  //
+  // 这一份是**不带角标**的原图标：`badge_count_` 归零时用它。
   HICON icon_ = nullptr;
+
+  // 当前未读数。0 表示「不显示角标」。记一份而不是每次从 tooltip 里反解：
+  // `NIM_MODIFY`、Explorer 重启补图标、工具提示三条路都要用同一个数。
+  int badge_count_ = 0;
+
+  // 画角标用的底图，与带角标的那一份。两个都是本类持有、本类销毁。
+  //
+  // 底图**单独**载入、不复用 `icon_`：`icon_` 是按 `LR_DEFAULTSIZE`（32px）
+  // 载的，通知区实际显示的是 `SM_CXSMICON`（100% 下 16px），拿 32px 缩下去
+  // 会先糊一道，数字再清楚也救不回来。这一份按通知区尺寸精确载入。
+  HICON badge_source_icon_ = nullptr;
+  HICON badge_icon_ = nullptr;
 
   std::function<void()> on_open_;
   std::function<void()> on_quit_;

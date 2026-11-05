@@ -7,6 +7,7 @@ project(runner LANGUAGES CXX)
 #
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
+  "badge_icon.cpp"
   "flutter_window.cpp"
   "main.cpp"
   "single_instance.cpp"
@@ -32,10 +33,19 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 
+# 目标系统 = Windows 10：flutter_window.cpp 直接调了 `GetDpiForWindow` /
+# `GetSystemMetricsForDpi`（Windows 10 1607 起才有）。不显式定义时，这两处
+# 能不能编过取决于所用 Windows SDK 给 `_WIN32_WINNT` 的默认值（新 SDK 默认
+# 0x0A00，旧的不一定），这里把结论钉死，也等于声明本 App 不支持 Win10 之前
+# 的系统。渲染层面没有别的 1903+ API 依赖。
+target_compile_definitions(${BINARY_NAME} PRIVATE "_WIN32_WINNT=0x0A00")
+
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+# badge_icon.cpp 用 GDI+ 画未读数字角标（抗锯齿的圆与文字，GDI 手搓太脏）。
+target_link_libraries(${BINARY_NAME} PRIVATE "gdiplus.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
