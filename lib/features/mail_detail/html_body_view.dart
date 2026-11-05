@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:fwfh_cached_network_image/fwfh_cached_network_image.dart';
@@ -409,6 +410,51 @@ class _MailWidgetFactory extends WidgetFactory
             const SizedBox.shrink();
       },
     );
+  }
+
+  /// `<a href="…"><img></a>` 的点击交给链接，而不是打开图片预览。
+  ///
+  /// ## 为什么要在这里拦
+  ///
+  /// fwfh 会给**每张图**自己包一层手势（`core_widget_factory.dart` 的
+  /// `buildImage` → `buildGestureDetector`）去调 `onTapImage`，`<a>` 的手势
+  /// 包在这层外面。Flutter 的手势竞技场里命中路径最深者先进 arena
+  /// （`rendering/box.dart` 的 `hitTest` 从叶子往上，`arena.dart` 的
+  /// "First member wins"），所以图片那层总是赢 —— 营销邮件里最常见的
+  /// 「整张 banner 图就是一个链接」在本客户端只会打开预览，从来打不开链接。
+  ///
+  /// 修法是：图片外面有带 `href` 的祖先时，**这张图自己不留手势**，把这次
+  /// 点击让给外层 `<a>`。fwfh 的识别器本身不动，没链接的图照旧预览。
+  ///
+  /// ## 两个例外
+  ///
+  /// - 被外联策略拦下的图片：占位块上的点击是「只启用这一张」的入口，
+  ///   继续归图片自己；启用后的下一轮渲染就走到这里返回 null，再点即打开链接。
+  /// - `<a name>` 这类没有 `href` 的锚点不算链接。
+  @override
+  GestureRecognizer? buildGestureRecognizer(
+    BuildTree tree, {
+    GestureTapCallback? onTap,
+  }) {
+    if (_linkOwnsTap(tree)) return null;
+    return super.buildGestureRecognizer(tree, onTap: onTap);
+  }
+
+  /// 这张图外面是否有一个「点了真能跳走」的链接。
+  bool _linkOwnsTap(BuildTree tree) {
+    final element = tree.element;
+    if (element.localName != 'img') return false;
+
+    // `<img>` 的 `src` 解析方式与 `TagImg._parse` 一致（见 `urlFull`），
+    // 这样这里判「被拦」用的地址与 `buildImageWidget` 里拿到的是同一个。
+    final src = urlFull(element.attributes['src'] ?? '');
+    if (src == null || policy.isBlocked(src)) return false;
+
+    for (var parent = element.parent; parent != null; parent = parent.parent) {
+      if (parent.localName != 'a') continue;
+      if ((parent.attributes['href'] ?? '').trim().isNotEmpty) return true;
+    }
+    return false;
   }
 
   /// fwfh 会给带 `title` 的图片再包一层 `Tooltip`。
