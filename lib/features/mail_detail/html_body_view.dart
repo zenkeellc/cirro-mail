@@ -344,8 +344,7 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
     if (uri == null) return true;
     // 只放行 http/https/mailto/tel，其他（file://、intent://、自定义 scheme）
     // 一律拦下 —— 邮件正文是不可信输入，不该让它去唤起任意 handler。
-    const allowed = <String>{'http', 'https', 'mailto', 'tel'};
-    if (!allowed.contains(uri.scheme)) {
+    if (!_tapOpenableSchemes.contains(uri.scheme)) {
       _toast(context, '已拦截不安全的链接：${uri.scheme}');
       return true;
     }
@@ -357,6 +356,16 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
     messenger?.showSnackBar(SnackBar(content: Text(message)));
   }
 }
+
+/// 正文里允许**真正交给系统打开**的链接协议。
+///
+/// 一个顶层的清单，两个地方共用：
+/// - [_HtmlBodyViewState._onTapUrl]：真正执行打开时的最后一道白名单；
+/// - [_MailWidgetFactory._canNavigate]：决定图片点击要不要让给外层链接。
+///
+/// 分散成两份就会漂移：图片手势让出去了，链接却被拦下 —— 用户看到的是
+/// 「点了没反应」，比原本打开预览还差。
+const _tapOpenableSchemes = <String>{'http', 'https', 'mailto', 'tel'};
 
 /// 正文用的 widget factory：图片走 `cached_network_image`（带磁盘缓存），
 /// 链接走 `url_launcher`。两者都以 mixin 的形式挂在核心 factory 上。
@@ -426,11 +435,14 @@ class _MailWidgetFactory extends WidgetFactory
   /// 修法是：图片外面有带 `href` 的祖先时，**这张图自己不留手势**，把这次
   /// 点击让给外层 `<a>`。fwfh 的识别器本身不动，没链接的图照旧预览。
   ///
-  /// ## 两个例外
+  /// ## 三个例外
   ///
   /// - 被外联策略拦下的图片：占位块上的点击是「只启用这一张」的入口，
   ///   继续归图片自己；启用后的下一轮渲染就走到这里返回 null，再点即打开链接。
   /// - `<a name>` 这类没有 `href` 的锚点不算链接。
+  /// - **点了也打不开的** `href` 不算链接（见 [_canNavigate]）：`href="#"`、
+  ///   `ftp:`、带空格解析不了的地址。让出点击只会变成一次死点击（`_onTapUrl`
+  ///   静默吞掉或只弹一条 toast），那些情况保留图片预览更合理。
   @override
   GestureRecognizer? buildGestureRecognizer(
     BuildTree tree, {
@@ -452,9 +464,34 @@ class _MailWidgetFactory extends WidgetFactory
 
     for (var parent = element.parent; parent != null; parent = parent.parent) {
       if (parent.localName != 'a') continue;
-      if ((parent.attributes['href'] ?? '').trim().isNotEmpty) return true;
+      // `<a name="x">` 没有 `href`，不是链接，继续往上找（HTML 不允许嵌套，
+      // 但坏邮件什么都写得出来）。
+      if (!parent.attributes.containsKey('href')) continue;
+      return _canNavigate(parent);
     }
     return false;
+  }
+
+  /// 这个 `<a>` 的点击**真的能开出东西**吗？判断口径与 [_onTapUrl] 完全一致
+  /// （同一份协议名单、同样先 `urlFull` 再 `Uri.tryParse`）—— 两边不一致就会
+  /// 出现「手势让给了链接，链接却打不开」的死点击。
+  bool _canNavigate(dom.Element anchor) {
+    final href = anchor.attributes['href'];
+    if (href == null) return false;
+
+    final trimmed = href.trim();
+    if (trimmed.isEmpty) return false;
+    // 纯页内锚点：客户端没有对应的滚动目标，`urlFull` 只会把它补成
+    // `ossBase#`，交给浏览器等于打开一个垃圾地址（`href="#"` 是模板里
+    // 最常见的占位写法）。
+    if (trimmed.startsWith('#')) return false;
+
+    // 与 `TagA` 交给 `_onTapUrl` 的地址一致（注意别 trim：带空格的原始值
+    // 在 `_onTapUrl` 里 `Uri.tryParse` 会失败，这里也必须判成「打不开」）。
+    final url = urlFull(href) ?? href;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return false;
+    return _tapOpenableSchemes.contains(uri.scheme);
   }
 
   /// fwfh 会给带 `title` 的图片再包一层 `Tooltip`。

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -69,6 +70,12 @@ Future<void> _pump(
 }
 
 void main() {
+  // 和 `mail_detail_external_resources_test.dart` 一样：扩展注册表是全局的，
+  // 不重置的话将来某个 Pro 测试留下「自动加载外联资源」的实现，第三条用例
+  // 就看不到 BlockedImageTile 了。
+  setUp(AppExtensionRegistry.instance.reset);
+  tearDown(AppExtensionRegistry.instance.reset);
+
   testWidgets('点带链接的图片：打开链接，而不是打开图片预览', (tester) async {
     final launched = _mockUrlLauncher(tester);
     final previewed = <String>[];
@@ -132,5 +139,146 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     expect(launched, <String>['https://example.com/landing']);
+  });
+
+  testWidgets('块级链接（营销邮件的常见写法）同样打开链接', (tester) async {
+    final launched = _mockUrlLauncher(tester);
+    final previewed = <String>[];
+
+    await _pump(
+      tester,
+      '<a href="https://example.com/big">'
+          '<div><img src="$_dataUri" width="80" height="40"></div>'
+          '</a>',
+      onTapImage: previewed.add,
+    );
+
+    await tester.tap(find.byType(Image));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(launched, <String>['https://example.com/big']);
+    expect(previewed, isEmpty);
+  });
+
+  testWidgets('相对 href 按 ossBase 解析后再打开', (tester) async {
+    final launched = _mockUrlLauncher(tester);
+
+    await _pump(
+      tester,
+      '<a href="/landing"><img src="$_dataUri" width="40" height="40"></a>',
+    );
+
+    await tester.tap(find.byType(Image));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(launched, <String>['https://mail.example.com/landing']);
+  });
+
+  testWidgets('<a name> 不是链接：图片仍打开预览', (tester) async {
+    final launched = _mockUrlLauncher(tester);
+    final previewed = <String>[];
+
+    await _pump(
+      tester,
+      '<a name="anchor"><img src="$_dataUri" width="40" height="40"></a>',
+      onTapImage: previewed.add,
+    );
+
+    await tester.tap(find.byType(Image));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(previewed, <String>[_dataUri]);
+    expect(launched, isEmpty);
+  });
+
+  testWidgets('href="#" 不接管图片点击，避免打开 ossBase# 这种垃圾地址', (tester) async {
+    final launched = _mockUrlLauncher(tester);
+    final previewed = <String>[];
+
+    await _pump(
+      tester,
+      '<a href="#"><img src="$_dataUri" width="40" height="40"></a>',
+      onTapImage: previewed.add,
+    );
+
+    await tester.tap(find.byType(Image));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(previewed, <String>[_dataUri]);
+    expect(launched, isEmpty);
+  });
+
+  testWidgets('打不开的 href 保留图片预览，不会变成一次死点击', (tester) async {
+    final launched = _mockUrlLauncher(tester);
+
+    // `ftp://` 会被 `_onTapUrl` 拦下（只弹 toast）；前后带空格的地址在
+    // `_onTapUrl` 里 `Uri.tryParse` 失败、被静默吞掉 —— 两种都是「点了没
+    // 反应」，所以不该把点击从图片预览手里抢走。
+    for (final href in <String>[
+      'ftp://example.com/f',
+      '  https://example.com/z  ',
+    ]) {
+      final previewed = <String>[];
+      await _pump(
+        tester,
+        '<a href="$href"><img src="$_dataUri" width="40" height="40"></a>',
+        onTapImage: previewed.add,
+      );
+
+      await tester.tap(find.byType(Image));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(previewed, <String>[_dataUri], reason: 'href=$href');
+      expect(launched, isEmpty, reason: 'href=$href');
+    }
+  });
+
+  testWidgets('带 title 的图片：Tooltip 还在，点击仍打开链接', (tester) async {
+    final launched = _mockUrlLauncher(tester);
+
+    await _pump(
+      tester,
+      '<a href="https://example.com/title">'
+          '<img src="$_dataUri" width="40" height="40" title="点我看详情">'
+          '</a>',
+    );
+
+    expect(find.byType(Tooltip), findsOneWidget);
+    await tester.tap(find.byType(Image));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(launched, <String>['https://example.com/title']);
+  });
+
+  testWidgets('同一段里带链接与不带链接的图各自路由', (tester) async {
+    final launched = _mockUrlLauncher(tester);
+    final previewed = <String>[];
+
+    await _pump(
+      tester,
+      '<p><a href="https://example.com/a">'
+          '<img src="$_dataUri" width="40" height="40">'
+          '</a>'
+          '<img src="$_dataUri" width="40" height="40">'
+          '</p>',
+      onTapImage: previewed.add,
+    );
+
+    await tester.tap(find.byType(Image).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(launched, <String>['https://example.com/a']);
+    expect(previewed, isEmpty);
+
+    await tester.tap(find.byType(Image).last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(previewed, <String>[_dataUri]);
   });
 }
