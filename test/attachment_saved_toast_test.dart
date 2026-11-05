@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +18,14 @@ import 'package:mail_app/l10n/app_localizations.dart';
 /// 2. 「在文件管理器里显示」的文案**按平台换**（Finder / 资源管理器 /
 ///    文件管理器）—— 用户在 macOS 上看到「在资源管理器中显示」会一头雾水；
 /// 3. 拉不起来（通道返回 false / 沙盒拒绝）时**有回执**，不静默失败。
+///
+/// 后两条与「点按钮」有关：`AttachmentLauncher` 按**真平台**分支（
+/// `Platform.isMacOS` 才走 `com.zenkee.cirromail/desktop` 那条通道），
+/// Linux 上它改走 xdg-open —— 于是钉 macOS 通道的两条 widget 用例在
+/// ubuntu CI 上跑必红。理由与 `attachment_preview_test.dart` 里 PDF
+/// 那条相同：**如实跳过，而不是断言一个到达不了的落点**。
+bool get _hostIsMacOS => Platform.isMacOS;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -93,7 +103,7 @@ void main() {
       (calls.single.arguments as Map<Object?, Object?>)['path'],
       '/Users/me/Downloads/original.eml',
     );
-  });
+  }, skip: !_hostIsMacOS);
 
   testWidgets('Finder 拉不起来（通道说 false）→ 有回执，不静默', (tester) async {
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -111,7 +121,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text(zh.revealFailed), findsOneWidget);
-  });
+  }, skip: !_hostIsMacOS);
 
   test('「显示位置」的文案按平台换：Finder / 资源管理器 / 文件管理器', () {
     expect(

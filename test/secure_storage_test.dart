@@ -60,6 +60,60 @@ class _ThrowingKeychain extends FlutterSecureStoragePlatform {
   Future<void> deleteAll({required Map<String, String> options}) async {}
 }
 
+/// 只记账、永不抛错的密钥库：用来验「某个平台压根没碰钥匙串」。
+///
+/// 与 [_ThrowingKeychain] 相反，它一定成功 —— 所以「探测了几次」就是
+/// [calls] 里有什么。[resolveSecureStorage] 的 macOS 分支应该恰好产生
+/// 写探测项 + 删探测项两次调用；其它平台应该一次都没有。
+class _RecordingKeychain extends FlutterSecureStoragePlatform {
+  final List<String> calls = <String>[];
+
+  @override
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async =>
+      calls.add('write:$key');
+
+  @override
+  Future<String?> read({
+    required String key,
+    required Map<String, String> options,
+  }) async {
+    calls.add('read:$key');
+    return null;
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    required Map<String, String> options,
+  }) async =>
+      calls.add('delete:$key');
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    required Map<String, String> options,
+  }) async {
+    calls.add('containsKey:$key');
+    return false;
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    required Map<String, String> options,
+  }) async {
+    calls.add('readAll');
+    return const <String, String>{};
+  }
+
+  @override
+  Future<void> deleteAll({required Map<String, String> options}) async =>
+      calls.add('deleteAll');
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -145,18 +199,34 @@ void main() {
       expect(identical(first, second), isTrue);
     });
 
-    test('macOS 上探测成功 → 选中 data protection 实例；其它平台用插件默认值',
+    test('macOS 上探测成功 → 选中 data protection 实例；其它平台不碰钥匙串',
         () async {
+      // 「其它平台用插件默认值」在行为上就等价于「完全不探测」，所以这里
+      // 用一个记账密钥库判定，而**不能**用 `identical(storage, macDataProtectionStorage)`
+      // 判：`MacOsOptions()` 的默认 `usesDataProtectionKeychain` 本来就是
+      // true，`const FlutterSecureStorage()` 与 `macDataProtectionStorage`
+      // 逐字段相同、const 规范化后其实是**同一个对象**。CI（Ubuntu）从
+      // else 分支进 `identical(..., isFalse)` 必然失败 —— 这条用例在 macOS
+      // 开发机上永远走不到 else，才让这个假设混了进来。
+      final keychain = _RecordingKeychain();
+      FlutterSecureStoragePlatform.instance = keychain;
       final storage = await resolveSecureStorage();
       if (Platform.isMacOS) {
         expect(identical(storage, macDataProtectionStorage), isTrue);
+        expect(
+          keychain.calls,
+          <String>['write:$probeKey', 'delete:$probeKey'],
+          reason: 'macOS 上要真写一次探测项再删掉',
+        );
       } else {
-        expect(identical(storage, macDataProtectionStorage), isFalse,
-            reason: '非 macOS 平台不存在这套区分，应是插件默认实例');
+        expect(keychain.calls, isEmpty,
+            reason: '非 macOS 不存在按签名授权的问题，该直接拿插件默认实例，一次探测都不做');
+        expect(identical(storage, macLegacyStorage), isFalse,
+            reason: '非 macOS 不该退回老钥匙串');
         expect(
           (storage.mOptions as MacOsOptions).usesDataProtectionKeychain,
           isTrue,
-          reason: '其它平台不该改动 macOS 选项（macOS 上仍走插件默认）',
+          reason: '非 macOS 拿到的是插件默认选项，不改动 macOS 选项',
         );
       }
     });
