@@ -236,187 +236,189 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
     // 都不会出现，这一页与从前逐字节相同（`ai_transport_gate_test.dart` 钉着）。
     final transport = ref.watch(aiTransportProvider);
 
-    return ListView(
-        padding: const EdgeInsets.only(bottom: 32),
-        children: <Widget>[
-          // 隐私声明摆**最上面**，不藏在底部：spec §4.4 要求它出现在这一页，
-          // 而放在滚动条的尽头等于「没出现」。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Icon(
-                  Icons.privacy_tip_outlined,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    l10n.aiPrivacyNotice,
-                    key: const ValueKey('ai-privacy'),
-                    style: Theme.of(context).textTheme.bodySmall,
+    final scheme = Theme.of(context).colorScheme;
+    return SettingsPage(
+      children: <Widget>[
+        // 隐私声明摆**最上面**，不藏在底部：spec §4.4 要求它出现在这一页，
+        // 而放在滚动条的尽头等于「没出现」。这是一整段「需要读完」的话，
+        // 所以用有底色的 `SettingsNote`，不是一行灰字。
+        SettingsNote(
+          key: const ValueKey('ai-privacy'),
+          text: l10n.aiPrivacyNotice,
+          icon: Icons.privacy_tip_outlined,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        ),
+        // 「还差什么」这类一句话说明用 `SettingsHint`（小字、次要色），
+        // 不塞进卡片里 —— 「行」与「段落」分开，正是这一版要的版面。
+        if (transport == null && !settings.isUsable)
+          SettingsHint(
+            l10n.aiUnavailable,
+            icon: Icons.info_outline,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          ),
+        // 托管模式下不显示「钥匙串存不住 Key」：那条提示关心的是 BYOK 的
+        // Key，而这一页在托管模式下连 Key 输入框都没有。
+        if (transport == null &&
+            ref.watch(aiSettingsStoreProvider).isKeychainDegraded)
+          SettingsHint(
+            l10n.aiKeyDegraded,
+            icon: Icons.key_off_outlined,
+            color: scheme.error,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          ),
+
+        // 托管通道（商业版注册了 `AppExtension.aiTransport`）：「通道」一行
+        // 就是这整页在托管模式下的全部内容 —— 地址 / Key / 模型 / 拉取 /
+        // 测试连接整段隐藏（可用性由 `state()` 表达，不跑 BYOK 那套探测）。
+        // 公开版 `transport` 恒为 null，走的仍是下面那支，界面一个像素不变。
+        if (transport != null)
+          SettingsGroup(
+            title: l10n.aiChannelSection,
+            icon: Icons.hub_outlined,
+            children: <Widget>[
+              _ChannelTile(
+                transport: transport,
+                checking: l10n.aiChannelChecking,
+                ready: l10n.aiChannelReady,
+                unavailable: l10n.aiChannelUnavailable,
+              ),
+            ],
+          )
+        else ...[
+          // 「服务商」这一段就是「三样齐了才能拉取/测试」在版面上的落点：
+          // 地址 → 格式，顺序即填的顺序，缺哪样下面那行小字就说哪样。
+          SettingsGroup(
+            title: l10n.aiProviderSection,
+            icon: Icons.cloud_outlined,
+            children: <Widget>[
+              _TextTile(
+                fieldKey: const ValueKey('ai-base-url'),
+                icon: Icons.link,
+                label: l10n.aiBaseUrlLabel,
+                // hint 跟格式走：三种协议对「带不带 /v1」的要求各不相同（见
+                // `_FormatTile._hint`），地址栏自己写死一个例子会与上面那档打架。
+                hint: _FormatTile._hint(l10n, settings.apiFormat),
+                initial: settings.baseUrl,
+                // 只判协议前缀（spec §6.3），且跟着打字实时报 —— 用户填完地址栏
+                // 那一刻就该知道对不对，而不是等按了按钮。下面按钮的可用性判的是
+                // 同一个草稿。
+                errorText: urlValid ? null : l10n.aiBaseUrlInvalid,
+                onChanged: (value) => setState(() => _urlDraft = value),
+                onSubmitted: (value) =>
+                    _save(settings.copyWith(baseUrl: value.trim())),
+              ),
+              _FormatTile(
+                settings: settings,
+                onChanged: (next) => _save(
+                  settings.copyWith(
+                    apiFormat: next,
+                    baseUrl: _baseAfterFormatSwitch(settings, next),
                   ),
                 ),
-              ],
-            ),
-          ),
-          if (transport == null && !settings.isUsable)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                l10n.aiUnavailable,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
               ),
-            ),
-          // 托管模式下不显示「钥匙串存不住 Key」：那条提示关心的是 BYOK 的
-          // Key，而这一页在托管模式下连 Key 输入框都没有。
-          if (transport == null &&
-              ref.watch(aiSettingsStoreProvider).isKeychainDegraded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                l10n.aiKeyDegraded,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+            ],
+          ),
+          SettingsGroup(
+            title: l10n.aiKeySection,
+            icon: Icons.vpn_key_outlined,
+            children: <Widget>[
+              SettingsTile(
+                icon: settings.hasApiKey
+                    ? Icons.check_circle_outline
+                    : Icons.key_off_outlined,
+                title:
+                    settings.hasApiKey ? l10n.aiKeyStored : l10n.aiKeyNotStored,
+                trailing: settings.hasApiKey
+                    ? TextButton(
+                        key: const ValueKey('ai-key-clear'),
+                        onPressed: _clearKey,
+                        child: Text(l10n.aiKeyClear),
+                      )
+                    : null,
               ),
-            ),
-
-          // 托管通道（商业版注册了 `AppExtension.aiTransport`）：「通道」一行
-          // 就是这整页在托管模式下的全部内容 —— 地址 / Key / 模型 / 拉取 /
-          // 测试连接整段隐藏（可用性由 `state()` 表达，不跑 BYOK 那套探测）。
-          // 公开版 `transport` 恒为 null，走的仍是下面那支，界面一个像素不变。
-          if (transport != null) ...[
-            const Divider(),
-            SettingsSectionHeader(title: l10n.aiChannelSection),
-            _ChannelTile(
-              transport: transport,
-              checking: l10n.aiChannelChecking,
-              ready: l10n.aiChannelReady,
-              unavailable: l10n.aiChannelUnavailable,
-            ),
-          ] else ...[
-            // 「服务商」这一段就是「三样齐了才能拉取/测试」在版面上的落点：
-            // 地址 → 格式 → Key，顺序即填的顺序，缺哪样下面那行小字就说哪样。
-            const Divider(),
-            SettingsSectionHeader(title: l10n.aiProviderSection),
-          _TextTile(
-            fieldKey: const ValueKey('ai-base-url'),
-            label: l10n.aiBaseUrlLabel,
-            // hint 跟格式走：三种协议对「带不带 /v1」的要求各不相同（见
-            // `_FormatTile._hint`），地址栏自己写死一个例子会与上面那档打架。
-            hint: _FormatTile._hint(l10n, settings.apiFormat),
-            initial: settings.baseUrl,
-            // 只判协议前缀（spec §6.3），且跟着打字实时报 —— 用户填完地址栏
-            // 那一刻就该知道对不对，而不是等按了按钮。下面按钮的可用性判的是
-            // 同一个草稿。
-            errorText: urlValid ? null : l10n.aiBaseUrlInvalid,
-            onChanged: (value) => setState(() => _urlDraft = value),
-            onSubmitted: (value) =>
-                _save(settings.copyWith(baseUrl: value.trim())),
-          ),
-          _FormatTile(
-            settings: settings,
-            onChanged: (next) => _save(
-              settings.copyWith(
-                apiFormat: next,
-                baseUrl: _baseAfterFormatSwitch(settings, next),
-              ),
-            ),
-          ),
-          SettingsSectionHeader(title: l10n.aiKeySection),
-          ListTile(
-            dense: true,
-            title: Text(
-              settings.hasApiKey ? l10n.aiKeyStored : l10n.aiKeyNotStored,
-            ),
-            trailing: settings.hasApiKey
-                ? TextButton(
-                    key: const ValueKey('ai-key-clear'),
-                    onPressed: _clearKey,
-                    child: Text(l10n.aiKeyClear),
-                  )
-                : null,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: TextField(
-                    key: const ValueKey('ai-key'),
-                    controller: _key,
-                    focusNode: _keyFocus,
-                    obscureText: true,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    // 校验放在输入时：贴 Key 最常见的错就是尾部那个换行，
-                    // 让用户在**贴的那一刻**看到问题，而不是点了保存之后。
-                    onChanged: (value) => setState(
-                      () => _keyError = AiProvider.validateApiKey(value),
-                    ),
-                    decoration: InputDecoration(
-                      labelText: l10n.aiKeyLabel,
-                      // 存过 Key 就在空框里显示一串掩码：让「这儿已经有东西了」
-                      // 一眼看得见。**它是 hint，不是值** —— 从来没进过
-                      // `_key` 控制器，所以不会被 `_saveKey` 当成 Key 存回去；
-                      // 用户一打字它就自然消失。
-                      hintText: settings.hasApiKey ? keyMask : null,
-                      border: const OutlineInputBorder(),
-                      errorText: _keyErrorText(l10n),
-                      // 明晃晃一颗「粘贴」：不指望系统的 Cmd/Ctrl+V 在这台设备上
-                      // 一定送来文本（见 `_pasteKey` 的注释），把它做成**这颗框
-                      // 自己的**一条路径，就跟菜单/快捷键走的是哪套无关了。
-                      suffixIcon: IconButton(
-                        key: const ValueKey('ai-key-paste'),
-                        icon: const Icon(Icons.content_paste_go),
-                        tooltip: l10n.aiKeyPaste,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _pasteKey,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: TextField(
+                        key: const ValueKey('ai-key'),
+                        controller: _key,
+                        focusNode: _keyFocus,
+                        obscureText: true,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        // 校验放在输入时：贴 Key 最常见的错就是尾部那个换行，
+                        // 让用户在**贴的那一刻**看到问题，而不是点了保存之后。
+                        onChanged: (value) => setState(
+                          () => _keyError = AiProvider.validateApiKey(value),
+                        ),
+                        decoration: InputDecoration(
+                          labelText: l10n.aiKeyLabel,
+                          // 存过 Key 就在空框里显示一串掩码：让「这儿已经有东西了」
+                          // 一眼看得见。**它是 hint，不是值** —— 从来没进过
+                          // `_key` 控制器，所以不会被 `_saveKey` 当成 Key 存回去；
+                          // 用户一打字它就自然消失。
+                          hintText: settings.hasApiKey ? keyMask : null,
+                          prefixIcon: const Icon(Icons.key_outlined, size: 20),
+                          border: const OutlineInputBorder(),
+                          errorText: _keyErrorText(l10n),
+                          // 明晃晃一颗「粘贴」：不指望系统的 Cmd/Ctrl+V 在这台设备上
+                          // 一定送来文本（见 `_pasteKey` 的注释），把它做成**这颗框
+                          // 自己的**一条路径，就跟菜单/快捷键走的是哪套无关了。
+                          suffixIcon: IconButton(
+                            key: const ValueKey('ai-key-paste'),
+                            icon: const Icon(Icons.content_paste_go),
+                            tooltip: l10n.aiKeyPaste,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _pasteKey,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      key: const ValueKey('ai-key-save'),
+                      onPressed: _saveKey,
+                      child: Text(l10n.aiKeySave),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  key: const ValueKey('ai-key-save'),
-                  onPressed: _saveKey,
-                  child: Text(l10n.aiKeySave),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-
-          const Divider(),
-          SettingsSectionHeader(title: l10n.aiModelSection),
           // 一行三样：**可编辑的模型下拉**（左，占满余宽）+ 嵌在它右沿的
           // 「拉取」+ 同行的「测试连接」。拉取按钮长在下拉里，是因为它俩
           // 是一件事的两半：拉回来的名字直接落进这个下拉。
-          _ModelRow(
-            controller: _model,
-            focus: _modelFocus,
-            menu: _modelMenu,
-            models: _models,
-            hint: l10n.aiModelHint,
-            fetchLabel: l10n.aiModelsFetch,
-            testLabel: l10n.aiTestConnection,
-            fieldsReady: fieldsReady,
-            modelPresent: effectiveModel.trim().isNotEmpty,
-            fetching: _fetchingModels,
-            testing: _testing,
-            onSelected: (value) =>
-                _save(settings.copyWith(model: value.trim())),
-            onFetch: () => _fetchModels(settings, url: effectiveUrl),
-            onTest: () => _testConnection(
-              settings,
-              url: effectiveUrl,
-              model: effectiveModel,
-            ),
+          SettingsGroup(
+            title: l10n.aiModelSection,
+            icon: Icons.smart_toy_outlined,
+            children: <Widget>[
+              _ModelRow(
+                controller: _model,
+                focus: _modelFocus,
+                menu: _modelMenu,
+                models: _models,
+                hint: l10n.aiModelHint,
+                fetchLabel: l10n.aiModelsFetch,
+                testLabel: l10n.aiTestConnection,
+                fieldsReady: fieldsReady,
+                modelPresent: effectiveModel.trim().isNotEmpty,
+                fetching: _fetchingModels,
+                testing: _testing,
+                onSelected: (value) =>
+                    _save(settings.copyWith(model: value.trim())),
+                onFetch: () => _fetchModels(settings, url: effectiveUrl),
+                onTest: () => _testConnection(
+                  settings,
+                  url: effectiveUrl,
+                  model: effectiveModel,
+                ),
+              ),
+            ],
           ),
+          // 两个按钮下方的就地提示（差什么 / 拉取结果 / 测试结果）：
+          // 它们是「说明」，不是「行」，所以留在卡片外面。
           _ProviderActions(
             keyPresent: keyPresent,
             urlValid: urlValid,
@@ -425,75 +427,102 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
             testError: _testError,
             testChars: _testChars,
           ),
-          ],
-
-          const Divider(),
-          SettingsSectionHeader(title: l10n.aiFeaturesSection),
-          SwitchListTile(
-            key: const ValueKey('ai-inline'),
-            value: settings.inlineContinuationEnabled,
-            title: Text(l10n.aiInlineContinuation),
-            subtitle: Text(l10n.aiInlineContinuationHint),
-            onChanged: (value) =>
-                _save(settings.copyWith(inlineContinuationEnabled: value)),
-          ),
-          SwitchListTile(
-            key: const ValueKey('ai-preflight'),
-            value: settings.preflightEnabled,
-            title: Text(l10n.aiPreflight),
-            subtitle: Text(l10n.aiPreflightHint),
-            onChanged: (value) =>
-                _save(settings.copyWith(preflightEnabled: value)),
-          ),
-          SwitchListTile(
-            key: const ValueKey('ai-subject'),
-            value: settings.subjectSuggestEnabled,
-            title: Text(l10n.aiSubjectSuggest),
-            subtitle: Text(l10n.aiSubjectSuggestHint),
-            onChanged: (value) =>
-                _save(settings.copyWith(subjectSuggestEnabled: value)),
-          ),
-          SwitchListTile(
-            key: const ValueKey('ai-polish'),
-            value: settings.polishEnabled,
-            title: Text(l10n.aiPolish),
-            subtitle: Text(l10n.aiPolishHint),
-            onChanged: (value) => _save(settings.copyWith(polishEnabled: value)),
-          ),
-          SwitchListTile(
-            key: const ValueKey('ai-suggest'),
-            value: settings.mailSuggestEnabled,
-            title: Text(l10n.aiSuggest),
-            subtitle: Text(l10n.aiSuggestHint),
-            onChanged: (value) =>
-                _save(settings.copyWith(mailSuggestEnabled: value)),
-          ),
-
-          const Divider(),
-          SettingsSectionHeader(title: l10n.aiBudgetSection),
-          ListTile(
-            dense: true,
-            title: Text(l10n.aiDailyLimit),
-            subtitle: Text(l10n.aiDailyLimitHint),
-            trailing: Text(
-              l10n.aiUsedToday(ref.watch(aiServiceProvider).usedToday),
-            ),
-          ),
-          // 上限是**软**的：`AiUsageCounter.canCall` 只用来提示，
-          // 真正的拦与不拦在 `AiService.overDailyLimit`（Task D8）。
-          Slider(
-            value: settings.dailyCallLimit.clamp(0, 1000).toDouble(),
-            max: 1000,
-            divisions: 20,
-            label: '${settings.dailyCallLimit}',
-            onChanged: (value) =>
-                _save(settings.copyWith(dailyCallLimit: value.round())),
-          ),
-          // 扩展（商业版）往「用量」这一组加的行。托管通道的余额 / 订阅
-          // 入口由扩展自己画 —— 核心不认识「订阅」「积分」这些概念。
-          // 空注册表（公开版）时恒为空，这一页与从前逐字相同。
-          ...AppExtensionRegistry.instance.aiUsageExtras(context),
         ],
+
+        // 四项能力（开关）与「用量」在托管/自备 Key 两种模式下都存在 ——
+        // 它们描述的是「让 AI 帮到哪」，与 Key 从哪儿来无关。
+        SettingsGroup(
+          title: l10n.aiFeaturesSection,
+          icon: Icons.auto_awesome_outlined,
+          children: <Widget>[
+            SwitchListTile(
+              key: const ValueKey('ai-inline'),
+              secondary: const Icon(Icons.more_horiz, size: 20),
+              value: settings.inlineContinuationEnabled,
+              title: Text(l10n.aiInlineContinuation),
+              subtitle: Text(l10n.aiInlineContinuationHint),
+              onChanged: (value) =>
+                  _save(settings.copyWith(inlineContinuationEnabled: value)),
+            ),
+            SwitchListTile(
+              key: const ValueKey('ai-preflight'),
+              secondary: const Icon(Icons.fact_check_outlined, size: 20),
+              value: settings.preflightEnabled,
+              title: Text(l10n.aiPreflight),
+              subtitle: Text(l10n.aiPreflightHint),
+              onChanged: (value) =>
+                  _save(settings.copyWith(preflightEnabled: value)),
+            ),
+            SwitchListTile(
+              key: const ValueKey('ai-subject'),
+              secondary: const Icon(Icons.title, size: 20),
+              value: settings.subjectSuggestEnabled,
+              title: Text(l10n.aiSubjectSuggest),
+              subtitle: Text(l10n.aiSubjectSuggestHint),
+              onChanged: (value) =>
+                  _save(settings.copyWith(subjectSuggestEnabled: value)),
+            ),
+            SwitchListTile(
+              key: const ValueKey('ai-polish'),
+              secondary: const Icon(Icons.auto_fix_high, size: 20),
+              value: settings.polishEnabled,
+              title: Text(l10n.aiPolish),
+              subtitle: Text(l10n.aiPolishHint),
+              onChanged: (value) =>
+                  _save(settings.copyWith(polishEnabled: value)),
+            ),
+            SwitchListTile(
+              key: const ValueKey('ai-suggest'),
+              secondary: const Icon(Icons.lightbulb_outline, size: 20),
+              value: settings.mailSuggestEnabled,
+              title: Text(l10n.aiSuggest),
+              subtitle: Text(l10n.aiSuggestHint),
+              onChanged: (value) =>
+                  _save(settings.copyWith(mailSuggestEnabled: value)),
+            ),
+          ],
+        ),
+
+        SettingsGroup(
+          title: l10n.aiBudgetSection,
+          icon: Icons.insights_outlined,
+          children: <Widget>[
+            // 上限与它的滑杆是同一件事的两半：同一张卡里紧挨着，不画分隔线。
+            Column(
+              children: <Widget>[
+                SettingsTile(
+                  icon: Icons.speed_outlined,
+                  title: l10n.aiDailyLimit,
+                  subtitle: l10n.aiDailyLimitHint,
+                  trailing: Text(
+                    l10n.aiUsedToday(
+                      ref.watch(aiServiceProvider).usedToday,
+                    ),
+                  ),
+                ),
+                // 上限是**软**的：`AiUsageCounter.canCall` 只用来提示，
+                // 真正的拦与不拦在 `AiService.overDailyLimit`（Task D8）。
+                Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 12, bottom: 4),
+                  child: Slider(
+                    value: settings.dailyCallLimit.clamp(0, 1000).toDouble(),
+                    max: 1000,
+                    divisions: 20,
+                    label: '${settings.dailyCallLimit}',
+                    onChanged: (value) => _save(
+                      settings.copyWith(dailyCallLimit: value.round()),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        // 扩展（商业版）往「用量」这一组加的行。托管通道的余额 / 订阅
+        // 入口由扩展自己画 —— 核心不认识「订阅」「积分」这些概念。
+        // 空注册表（公开版）时恒为空，这一页与从前逐字相同。
+        ...AppExtensionRegistry.instance.aiUsageExtras(context),
+      ],
     );
   }
 
@@ -770,9 +799,9 @@ class _ChannelTileState extends State<_ChannelTile> {
         }
         return ListTile(
           key: const ValueKey('ai-channel'),
-          dense: true,
           leading: Icon(
             Icons.hub_outlined,
+            size: 20,
             color: state != null && !state.usable
                 ? theme.colorScheme.error
                 : theme.colorScheme.onSurfaceVariant,
@@ -809,8 +838,9 @@ class _FormatTile extends StatelessWidget {
   final ValueChanged<AiApiFormat> onChanged;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-    title: Text(AppLocalizations.of(context).aiApiFormatLabel),
+  Widget build(BuildContext context) => SettingsTile(
+    icon: Icons.swap_horiz,
+    title: AppLocalizations.of(context).aiApiFormatLabel,
     trailing: DropdownButton<AiApiFormat>(
       key: const ValueKey('ai-api-format'),
       value: settings.apiFormat,
@@ -1037,54 +1067,42 @@ class _ProviderActions extends StatelessWidget {
       why = null;
     }
 
+    final hints = <Widget>[
+      if (why != null)
+        SettingsHint(
+          why,
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+        ),
+      if (modelsNotice != null)
+        SettingsHint(
+          modelsNotice!,
+          key: const ValueKey('ai-models-error'),
+          color: theme.colorScheme.error,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+        ),
+      if (testChars != null)
+        SettingsHint(
+          // 「返回了 0 个字」读起来像失败 —— 而它是通的，只是这次没吐可见
+          // 文本（推理模型把预算花在思考上）。换一句不会让人误会的。
+          testChars == 0 ? l10n.aiTestOkNoText : l10n.aiTestOk(testChars!),
+          key: const ValueKey('ai-test-ok'),
+          color: theme.colorScheme.primary,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+        ),
+      if (testError != null)
+        SettingsHint(
+          l10n.aiTestFailed(testError!),
+          key: const ValueKey('ai-test-error'),
+          color: theme.colorScheme.error,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+        ),
+    ];
+    if (hints.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.only(top: 4),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          if (why != null)
-            Text(
-              why,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          if (modelsNotice != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                modelsNotice!,
-                key: const ValueKey('ai-models-error'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ),
-          if (testChars != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                // 「返回了 0 个字」读起来像失败 —— 而它是通的，只是这次没吐可见
-                // 文本（推理模型把预算花在思考上）。换一句不会让人误会的。
-                testChars == 0 ? l10n.aiTestOkNoText : l10n.aiTestOk(testChars!),
-                key: const ValueKey('ai-test-ok'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ),
-          if (testError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                l10n.aiTestFailed(testError!),
-                key: const ValueKey('ai-test-error'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ),
-        ],
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: hints,
       ),
     );
   }
@@ -1092,9 +1110,13 @@ class _ProviderActions extends StatelessWidget {
 
 /// 一行文本输入。提交（回车 / 失焦）时才写回 —— 每敲一个字母就存一次
 /// 会让 prefs 写入跟着打字节奏跑。
+///
+/// 前缀图标走 `InputDecoration.prefixIcon`：设置页里「行」的扫描顺序是
+/// 图标 → 标题 → 尾部，输入行也是同一套语汇，不然它看起来像另一类东西。
 class _TextTile extends StatefulWidget {
   const _TextTile({
     required this.fieldKey,
+    required this.icon,
     required this.label,
     required this.hint,
     required this.initial,
@@ -1104,6 +1126,10 @@ class _TextTile extends StatefulWidget {
   });
 
   final Key fieldKey;
+
+  /// 行首图标（与 [SettingsTile.icon] 同口径：20px、次要色）。
+  final IconData icon;
+
   final String label;
   final String hint;
   final String initial;
@@ -1145,7 +1171,7 @@ class _TextTileState extends State<_TextTile> {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
     child: TextField(
       key: widget.fieldKey,
       controller: _controller,
@@ -1153,6 +1179,7 @@ class _TextTileState extends State<_TextTile> {
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hint,
+        prefixIcon: Icon(widget.icon, size: 20),
         border: const OutlineInputBorder(),
         errorText: widget.errorText,
       ),

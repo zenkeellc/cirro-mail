@@ -19,7 +19,7 @@ import '../../mail_detail/external_allowlist.dart' show normalizeDomainPattern;
 /// 公开版（空注册表）在末尾什么都不多，逐字不变。
 ///
 /// 外壳（`AppBar` / 分类栏 / 窄屏那一页）由 `SettingsScreen` 给 —— 宽屏
-/// 内嵌进右栏、窄屏在一个分类页里显示。所以这里返回的是 `ListView`，
+/// 内嵌进右栏、窄屏在一个分类页里显示。所以这里返回的是 `SettingsPage`，
 /// 不是 `Scaffold`。
 ///
 /// 三条刻意的做法：
@@ -96,86 +96,93 @@ class _SecuritySectionState extends ConsumerState<SecuritySection> {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final patterns = ref.watch(externalAllowedHostsProvider);
-    // 说明文字与空态共用一种「不是正文」的样式。
-    final secondary = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
-    );
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 32),
+    return SettingsPage(
+      padding: const EdgeInsets.only(top: 8, bottom: 32),
       children: <Widget>[
-        SettingsSectionHeader(title: l10n.securityExternalResourcesHeader),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Text(l10n.securityExternalResourcesIntro, style: secondary),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: TextField(
-                  key: const ValueKey('security-domain-input'),
-                  controller: _domain,
-                  textInputAction: TextInputAction.done,
-                  // 白名单是「域名」，键盘上把空格/标点换掉没意义；真正的
-                  // 校验仍然在数据层，这里只是别让用户白敲一遍。
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: InputDecoration(
-                    hintText: l10n.securityExternalResourcesAddHint,
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                    errorText: _invalid
-                        ? l10n.securityExternalResourcesInvalid
-                        : null,
+        // 「怎么拦、放行哪些域名」是一组：提问（输入框 + 添加按钮）与已放行的
+        // 域名条目在同一张卡里，行间分隔线由 `SettingsGroup` 画。
+        SettingsGroup(
+          title: l10n.securityExternalResourcesHeader,
+          icon: Icons.shield_outlined,
+          description: l10n.securityExternalResourcesIntro,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: TextField(
+                      key: const ValueKey('security-domain-input'),
+                      controller: _domain,
+                      textInputAction: TextInputAction.done,
+                      // 白名单是「域名」，键盘上把空格/标点换掉没意义；真正的
+                      // 校验仍然在数据层，这里只是别让用户白敲一遍。
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: InputDecoration(
+                        hintText: l10n.securityExternalResourcesAddHint,
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        errorText: _invalid
+                            ? l10n.securityExternalResourcesInvalid
+                            : null,
+                      ),
+                      onChanged: (_) {
+                        if (_invalid) setState(() => _invalid = false);
+                      },
+                      onSubmitted: (_) => _add(),
+                    ),
                   ),
-                  onChanged: (_) {
-                    if (_invalid) setState(() => _invalid = false);
-                  },
-                  onSubmitted: (_) => _add(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                key: const ValueKey('security-domain-add'),
-                onPressed: _adding ? null : _add,
-                child: Text(l10n.securityExternalResourcesAdd),
-              ),
-            ],
-          ),
-        ),
-        if (patterns.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Text(l10n.securityExternalResourcesEmpty, style: secondary),
-          )
-        else
-          for (final pattern in patterns)
-            ListTile(
-              key: ValueKey('security-domain-$pattern'),
-              leading: const Icon(Icons.public),
-              // 等宽：pattern 里 `*` 与 `.` 的位置是它的全部内容，用正文字体
-              // 时 `*.` 挤在一起容易看错。
-              title: Text(
-                pattern,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontFamily: 'monospace',
-                ),
-              ),
-              trailing: IconButton(
-                key: ValueKey('security-domain-remove-$pattern'),
-                icon: const Icon(Icons.delete_outline),
-                tooltip: l10n.securityExternalResourcesRemove(pattern),
-                onPressed: () => _remove(pattern),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    key: const ValueKey('security-domain-add'),
+                    onPressed: _adding ? null : _add,
+                    child: Text(l10n.securityExternalResourcesAdd),
+                  ),
+                ],
               ),
             ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Text(l10n.securityExternalResourcesNote, style: secondary),
+            if (patterns.isEmpty)
+              SettingsEmptyState(
+                text: l10n.securityExternalResourcesEmpty,
+                icon: Icons.public,
+              )
+            else
+              for (final pattern in patterns)
+                ListTile(
+                  key: ValueKey('security-domain-$pattern'),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  leading: Icon(
+                    Icons.public,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  // 等宽：pattern 里 `*` 与 `.` 的位置是它的全部内容，用正文字体
+                  // 时 `*.` 挤在一起容易看错。
+                  title: Text(
+                    pattern,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  trailing: IconButton(
+                    key: ValueKey('security-domain-remove-$pattern'),
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: l10n.securityExternalResourcesRemove(pattern),
+                    onPressed: () => _remove(pattern),
+                  ),
+                ),
+          ],
         ),
-        // 扩展（商业版）往这一页加的块。铺在同一个 `ListView` 里、白名单之后
+        // 通配符语义那一整段要读完才不踩坑 —— 用整块提醒，而不是灰字。
+        SettingsNote(
+          text: l10n.securityExternalResourcesNote,
+          icon: Icons.info_outline,
+        ),
+        // 扩展（商业版）往这一页加的块。铺在同一个 `SettingsPage` 里、白名单之后
         // —— 见 `AppExtension.securityExtras` 的约定（不要自带滚动容器）。
         ...AppExtensionRegistry.instance.securityExtras(context),
       ],

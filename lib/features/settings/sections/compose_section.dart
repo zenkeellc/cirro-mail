@@ -9,9 +9,11 @@ import '../../../providers/mail_providers.dart';
 import '../../../providers/profile_providers.dart';
 import '../../../providers/settings_providers.dart';
 import '../../compose/writing_snippets.dart';
-// 小节标题**复用**这个，不要在自己文件里再造一个 `_SectionHeader` ——
-// `ai_section.dart` 等**七个调用点**用的都是它。
-import '../settings_widgets.dart' show SettingsSectionHeader;
+// 设置页积木（定义在 `cirro_mail_ext`，这里只 re-export）：根容器用
+// `SettingsPage`，行按语义装进 `SettingsGroup`（组内分隔线由它画），
+// 一句长说明用 `SettingsHint`。别在本文件里再造一套 Card / Divider。
+import '../settings_widgets.dart'
+    show SettingsGroup, SettingsHint, SettingsPage, SettingsTile;
 
 /// 设置 → 写邮件。
 ///
@@ -66,64 +68,94 @@ class ComposeSection extends ConsumerWidget {
     final signatures = store.signatures;
 
     if (emails.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.only(bottom: 32),
+      // 文案只说一件事：「还没有邮箱」。签名与常用语都按邮箱分，没有邮箱时
+      // 两张表都是空的，说一次就够 —— 现在这句话**只在真的一台实例都没登**
+      // 时成立（有邮箱、只是还没配签名，会走下面的非空分支）。
+      return const SettingsPage(
+        padding: EdgeInsets.only(top: 8, bottom: 32),
         children: <Widget>[
-          // 文案只说一件事：「还没有邮箱」。签名与常用语都按邮箱分，没有邮箱时
-          // 两张表都是空的，说一次就够 —— 现在这句话**只在真的一台实例都没登**
-          // 时成立（有邮箱、只是还没配签名，会走下面的非空分支）。
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: Text(l10n.composeSignatureEmpty),
-          ),
+          _EmptyComposeHint(),
         ],
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 32),
+    return SettingsPage(
+      padding: const EdgeInsets.only(top: 8, bottom: 32),
       children: <Widget>[
-        SettingsSectionHeader(title: l10n.composeSectionSignatures),
-        for (final email in emails)
-          ListTile(
-            key: ValueKey('signature-$email'),
-            leading: const Icon(Icons.draw_outlined),
-            title: Text(email),
-            // 副标题直接显示签名的第一行：一眼看得出这个地址配没配、配的是哪一条。
-            // 空签名给 null（不显示副标题），而不是显示一个空行。
-            subtitle: (signatures[email] ?? '').isEmpty
-                ? null
-                : Text(
-                    signatures[email] ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-            trailing: const Icon(Icons.edit_outlined, size: 18),
-            onTap: () => _editSignature(context, ref, email),
-          ),
+        // 签名：一行一个邮箱。点一行进编辑对话框。
+        SettingsGroup(
+          title: l10n.composeSectionSignatures,
+          icon: Icons.draw_outlined,
+          children: <Widget>[
+            for (final email in emails)
+              ListTile(
+                key: ValueKey('signature-$email'),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                leading: const Icon(Icons.draw_outlined, size: 20),
+                title: Text(email),
+                // 副标题直接显示签名的第一行：一眼看得出这个地址配没配、配的是哪一条。
+                // 空签名给 null（不显示副标题），而不是显示一个空行。
+                subtitle: (signatures[email] ?? '').isEmpty
+                    ? null
+                    : Text(
+                        signatures[email] ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                trailing: const Icon(Icons.edit_outlined, size: 18),
+                onTap: () => _editSignature(context, ref, email),
+              ),
+          ],
+        ),
         // 签名与常用语按邮箱存，换实例也还在 —— 这句是给「为什么我的签名在
         // 另一台实例上也看得见」这个问题准备的答案。
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Text(
-            l10n.composeSnippetsHint,
-            key: const ValueKey('compose-hint'),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
+        SettingsHint(
+          l10n.composeSnippetsHint,
+          key: const ValueKey('compose-hint'),
+          icon: Icons.info_outline,
         ),
-        const Divider(),
-        SettingsSectionHeader(title: l10n.composePhrases),
-        for (final email in emails)
-          ListTile(
-            key: ValueKey('phrases-$email'),
-            leading: const Icon(Icons.short_text_outlined),
-            title: Text(email),
-            subtitle: Text(l10n.composePhrasesFor(email)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _editPhrases(context, ref, email),
-          ),
+        // 常用语：同样的邮箱分组，进一个单独的子页编辑。
+        SettingsGroup(
+          title: l10n.composePhrases,
+          icon: Icons.short_text_outlined,
+          children: <Widget>[
+            for (final email in emails)
+              SettingsTile(
+                key: ValueKey('phrases-$email'),
+                icon: Icons.short_text_outlined,
+                title: email,
+                subtitle: l10n.composePhrasesFor(email),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _editPhrases(context, ref, email),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// 「一台实例都还没登」时的空态：一张只有一个提示行的卡片。
+///
+/// 单独拆出来是为了让上面那个分支能整个 `const`（`l10n` 要读 context，
+/// 所以文案在这里取）。
+class _EmptyComposeHint extends StatelessWidget {
+  const _EmptyComposeHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return SettingsGroup(
+      children: <Widget>[
+        SettingsTile(
+          icon: Icons.info_outline,
+          title: l10n.composeSignatureEmpty,
+        ),
       ],
     );
   }

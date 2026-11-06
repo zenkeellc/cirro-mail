@@ -22,7 +22,7 @@ import '../../../providers/settings_providers.dart';
 ///
 /// ## 结构（按**信息字段的逻辑**排，不是按代码先后）
 ///
-/// 整页**一个** `ListView`，顺序固定：
+/// 整页一个 `SettingsPage`（内部只有一个 ListView），顺序固定：
 ///
 /// 1. **产品标识**：产品名 + 版本号那一行（[AppVersion.display]，形如
 ///    `0.1.0+131`）—— 永远是第一项，用户来这一页最先想知道的就是「我装的
@@ -43,8 +43,8 @@ import '../../../providers/settings_providers.dart';
 ///    文件 → 卡片不存在，这一页与从前一样；关掉后按 URL 记进 prefs，同一个
 ///    链接不再出现、换链接（换活动）会重新出现。
 ///
-/// 扩展块直接铺在同一个 `ListView` 的 children 里，**不要**给它们套滚动容器
-/// （见 `AppExtension.aboutExtras` 的约定）。公开版没有扩展，所以这一页在
+/// 扩展块直接铺在同一个 `SettingsPage` 的 children 里，**不要**给它们套滚动
+/// 容器（见 `AppExtension.aboutExtras` 的约定）。公开版没有扩展，所以这一页在
 /// 「2」处什么也不多：主标识在最前，版本明细与更新照旧完整可用。
 ///
 /// ## 为什么这一页不依赖实例状态
@@ -85,28 +85,35 @@ class AboutSection extends ConsumerWidget {
         ref.watch(appVersionProvider).value ?? AppVersion.unknown;
     final service = ref.watch(updateServiceProvider);
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 32),
+    return SettingsPage(
+      padding: const EdgeInsets.only(top: 8, bottom: 32),
       children: <Widget>[
         // 主标识那一行**必须在最前**：扩展块再怎么加，也不能把它顶掉。
         _AboutHeader(version: version),
         // 扩展块（商业版标识）紧跟主标识：它们同属「这个产品是谁」这一层。
-        // 直接铺在同一个 ListView 里 —— **不要**套滚动容器
+        // 直接铺在同一个 `SettingsPage` 里 —— **不要**套滚动容器
         // （见 `AppExtension.aboutExtras` 的约定）。
         ...AppExtensionRegistry.instance.aboutExtras(context),
         if (version.isKnown)
-          _AboutGroup(
+          SettingsGroup(
             key: const ValueKey<String>('about-group-version'),
             title: l10n.aboutGroupVersion,
-            children: _versionRows(context, l10n, version),
+            icon: Icons.tag,
+            children: _versionRows(l10n, version),
           ),
         // 清单地址为空（构建期关掉更新检查）时整组隐藏：一个永远失败 /
         // 永远灰着的「检查更新」比没有更糟。
         if (service.isConfigured)
-          _AboutGroup(
+          SettingsGroup(
             key: const ValueKey<String>('about-group-update'),
             title: l10n.aboutGroupUpdate,
-            children: const <Widget>[_UpdateSection()],
+            icon: Icons.system_update_alt,
+            // 状态行 + 自动检查开关是这张卡里的两行，分隔线由
+            // `SettingsGroup` 画 —— 不要再在这里手写一条。
+            children: const <Widget>[
+              _UpdateStatusTile(),
+              _UpdateAutoCheckTile(),
+            ],
           ),
         _OpenSourceGroup(openUrl: openUrl),
         // 页末的通用推广位：位置在这里，内容全看构建期注入（公开仓不显示）。
@@ -117,25 +124,23 @@ class AboutSection extends ConsumerWidget {
 
   /// 「版本信息」分组的行：构建号 / 渠道 / 提交 / 构建时间。
   ///
-  /// 每一项是独立的一行（`ListTile`）：构建号可以单独看，提交 / 构建时间也
+  /// 每一项是独立的一行（`SettingsTile`）：构建号可以单独看，提交 / 构建时间也
   /// 各自能拿来对 bug 报告 —— 拼成一行反而读不出来。缺的那项直接不出现，
   /// 不留「—」占位（`--dart-define` 只传一部分时很常见）。
   ///
   /// 顺序按「我是谁 → 从哪来 → 什么时候打的」：构建号与渠道是**这个构建**
   /// 的身份，提交与构建时间是它的**来源**。
   List<Widget> _versionRows(
-    BuildContext context,
     AppLocalizations l10n,
     AppVersion version,
   ) {
     final rows = <Widget>[];
     void add(String key, IconData icon, String label, String value) {
       rows.add(
-        ListTile(
+        SettingsTile(
           key: ValueKey<String>('about-$key'),
-          dense: true,
-          leading: Icon(icon, size: 20),
-          title: Text(label),
+          icon: icon,
+          title: label,
           trailing: Text(value),
         ),
       );
@@ -201,78 +206,11 @@ class _AboutHeader extends StatelessWidget {
   }
 }
 
-/// 分组小标题。同一页里所有分组共用，字号/留白不会各写各的。
-class _AboutGroupHeader extends StatelessWidget {
-  const _AboutGroupHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Text(
-        title,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.4,
-        ),
-      ),
-    );
-  }
-}
-
-/// 一页里的一个信息分组：小标题 + 一张卡片，卡片里是一组行（行间细分隔线）。
-///
-/// 分组而不是一长串平铺的 `ListTile`：这一页回答的是几件不同的事
-/// （这个构建是什么 / 要不要更新 / 去哪儿给项目点 Star），平铺会让它们看起来
-/// 是同一件事的七条参数。
-class _AboutGroup extends StatelessWidget {
-  const _AboutGroup({
-    super.key,
-    required this.title,
-    required this.children,
-  });
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final rows = <Widget>[];
-    for (final child in children) {
-      if (rows.isNotEmpty) rows.add(const Divider(height: 1));
-      rows.add(child);
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _AboutGroupHeader(title: title),
-        Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          elevation: 0,
-          color: scheme.surfaceContainerLow,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: scheme.outlineVariant.withValues(alpha: 0.6),
-            ),
-          ),
-          child: Column(children: rows),
-        ),
-      ],
-    );
-  }
-}
-
 /// 「开源项目」分组：一句请求 + 仓库卡片。
 ///
-/// 卡片与「打开失败只弹 SnackBar」的语义都来自
+/// 这里没有「一行一条」的设置项，所以不用 `SettingsGroup`（那会变成卡片套
+/// 卡片）：标题与说明沿用同一套字号/留白（`SettingsSectionHeader` +
+/// `SettingsHint`），下面的卡片与「打开失败只弹 SnackBar」的语义都来自
 /// `core/widgets/github_star_card.dart` —— 与右栏空白预览页是同一个组件，
 /// 不是又写了一遍 GitHub 引导。
 class _OpenSourceGroup extends StatelessWidget {
@@ -282,22 +220,12 @@ class _OpenSourceGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _AboutGroupHeader(title: l10n.aboutGroupOpenSource),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Text(
-            l10n.aboutOpenSourceHint,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.4,
-            ),
-          ),
-        ),
+        SettingsSectionHeader(title: l10n.aboutGroupOpenSource),
+        SettingsHint(l10n.aboutOpenSourceHint),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: GithubStarCard(
@@ -309,33 +237,18 @@ class _OpenSourceGroup extends StatelessWidget {
   }
 }
 
-/// 「更新」分组的内容：状态行 + 自动检查开关。
+/// 「更新」分组的第一行：检查状态 / 结果 / 操作按钮。
 ///
 /// 状态完全由 [updateCheckProvider] 驱动；这一块自己不打网络，也不弹提示
 /// （启动提示在 `features/update/update_host.dart`）。
-class _UpdateSection extends ConsumerWidget {
-  const _UpdateSection();
+class _UpdateStatusTile extends ConsumerWidget {
+  const _UpdateStatusTile();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(updateCheckProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _statusTile(context, ref, l10n, state),
-        const Divider(height: 1),
-        SwitchListTile(
-          key: const ValueKey<String>('about-auto-check'),
-          secondary: const Icon(Icons.update_outlined),
-          title: Text(l10n.updateAutoCheck),
-          // 关掉后仍有手动「检查」—— 版本展示永远在，与本开关无关。
-          value: ref.watch(updateCheckEnabledProvider),
-          onChanged: (value) =>
-              ref.read(updateCheckEnabledProvider.notifier).set(value),
-        ),
-      ],
-    );
+    return _statusTile(context, ref, l10n, state);
   }
 
   Widget _statusTile(
@@ -465,6 +378,26 @@ class _UpdateSection extends ConsumerWidget {
     if (opened || !context.mounted) return;
     messenger?.showSnackBar(
       SnackBar(content: Text(l10n.updateOpenFailed)),
+    );
+  }
+}
+
+/// 「更新」分组的第二行：自动检查开关。
+///
+/// 关掉后仍有手动「检查」—— 版本展示永远在，与本开关无关。
+class _UpdateAutoCheckTile extends ConsumerWidget {
+  const _UpdateAutoCheckTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    return SwitchListTile(
+      key: const ValueKey<String>('about-auto-check'),
+      secondary: const Icon(Icons.update_outlined),
+      title: Text(l10n.updateAutoCheck),
+      value: ref.watch(updateCheckEnabledProvider),
+      onChanged: (value) =>
+          ref.read(updateCheckEnabledProvider.notifier).set(value),
     );
   }
 }

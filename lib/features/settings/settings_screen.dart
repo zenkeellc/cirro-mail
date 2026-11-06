@@ -433,6 +433,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 }
 
 /// 窄屏分类列表里的一行。
+///
+/// 图标住在一颗**浅色圆角底**里而不是裸字形：整张列表是十几个并列入口，
+/// 裸图标与文字挤在一起时先被看到的是字，找不到「我要的那一栏」。底块把
+/// 图标列变成一条竖线，扫视时是「先认图标 → 再读字」。
 class _CategoryTile extends StatelessWidget {
   const _CategoryTile({
     required this.icon,
@@ -446,10 +450,24 @@ class _CategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(icon),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      leading: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Icon(icon, size: 18, color: scheme.onPrimaryContainer),
+      ),
       title: Text(label),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: Icon(
+        Icons.chevron_right,
+        size: 20,
+        color: scheme.onSurfaceVariant,
+      ),
       onTap: onTap,
     );
   }

@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/error/app_exception.dart';
-import '../../../core/theme/instance_colors.dart';
 import '../../../core/util/email_address.dart';
 import '../../../core/widgets/email_address_text.dart';
 import '../../../data/models/instance_capabilities.dart';
@@ -17,6 +16,7 @@ import '../../../providers/core_providers.dart';
 import '../../../providers/mail_providers.dart';
 import '../../../providers/profile_providers.dart';
 import '../../../router.dart' as app_router;
+import '../settings_widgets.dart';
 
 /// 设置 → 邮箱。**全 App 唯一的邮箱管理入口**（添加 / 改名 / 置顶 / 删除）。
 ///
@@ -55,21 +55,27 @@ class MailboxesSection extends ConsumerWidget {
     final profiles = ref.watch(profilesProvider).value ?? const <Profile>[];
 
     if (profiles.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.only(bottom: 32),
+      return SettingsPage(
         children: <Widget>[
-          ListTile(
-            leading: const Icon(Icons.add),
-            title: Text(l10n.addFirstInstance),
-            // 与 `InstancesSection` 同一写法（`router.dart` 的常量而不是字面量）。
-            onTap: () => context.go(app_router.Routes.setup),
+          SettingsGroup(
+            title: l10n.mailbox,
+            icon: Icons.alternate_email_outlined,
+            children: <Widget>[
+              SettingsTile(
+                icon: Icons.add,
+                title: l10n.addFirstInstance,
+                // 与 `InstancesSection` 同一写法（`router.dart` 的常量而不是字面量）。
+                onTap: () => context.go(app_router.Routes.setup),
+              ),
+            ],
           ),
         ],
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 32),
+    // 一台实例一张卡片：卡片的标题行是「哪台实例」（色标不再单画一个
+    // 头像 —— 组标题 + 图标承担同一件事），卡片里是它的全部邮箱。
+    return SettingsPage(
       children: <Widget>[
         for (final profile in profiles)
           _InstanceGroup(key: ValueKey<String>(profile.id), profile: profile),
@@ -86,7 +92,6 @@ class _InstanceGroup extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final mailboxes = ref.watch(mailboxesProvider(profile.id)).value ??
         const <MailboxAccount>[];
@@ -104,60 +109,30 @@ class _InstanceGroup extends ConsumerWidget {
                 ? l10n.mailboxAddDenied
                 : null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // 一台实例 = 一张 `SettingsGroup` 卡片：
+    //
+    // - 标题行是「哪台实例」+ 右侧「添加邮箱」（加邮箱必须指名加在哪台上，
+    //   所以这个动作只能挂在这张卡上，不能提到页顶）；
+    // - 加不了的时候，那句原因就放在标题下的 description 里 —— 不再是一行
+    //   挂在卡片外的灰字；
+    // - 卡内是它的全部邮箱，行间分隔线由 `SettingsGroup` 画。
+    return SettingsGroup(
+      title: profile.displayName,
+      icon: Icons.alternate_email_outlined,
+      description: blocked ?? profile.subtitle,
+      trailing: blocked == null
+          ? TextButton.icon(
+              onPressed: () => _openAdd(context, ref),
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(l10n.mailboxAdd),
+            )
+          : null,
       children: <Widget>[
-        ListTile(
-          leading: CircleAvatar(
-            backgroundColor: InstanceColors.of(profile.colorIndex),
-            child: Text(
-              InstanceColors.initial(profile.displayName),
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          title: Text(
-            profile.displayName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            profile.subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          trailing: blocked == null
-              ? TextButton.icon(
-                  onPressed: () => _openAdd(context, ref),
-                  icon: const Icon(Icons.add),
-                  label: Text(l10n.mailboxAdd),
-                )
-              : null,
-        ),
-        if (blocked != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
-            child: Text(
-              blocked,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
         if (mailboxes.isEmpty)
-          ListTile(
-            dense: true,
-            title: Text(
-              l10n.noMailbox,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
+          SettingsEmptyState(
+            text: l10n.noMailbox,
+            icon: Icons.mail_outline,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           )
         else
           // 主邮箱 = **第一行**。
@@ -176,7 +151,6 @@ class _InstanceGroup extends ConsumerWidget {
               caps: caps,
               isPrimary: i == 0,
             ),
-        const Divider(height: 1),
       ],
     );
   }
@@ -237,12 +211,16 @@ class _MailboxTile extends ConsumerWidget {
     final canPin = !isPrimary;
 
     return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.only(left: 72, right: 8),
+      // 与 `SettingsTile` 同一套内边距/图标尺寸：卡里每一行的左边距一致，
+      // 不再是以前那种「为了避开组头条目的头像而缩进 72」的形状（组头已经
+      // 不在卡里，而是卡片自己的标题行）。
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       leading: Icon(
-        isPrimary ? Icons.star_outline : Icons.mail_outline,
-        size: 18,
-        color: theme.colorScheme.onSurfaceVariant,
+        isPrimary ? Icons.star : Icons.mail_outline,
+        size: 20,
+        color: isPrimary
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
       ),
       title: Row(
         children: <Widget>[
@@ -280,8 +258,10 @@ class _MailboxTile extends ConsumerWidget {
               account.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
+              // 与 `SettingsTile` 的 subtitle 同一套字号/行高（整页副标题一个样）。
+              style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
+                height: 1.4,
               ),
             ),
       trailing: (canRename || canDelete || canPin)

@@ -13,6 +13,7 @@ import '../../../providers/mail_providers.dart';
 import '../../../providers/profile_providers.dart';
 import '../../../providers/sync_providers.dart';
 import '../../../router.dart' as app_router;
+import '../settings_widgets.dart';
 
 /// 设置 → 实例。
 ///
@@ -30,25 +31,34 @@ class InstancesSection extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final profiles = ref.watch(profilesProvider).value ?? const <Profile>[];
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 32),
+    // 版面：一张「实例」卡片装全部实例行，卡内行间分隔线由 `SettingsGroup`
+    // 画；「添加实例」也是卡里的一行（不再是卡片外一颗独立的按钮）——
+    // 它和上面那些行是同一件事的两面（已经有哪些 / 再加一个）。
+    return SettingsPage(
       children: <Widget>[
-        if (profiles.isEmpty)
-          ListTile(
-            leading: const Icon(Icons.add),
-            title: Text(l10n.addFirstInstance),
-            onTap: () => context.go(app_router.Routes.setup),
-          )
-        else
-          for (final profile in profiles)
-            _InstanceTile(key: ValueKey<String>(profile.id), profile: profile),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: OutlinedButton.icon(
-            onPressed: () => context.go(app_router.Routes.addInstance),
-            icon: const Icon(Icons.add),
-            label: Text(l10n.addInstance),
-          ),
+        SettingsGroup(
+          title: l10n.instances,
+          icon: Icons.dns_outlined,
+          children: <Widget>[
+            if (profiles.isEmpty)
+              SettingsTile(
+                icon: Icons.add,
+                title: l10n.addFirstInstance,
+                onTap: () => context.go(app_router.Routes.setup),
+              )
+            else ...<Widget>[
+              for (final profile in profiles)
+                _InstanceTile(
+                  key: ValueKey<String>(profile.id),
+                  profile: profile,
+                ),
+              SettingsTile(
+                icon: Icons.add,
+                title: l10n.addInstance,
+                onTap: () => context.go(app_router.Routes.addInstance),
+              ),
+            ],
+          ],
         ),
       ],
     );

@@ -13,6 +13,7 @@ import '../../../providers/core_providers.dart';
 import '../../../providers/mail_providers.dart';
 import '../../../providers/profile_providers.dart';
 import '../../../providers/sync_providers.dart';
+import '../settings_widgets.dart';
 
 /// 设置 → 诊断的正文（**没有自己的 `Scaffold`**）。
 ///
@@ -36,9 +37,19 @@ class DiagnosticsSection extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final profiles = ref.watch(profilesProvider).value ?? const <Profile>[];
 
-    if (profiles.isEmpty) return Center(child: Text(l10n.noInstances));
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 32),
+    // 空态也走同一套外壳/积木：不要一进来是一整屏居中的一句话。
+    if (profiles.isEmpty) {
+      return SettingsPage(
+        children: <Widget>[
+          SettingsEmptyState(
+            text: l10n.noInstances,
+            icon: Icons.monitor_heart_outlined,
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+          ),
+        ],
+      );
+    }
+    return SettingsPage(
       children: <Widget>[
         for (final profile in profiles)
           _ProfileDiagnostics(
@@ -85,46 +96,34 @@ class _ProfileDiagnostics extends ConsumerWidget {
       lastSyncAt: profile.lastSyncAt,
     );
 
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    profile.displayName,
-                    style: theme.textTheme.titleSmall,
-                  ),
-                ),
-                if (!profile.isLoggedIn)
-                  Text(
-                    l10n.needsLogin,
-                    style: theme.textTheme.labelSmall
-                        ?.copyWith(color: theme.colorScheme.error),
-                  ),
-              ],
-            ),
-            SelectableText(
-              profile.baseUrl,
-              style: theme.textTheme.labelSmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
+    // 版面：一台实例 = 一个页头（名字 / 地址 / 未登录标记）+ 若干张
+    // `SettingsGroup` 卡片。卡片标题就是原来那几行 `_GroupTitle` —— 现在
+    // 标题、图标与卡片的圆角/描边都由积木统一，行间分隔线也由它画。
+    //
+    // 端点自检那一块**内部实现原样保留**（`_SelfCheck` / `_ProbeRow` 是专用
+    // 排障组件，不拆成设置行），只把它整个包进一张卡片、补上标题与图标。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _InstanceHeader(profile: profile),
 
-            _GroupTitle(title: l10n.capabilities),
+        SettingsGroup(
+          title: l10n.capabilities,
+          icon: Icons.fact_check_outlined,
+          children: <Widget>[
             for (final row in caps.toDiagnosticRows().entries)
               _KeyValue(keyText: row.key, value: row.value),
             _KeyValue(
               keyText: l10n.probedAt,
               value: _clock(caps.probedAt?.toLocal()) ?? l10n.probeNotRun,
             ),
+          ],
+        ),
 
-            const SizedBox(height: 12),
-            _GroupTitle(title: l10n.siteConfig),
+        SettingsGroup(
+          title: l10n.siteConfig,
+          icon: Icons.tune,
+          children: <Widget>[
             _KeyValue(
               keyText: l10n.fieldTitle,
               value: (config?.title ?? caps.serverTitle).ifEmpty('-'),
@@ -147,42 +146,65 @@ class _ProfileDiagnostics extends ConsumerWidget {
               keyText: l10n.domainList,
               value: domains.isEmpty ? '-' : domains.join('、'),
             ),
+          ],
+        ),
 
-            const SizedBox(height: 12),
-            _GroupTitle(title: l10n.syncStatus),
-            Text(
-              schedulerStatus ?? l10n.noScheduler,
-              style: theme.textTheme.bodySmall,
+        SettingsGroup(
+          title: l10n.syncStatus,
+          icon: Icons.sync,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text(
+                schedulerStatus ?? l10n.noScheduler,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: schedulerStatus == null
+                      ? theme.colorScheme.onSurfaceVariant
+                      : null,
+                  height: 1.4,
+                ),
+              ),
             ),
-            const SizedBox(height: 4),
             _KeyValue(
               keyText: l10n.lastSyncedAt,
               value: _stamp(profile.lastSyncAt?.toLocal()) ?? '-',
             ),
+          ],
+        ),
 
-            const SizedBox(height: 12),
-            _GroupTitle(title: l10n.sessionTitle),
+        SettingsGroup(
+          title: l10n.sessionTitle,
+          icon: Icons.vpn_key_outlined,
+          children: <Widget>[
             _KeyValue(
               keyText: l10n.sessionExpiresAt,
               value: _stamp(session.expiresAt?.toLocal()) ?? '-',
             ),
-            // 服务端是「用一次续 30 天」的滑动过期：真的连续 30 天没请求，
-            // token 会被 KV 清掉，只能重新输密码。提前提示一句，用户打开
-            // 收一次信就续上了 —— 比到期当天突然被踢回登录页好得多。
-            if (session.shouldWarn)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  l10n.sessionExpiringSoon,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.error),
-                ),
-              ),
+          ],
+        ),
+        // 服务端是「用一次续 30 天」的滑动过期：真的连续 30 天没请求，
+        // token 会被 KV 清掉，只能重新输密码。提前提示一句，用户打开
+        // 收一次信就续上了 —— 比到期当天突然被踢回登录页好得多。
+        //
+        // 这句是**需要读完**的一整段话，所以用 `SettingsNote`（有底色的
+        // 小卡），不是组内的一行灰字。
+        if (session.shouldWarn)
+          SettingsNote(
+            text: l10n.sessionExpiringSoon,
+            icon: Icons.schedule_outlined,
+            accent: theme.colorScheme.error,
+          ),
 
-            const SizedBox(height: 12),
-            _GroupTitle(title: l10n.mailbox),
+        SettingsGroup(
+          title: l10n.mailbox,
+          icon: Icons.alternate_email_outlined,
+          children: <Widget>[
             if (mailboxes.isEmpty)
-              Text(l10n.noMailboxCache, style: theme.textTheme.bodySmall)
+              SettingsEmptyState(
+                text: l10n.noMailboxCache,
+                icon: Icons.inbox_outlined,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              )
             else
               for (final box in mailboxes)
                 _KeyValue(
@@ -191,12 +213,17 @@ class _ProfileDiagnostics extends ConsumerWidget {
                       ? '${box.email}（${l10n.allMailboxes}）'
                       : box.email,
                 ),
+          ],
+        ),
 
-            const SizedBox(height: 16),
+        SettingsGroup(
+          title: l10n.endpointSelfCheck,
+          icon: Icons.network_check,
+          children: <Widget>[
             _SelfCheck(profileId: profile.id, enabled: profile.isLoggedIn),
           ],
         ),
-      ),
+      ],
     );
   }
 
@@ -213,27 +240,60 @@ class _ProfileDiagnostics extends ConsumerWidget {
   }
 }
 
-class _GroupTitle extends StatelessWidget {
-  const _GroupTitle({required this.title});
+/// 一台实例的页头：名字 + （未登录时）标记 + 可复制的服务端地址。
+///
+/// 它**不是**一张卡片：下面那些 `SettingsGroup` 才是卡片。页头的字号/图标
+/// 与 `SettingsGroup` 的标题同一套（图标 16、主题色），所以「实例页头 →
+/// 它的几张卡片」是一条从上往下的视觉线。
+class _InstanceHeader extends StatelessWidget {
+  const _InstanceHeader({required this.profile});
 
-  final String title;
+  final Profile profile;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final scheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text(
-        title,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.w600,
-        ),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.dns_outlined, size: 16, color: scheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  profile.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (!profile.isLoggedIn)
+                Text(
+                  l10n.needsLogin,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: scheme.error),
+                ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          SelectableText(
+            profile.baseUrl,
+            style: theme.textTheme.labelSmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
       ),
     );
   }
 }
 
+/// 诊断表里的一行「键 → 值」。值可以选中复制（排障时这一点很重要）。
 class _KeyValue extends StatelessWidget {
   const _KeyValue({required this.keyText, required this.value});
 
@@ -244,7 +304,7 @@ class _KeyValue extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -256,8 +316,12 @@ class _KeyValue extends StatelessWidget {
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ),
+          const SizedBox(width: 8),
           Expanded(
-            child: SelectableText(value, style: theme.textTheme.bodySmall),
+            child: SelectableText(
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
+            ),
           ),
         ],
       ),
@@ -455,40 +519,54 @@ class _SelfCheckState extends ConsumerState<_SelfCheck> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final future = _future;
+    // 卡片标题（`端点自检`）已经由外层 `SettingsGroup` 给，这里只留
+    // 一句说明 + 右上角那颗按钮 —— 同一句提示不再重复画两遍。
+    final hint = !widget.enabled
+        ? l10n.selfCheckLoginFirst
+        : future == null
+            ? l10n.selfCheckHint
+            : null;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child:
-                  Text(l10n.endpointSelfCheck, style: theme.textTheme.labelMedium),
-            ),
-            TextButton.icon(
-              onPressed: widget.enabled ? _run : null,
-              icon: const Icon(Icons.play_arrow, size: 18),
-              label: Text(l10n.retry),
-            ),
-          ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 8, 0),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: hint == null
+                    ? const SizedBox.shrink()
+                    : Text(
+                        hint,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: widget.enabled ? _run : null,
+                icon: const Icon(Icons.play_arrow, size: 18),
+                label: Text(l10n.retry),
+              ),
+            ],
+          ),
         ),
-        if (!widget.enabled)
-          Text(l10n.selfCheckLoginFirst, style: theme.textTheme.bodySmall)
-        else if (future == null)
-          Text(l10n.selfCheckHint, style: theme.textTheme.bodySmall)
-        else
+        if (widget.enabled && future != null)
           FutureBuilder<List<ProbeResult>>(
             future: future,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
+                  padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                   child: LinearProgressIndicator(),
                 );
               }
               final results = snapshot.data ?? const <ProbeResult>[];
               return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   for (final result in results) _ProbeRow(result: result),
                 ],
@@ -512,8 +590,12 @@ class _ProbeRow extends StatelessWidget {
     final ok = result.ok && (envelope == null || envelope == 200);
     return ExpansionTile(
       dense: true,
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: const EdgeInsets.only(bottom: 8),
+      // 卡片里每一行都从 16 起（与组内其他行同一条左边线）。
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      // 卡片的描边已经给出边界，这里不要再画 `ExpansionTile` 自带的上下分隔线。
+      shape: const Border(),
+      collapsedShape: const Border(),
       leading: Icon(
         ok ? Icons.check_circle_outline : Icons.error_outline,
         size: 18,
