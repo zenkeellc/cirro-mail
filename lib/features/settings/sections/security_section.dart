@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/settings_providers.dart';
 import '../../mail_detail/external_allowlist.dart' show normalizeDomainPattern;
-import '../settings_widgets.dart' show SettingsSectionHeader;
 
 /// 设置 → 安全。
 ///

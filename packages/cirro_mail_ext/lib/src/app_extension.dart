@@ -28,6 +28,7 @@ import 'settings_section.dart';
 /// | [aboutExtras] | `about_section.dart` 的「关于」页 |
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
+/// | [aiUsageExtras] | `ai_section.dart`（「设置 → AI」页「用量」分组末尾） |
 /// | [securityExtras] | `security_section.dart`（「设置 → 安全」页的正文末尾） |
 /// | [aiTransport] | `ai_providers.dart`（AI 能力改走托管通道）/ `ai_section.dart`（设置页「通道」行） |
 /// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
@@ -154,6 +155,18 @@ abstract class AppExtension {
   /// 现选 —— 核心的 ARB 是公开仓库的资产，不会为扩展加词条。
   List<SettingsSection> settingsSections(BuildContext context) =>
       const <SettingsSection>[];
+
+  /// 追加进「设置 → AI」页「用量」分组末尾的块。
+  ///
+  /// 落点是每天上限滑杆**之后**、同一个 `ListView` 里。核心的 AI 设置
+  /// 只认「调用次数」这种本地口径；托管通道（扩展自己的订阅 / 积分）要怎么
+  /// 展示、点进去看什么，由扩展自己决定 —— 典型做法是返回一行
+  /// 「查看订阅与用量」的 [ListTile]，导航也由扩展自己做（`context.push(...)`）。
+  ///
+  /// 与 [aboutExtras] 的约定相同：**不要返回自带滚动容器的 widget** —— 那会
+  /// 套出两层滚动。返回空列表即「什么都不加」—— 公开版（空注册表）的 AI
+  /// 设置页因此逐字不变。
+  List<Widget> aiUsageExtras(BuildContext context) => const <Widget>[];
 
   /// 追加进「设置 → 安全」页的附加块。
   ///

@@ -29,6 +29,15 @@ export 'src/mail_store.dart'
 export 'src/notification_policy.dart' show NotificationCandidate;
 export 'src/push_defaults.dart' show PushDefaults;
 export 'src/settings_section.dart' show SettingsSection;
+export 'src/settings_widgets.dart'
+    show
+        SettingsEmptyState,
+        SettingsGroup,
+        SettingsHint,
+        SettingsNote,
+        SettingsPage,
+        SettingsSectionHeader,
+        SettingsTile;
 
 /// 扩展往 UI 里插一块内容时的统一入口签名（「关于」页的附加块用它）。
 ///

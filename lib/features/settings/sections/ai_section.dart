@@ -15,7 +15,6 @@ import '../../ai/ai_service.dart';
 import '../../ai/ai_settings.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/ai_providers.dart';
-import '../settings_widgets.dart' show SettingsSectionHeader;
 
 /// 设置 → AI 的正文（**没有自己的 `Scaffold`**）。
 ///
@@ -490,6 +489,10 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
             onChanged: (value) =>
                 _save(settings.copyWith(dailyCallLimit: value.round())),
           ),
+          // 扩展（商业版）往「用量」这一组加的行。托管通道的余额 / 订阅
+          // 入口由扩展自己画 —— 核心不认识「订阅」「积分」这些概念。
+          // 空注册表（公开版）时恒为空，这一页与从前逐字相同。
+          ...AppExtensionRegistry.instance.aiUsageExtras(context),
         ],
     );
   }

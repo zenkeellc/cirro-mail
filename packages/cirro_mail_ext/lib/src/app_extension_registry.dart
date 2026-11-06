@@ -105,6 +105,14 @@ class AppExtensionRegistry {
         for (final ext in _extensions) ...ext.aboutExtras(context),
       ];
 
+  /// 所有扩展往「设置 → AI」页「用量」分组末尾加的块，按注册顺序拼接。
+  ///
+  /// 位置由调用方（`ai_section.dart`）落实在每日上限滑杆之后，注册表只负责
+  /// 按顺序拼平。空注册表（公开版）时恒为空列表。
+  List<Widget> aiUsageExtras(BuildContext context) => <Widget>[
+        for (final ext in _extensions) ...ext.aiUsageExtras(context),
+      ];
+
   /// 所有扩展往「设置 → 安全」页加的块，按注册顺序拼接。
   ///
   /// 铺在「安全」正文的**末尾**（内置的外联资源白名单之后）—— 位置由调用方

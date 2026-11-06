@@ -27,6 +27,7 @@ class SettingsSection {
     required this.selectedIcon,
     required this.title,
     required this.body,
+    this.pinFirst = false,
   });
 
   /// 稳定标识，用于去重与日志。约定与 [AppExtension.id] 一致（反向域名）。
@@ -45,6 +46,17 @@ class SettingsSection {
   /// 与 [AppExtension.aboutExtras] 的约定相反：**这里可以（也通常会）返回自带
   /// 滚动容器的 widget** —— 设置栏的正文本来就该自己滚。
   final WidgetBuilder body;
+
+  /// 是否排在内置分类**之前**（默认 `false` = 与其余扩展一样排在内置之后）。
+  ///
+  /// 只给「用户身份」这一类入口用：商业版的「账号」（账号 + 订阅）要出现在
+  /// 设置的第一排 —— 它是整页的主身份，排在内置的「实例 / 邮箱」后面会让
+  /// 用户以为它是某个二级功能。标志位放在扩展自己身上（而不是核心按 id
+  /// 特判），核心因此仍然不认识任何一个具体扩展。
+  ///
+  /// 多个扩展都置位时按注册顺序排在最前；`pinFirst` 的栏**不改变**「安全 /
+  /// 关于固定收尾」那条规矩。
+  final bool pinFirst;
 
   @override
   String toString() => 'SettingsSection($id, "$title")';

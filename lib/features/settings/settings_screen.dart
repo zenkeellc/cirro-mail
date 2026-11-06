@@ -178,11 +178,12 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  static const _SectionRef _default = _SectionRef.builtIn(
-    SettingsCategory.instances,
-  );
-
-  _SectionRef _selected = _default;
+  /// 用户点过的分类。`null` = 还没点过，默认落在**当前分类清单的第一项**。
+  ///
+  /// 不能写死成「实例」：扩展可以声明 [SettingsSection.pinFirst]（商业版的
+  /// 「账号」就排在最前），那时第一栏不是实例。默认项必须跟着清单走 —
+  /// 否则宽屏一进来会出现「分类栏第一项高亮着账号、右栏却是实例」。
+  _SectionRef? _selected;
 
   /// 窄屏下「用户已经点进某个分类了没有」。
   ///
@@ -197,10 +198,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 的 `/devices`、还可能自动登记一次设备（见它的 `_load` / `_maybeAutoRegister`）。
   /// 只想改个主题的用户不该因此被发一轮推送请求。
   ///
-  /// **初值就是 [_selected] 那一个**：宽屏一进来 `_selected` 已经是「实例」，
-  /// 它必须同时是「已构造」的 —— 否则右栏那个 `IndexedStack` 的第 0 格是
-  /// 占位，用户看到的是「左栏高亮着实例、右栏一片空白」，得先去点一下别的
-  /// 分类再点回来才出内容。
+  /// **默认项必须同时是「已构造」的**：宽屏一进来右栏就是它的正文 —— 否则
+  /// `IndexedStack` 里那一格是占位，用户看到的是「左栏高亮着某一项、右栏
+  /// 一片空白」，得先去点一下别的分类再点回来才出内容。
+  ///
+  /// 默认项由 [build] 按**当前分类清单的第一项**补进来（不能在这里写死：
+  /// 扩展可以 `pinFirst`），所以这里只留空集，不预填。
   ///
   /// `ComposeSection` **不需要**加进来：它构造时只读 `PrefsStore`（内存、
   /// 同步），不碰钥匙串也不发请求 —— 那条规矩是为 `PushSection` 那种
@@ -208,7 +211,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ///
   /// **扩展那一栏一律懒建**（点进去才构造），与内置同一套规矩 ——
   /// 扩展正文多半要读盘或者打接口，「打开设置页」不该等于「把每个扩展都跑一遍」。
-  final Set<String> _built = <String>{_default.key};
+  final Set<String> _built = <String>{};
 
   void _select(_SectionRef next) {
     setState(() {
@@ -267,19 +270,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 扩展各自决定不了自己该排第几，只能由宿主统一插在一个固定位置。
   /// 「关于」永远是最后一栏，`SecuritySection` 是倒数第二栏；扩展排在它俩
   /// 之前（它们属于「用户自己的功能」，而安全/关于是全局兜底页，放最后）。
+  /// 当前要铺出来的分类清单：**N 个置顶扩展 + 十个内置 + M 个扩展**。
+  ///
+  /// 顺序规则（全部由宿主落实，扩展只交标志）：
+  ///
+  /// 1. 声明了 [SettingsSection.pinFirst] 的扩展按注册顺序排最前 —— 它们
+  ///    是「用户身份」这一类入口（商业版的「账号」），要出现在设置的第一排；
+  /// 2. 十个内置分类，`instances` 开头；
+  /// 3. 其余扩展插在「诊断」之后、「安全」之前；
+  /// 4. 「安全」「关于」固定收尾 —— 这条规矩写在 `SettingsSection` 的文档里，
+  ///    扩展各自决定不了自己该排第几，只能由宿主统一插在一个固定位置。
   List<_SectionRef> _sections(BuildContext context) {
     final extensions = <_SectionRef>[
       for (final section in AppExtensionRegistry.instance.settingsSections(context))
         _SectionRef.extension(section),
     ];
+    final pinned = <_SectionRef>[
+      for (final ref in extensions)
+        if (ref.section!.pinFirst) ref,
+    ];
+    final rest = <_SectionRef>[
+      for (final ref in extensions)
+        if (!ref.section!.pinFirst) ref,
+    ];
     final security = _SectionRef.builtIn(SettingsCategory.security);
     final about = _SectionRef.builtIn(SettingsCategory.about);
     return <_SectionRef>[
+      ...pinned,
       for (final category in SettingsCategory.values)
         if (category != SettingsCategory.about &&
             category != SettingsCategory.security)
           _SectionRef.builtIn(category),
-      ...extensions,
+      ...rest,
       security,
       about,
     ];
@@ -292,21 +314,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final sections = _sections(context);
     // 注册表可能在本次 build 之前变过（只有测试会这么做）—— 选中的那一栏
     // 没了就退回第一栏，不然窄屏会停在一个点不回去的空页上。
-    final selected = sections.contains(_selected) ? _selected : _default;
+    //
+    // 默认项是**清单第一项**（可能被扩展置顶，见 `_sections`），并在这里
+    // 补进 `_built`：宽屏一进来右栏必须已经有正文。
+    final selected = _selected != null && sections.contains(_selected)
+        ? _selected!
+        : sections.first;
+    _built.add(selected.key);
 
     if (!panes) {
       if (!_opened) {
         return Scaffold(
           appBar: AppBar(title: Text(l10n.settings)),
-          body: ListView(
-            padding: const EdgeInsets.only(bottom: 32),
+          // 分类列表也走同一套积木：一张卡片装全部入口，行间自动画分隔线。
+          // 与页内各分组同一个圆角/描边/底色 —— 一进设置就是同一门语言。
+          body: SettingsPage(
+            padding: const EdgeInsets.only(top: 8, bottom: 32),
             children: <Widget>[
-              for (final ref in sections)
-                _CategoryTile(
-                  icon: ref.icon,
-                  label: _labelOf(ref, l10n),
-                  onTap: () => _select(ref),
-                ),
+              SettingsGroup(
+                children: <Widget>[
+                  for (final ref in sections)
+                    _CategoryTile(
+                      icon: ref.icon,
+                      label: _labelOf(ref, l10n),
+                      onTap: () => _select(ref),
+                    ),
+                ],
+              ),
             ],
           ),
         );

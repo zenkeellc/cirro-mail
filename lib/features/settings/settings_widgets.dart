@@ -1,31 +1,22 @@
-import 'package:flutter/material.dart';
-
-/// 设置页各分类里共用的分组小标题。
+/// 设置页各分类里共用的视觉积木 —— 定义在 `cirro_mail_ext` 里。
 ///
-/// 实际用它的只有两个文件、**一共七处调用**：`ai_section.dart` 五处、
-/// `compose_section.dart` 两处（写邮件那一类加进来时多出来的两处）。
-/// 以前它在 `settings_screen.dart` 与 AI 那一页里各有一份私有实现（后者
-/// 还特意写了一行注释说不复用，理由是「换来的收益抵不上多一个公共
-/// widget」）；现在它在 `sections/` 下共享，那个理由反过来了。
+/// 为什么住在公开的扩展包里而不是这个 App：商业包（账号 / 订阅那一栏）
+/// **不能** import 核心 App，但两边设置页要长得一模一样，所以积木必须放在
+/// 两边都 import 得到的地方。这里只做一次 re-export，历史 import 路径
+/// （`../settings_widgets.dart`）与所有调用点都不用改。
 ///
-/// 用法：分类正文自己排 `ListView`，每段前面放一个它。
-class SettingsSectionHeader extends StatelessWidget {
-  const SettingsSectionHeader({super.key, required this.title});
+/// 一套积木的分工见 `packages/cirro_mail_ext/lib/src/settings_widgets.dart`
+/// 的库文档：`SettingsGroup`（分组卡片，行间自动分隔）→ `SettingsTile`
+/// （组内一行）→ `SettingsHint`（小字说明）/ `SettingsNote`（整块提示）/
+/// `SettingsEmptyState`（空态）/ `SettingsPage`（分类正文外壳，宽屏限宽）。
+library;
 
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-      child: Text(
-        title,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
+export 'package:cirro_mail_ext/cirro_mail_ext.dart'
+    show
+        SettingsEmptyState,
+        SettingsGroup,
+        SettingsHint,
+        SettingsNote,
+        SettingsPage,
+        SettingsSectionHeader,
+        SettingsTile;
