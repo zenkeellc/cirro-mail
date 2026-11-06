@@ -21,9 +21,8 @@ class _FakeExtension extends AppExtension {
 
 void main() {
   group('resolveBuiltInPushDefaults', () {
-    // 通知：这些用例跑在**公开版**的编译期常量下 —— `AppDefaults` 里只有
-    // 中转地址有默认值，实例位与配对码是空串（`--dart-define` 没注入）。
-    // 所以「扩展兜底」才看得出来。
+    // 通知：公开版默认构建里 `AppDefaults` 的三个值都是空串（不预填任何
+    // 发行方中转位）；「构建期已经有值」的优先级用 `defaults:` 注入模拟。
 
     test('没有扩展时，结果就是 --dart-define 那三个值（公开版行为不变）', () {
       final resolved = resolveBuiltInPushDefaults(const <AppExtension>[]);
@@ -46,8 +45,13 @@ void main() {
     });
 
     test('--dart-define 已经有值的字段优先，扩展不覆盖', () {
-      // 中转地址在这份构建里恒有默认值（`AppDefaults.pushRelayUrl`），
-      // 所以扩展给一个不同的地址也不该生效 —— 「构建期注入优先」的判据。
+      // 模拟一个「打包时已经注入了中转地址」的构建：扩展给一个不同的地址
+      // 也不该生效 —— 「构建期注入优先」的判据。
+      const fromBuild = PushDefaults(
+        relayUrl: 'https://build.example.com',
+        instanceId: '',
+        pairingCode: '',
+      );
       const builtIn = PushDefaults(
         relayUrl: 'https://push.example.com',
         instanceId: 'inst-0123456789abcdef0123456789abcdef',
@@ -55,9 +59,12 @@ void main() {
       );
       final resolved = resolveBuiltInPushDefaults(
         const <AppExtension>[_FakeExtension('test.fake', builtIn)],
+        defaults: fromBuild,
       );
-      expect(resolved.relayUrl, AppDefaults.pushRelayUrl);
+      expect(resolved.relayUrl, fromBuild.relayUrl);
       expect(resolved.relayUrl, isNot(builtIn.relayUrl));
+      expect(resolved.instanceId, builtIn.instanceId);
+      expect(resolved.pairingCode, builtIn.pairingCode);
     });
 
     test('多个扩展只认第一个返回非 null 的，后面的不参与', () {

@@ -1838,10 +1838,21 @@ class _PushSectionState extends ConsumerState<PushSection> {
 /// 公开版没有扩展，于是结果恒等于 [`AppDefaults`] 的三个值 —— 与加接缝之前
 /// 逐字节一致。
 @visibleForTesting
-PushDefaults resolveBuiltInPushDefaults(List<AppExtension> extensions) {
-  var relayUrl = AppDefaults.pushRelayUrl;
-  var instanceId = AppDefaults.pushInstanceId;
-  var pairingCode = AppDefaults.pushPairingCode;
+PushDefaults resolveBuiltInPushDefaults(
+  List<AppExtension> extensions, {
+  // 构建期 `--dart-define` 的值。生产恒用 [AppDefaults] 那三个常量；
+  // 参数只给测试用 —— 公开库的默认构建里三条都是空串，测试无法在
+  // 运行时把非空值塞进 `String.fromEnvironment`，只能从这里注入一组
+  // 「模拟已经带 --dart-define 的构建」。
+  PushDefaults defaults = const PushDefaults(
+    relayUrl: AppDefaults.pushRelayUrl,
+    instanceId: AppDefaults.pushInstanceId,
+    pairingCode: AppDefaults.pushPairingCode,
+  ),
+}) {
+  var relayUrl = defaults.relayUrl;
+  var instanceId = defaults.instanceId;
+  var pairingCode = defaults.pairingCode;
   for (final extension in extensions) {
     final builtIn = extension.pushDefaults;
     if (builtIn == null) continue;
