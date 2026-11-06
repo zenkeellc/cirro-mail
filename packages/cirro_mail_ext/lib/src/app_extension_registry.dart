@@ -7,6 +7,7 @@ import 'ai_transport.dart';
 import 'app_extension.dart';
 import 'mail_store.dart';
 import 'notification_policy.dart';
+import 'push_managed.dart';
 import 'settings_section.dart';
 
 /// 已注册扩展的**只读**清单。
@@ -154,6 +155,45 @@ class AppExtensionRegistry {
       if (transport != null) return transport;
     }
     return null;
+  }
+
+  // ---- 托管推送 ----
+
+  /// 扩展提供的托管推送配置（见 [AppExtension.managedPushConfig]），按注册
+  /// 顺序取**第一个**非 null。
+  ///
+  /// 与 [aiTransport] 同一口径：一个进程里只该有一条托管配置，两条同时生效
+  /// 只会让「这封信到底登记在哪个中转位」变成一个没人答得上来的问题。
+  ///
+  /// **单个扩展抛异常不拖累别的扩展**：与 [prepareNotificationPolicies] 同一条
+  /// 纪律 —— 推送是尽力而为的东西，一条坏配置不该让整条链路断掉。异常在这里
+  /// 就被吞掉并留一行日志，调用方（`PushService`）拿到的是「没有托管配置」。
+  Future<ManagedPushConfig?> managedPushConfig() async {
+    for (final ext in _extensions) {
+      try {
+        final config = await ext.managedPushConfig();
+        if (config != null) return config;
+      } catch (e) {
+        debugPrint('扩展 ${ext.id} 的托管推送配置读取失败：$e');
+      }
+    }
+    return null;
+  }
+
+  /// 「设置 → 后台推送」的正文（见 [AppExtension.pushSettings]）：按注册顺序
+  /// 问，**第一个返回非 null 的赢**；全为 null 时返回 [fallback]()。
+  ///
+  /// 空注册表（公开版）因此恒等于核心自带的七页向导，行为逐字不变。
+  Widget pushSettings(
+    BuildContext context,
+    PushFacade facade,
+    Widget Function() fallback,
+  ) {
+    for (final ext in _extensions) {
+      final built = ext.pushSettings(context, facade, fallback);
+      if (built != null) return built;
+    }
+    return fallback();
   }
 
   // ---- 邮件正文外联资源 ----

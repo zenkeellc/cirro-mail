@@ -41,6 +41,21 @@ class RelayClient {
 
   String get baseUrl => _baseUrl;
 
+  /// 订阅凭证的请求头名字。
+  ///
+  /// 只在**需要校验订阅凭证**的中转实例位上有意义（`mail-push` 的
+  /// `require_entitlement` 开关）。开源版的中转位不打开它，于是这个头
+  /// 根本不出现 —— 行为与没有这条接缝时一致。
+  static const String entitlementHeader = 'X-Push-Entitlement';
+
+  /// 没有凭证时返回 null（而不是一个空头）：`Options(headers: null)` 与
+  /// 「带一个空值的头」在服务端看来是两件事。
+  static Map<String, dynamic>? _entitlementHeaders(String? entitlement) {
+    final value = entitlement?.trim() ?? '';
+    if (value.isEmpty) return null;
+    return <String, dynamic>{entitlementHeader: value};
+  }
+
   /// 没配中转地址时不能构造请求 —— 上层据此跳过整条推送链路，
   /// 而不是打一个 baseUrl 是空串的请求然后收到一个看不懂的异常。
   bool get isConfigured => _baseUrl.isNotEmpty;
@@ -73,6 +88,9 @@ class RelayClient {
   }
 
   /// 注册（或更新）这台设备在某个收件邮箱上的推送。
+  ///
+  /// [entitlement] 非空时作为 `X-Push-Entitlement` 头发出去；中转端那个实例位
+  /// 开了订阅校验就靠它，没开的话它被忽略。
   Future<void> register({
     required String instanceId,
     required String deviceToken,
@@ -80,31 +98,44 @@ class RelayClient {
     required String mailboxEmail,
     required String fcmToken,
     required String platform,
+    String? entitlement,
   }) async {
-    await _post('/register', <String, dynamic>{
-      'instanceId': instanceId,
-      'deviceToken': deviceToken,
-      'deviceId': deviceId,
-      'mailboxEmail': mailboxEmail,
-      'token': fcmToken,
-      'platform': platform,
-    });
+    await _post(
+      '/register',
+      <String, dynamic>{
+        'instanceId': instanceId,
+        'deviceToken': deviceToken,
+        'deviceId': deviceId,
+        'mailboxEmail': mailboxEmail,
+        'token': fcmToken,
+        'platform': platform,
+      },
+      entitlement: entitlement,
+    );
   }
 
   /// 注销。不传 [mailboxEmail] 就是「这台设备在这个实例下的全部邮箱」。
+  ///
+  /// 与另外三条不同，中转端**不校验**订阅凭证（订阅过期之后用户仍然要能清理
+  /// 自己的注册），这里带上它只是为了四条请求的形状一致。
   Future<int> unregister({
     required String instanceId,
     required String deviceToken,
     required String deviceId,
     String? mailboxEmail,
+    String? entitlement,
   }) async {
-    final data = await _post('/unregister', <String, dynamic>{
-      'instanceId': instanceId,
-      'deviceToken': deviceToken,
-      'deviceId': deviceId,
-      if (mailboxEmail != null && mailboxEmail.isNotEmpty)
-        'mailboxEmail': mailboxEmail,
-    });
+    final data = await _post(
+      '/unregister',
+      <String, dynamic>{
+        'instanceId': instanceId,
+        'deviceToken': deviceToken,
+        'deviceId': deviceId,
+        if (mailboxEmail != null && mailboxEmail.isNotEmpty)
+          'mailboxEmail': mailboxEmail,
+      },
+      entitlement: entitlement,
+    );
     final map = (data is Map) ? data : const <String, dynamic>{};
     return _asInt(map['removed']);
   }
@@ -114,12 +145,17 @@ class RelayClient {
     required String instanceId,
     required String deviceToken,
     required String deviceId,
+    String? entitlement,
   }) async {
-    final data = await _post('/devices', <String, dynamic>{
-      'instanceId': instanceId,
-      'deviceToken': deviceToken,
-      'deviceId': deviceId,
-    });
+    final data = await _post(
+      '/devices',
+      <String, dynamic>{
+        'instanceId': instanceId,
+        'deviceToken': deviceToken,
+        'deviceId': deviceId,
+      },
+      entitlement: entitlement,
+    );
     final map = (data is Map) ? data : const <String, dynamic>{};
     final list = map['mailboxes'];
     if (list is! List) return const <String>[];
@@ -221,6 +257,7 @@ class RelayClient {
     required int since,
     String? mailboxEmail,
     int limit = 50,
+    String? entitlement,
   }) async {
     final query = <String, dynamic>{
       'instanceId': instanceId,
@@ -240,6 +277,7 @@ class RelayClient {
       headers: <String, dynamic>{
         'Authorization': deviceToken,
         'X-Device-Id': deviceId,
+        ...?_entitlementHeaders(entitlement),
       },
     );
     final map = (data is Map) ? data : const <String, dynamic>{};
@@ -267,8 +305,17 @@ class RelayClient {
         ));
   }
 
-  Future<Object?> _post(String path, Map<String, dynamic> body) async {
-    return _unwrap(() => _dio.post<Object?>(path, data: body));
+  Future<Object?> _post(
+    String path,
+    Map<String, dynamic> body, {
+    String? entitlement,
+  }) async {
+    final headers = _entitlementHeaders(entitlement);
+    return _unwrap(() => _dio.post<Object?>(
+          path,
+          data: body,
+          options: headers == null ? null : Options(headers: headers),
+        ));
   }
 
   /// 把「网络异常 / 信封错误」统一折成 [AppException]。
@@ -302,12 +349,32 @@ class RelayClient {
       );
     }
     if (!envelope.isOk) {
+      // 订阅凭证失效是**另一种东西**：中转端的 401 通常是「配对码不对」，
+      // 用户改配置就能修；这一条只有重新订阅 / 续期能修，所以单独抛出去，
+      // 让调用方把推送设置退回手填向导。
+      final reason = _entitlementReason(envelope.data);
+      if (envelope.code == ApiEnvelope.codeUnauthorized && reason != null) {
+        throw PushSubscriptionRequiredException(
+          message: envelope.message,
+          reason: reason,
+        );
+      }
       // 401 在这里**不**走 AuthExpiredException：中转端的 401 是「配对码
       // 不对」，跟实例登录没有任何关系。当成普通 ApiException 让调用方
       // 去提示用户重新配对。
       throw ApiException(code: envelope.code, message: envelope.message, data: envelope.data);
     }
     return envelope.data;
+  }
+
+  /// 信封里的 `data.reason` 是不是「订阅凭证」那一类。
+  ///
+  /// 只认 `entitlement_` 前缀（`mail-push` 的约定）：别的原因（比如
+  /// `app_credential_invalid`）仍然是普通的 401，处理方式不一样。
+  static String? _entitlementReason(Object? data) {
+    if (data is! Map) return null;
+    final reason = data['reason']?.toString() ?? '';
+    return reason.startsWith('entitlement_') ? reason : null;
   }
 
   static int _asInt(Object? value) {

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'ai_transport.dart';
 import 'notification_policy.dart';
 import 'push_defaults.dart';
+import 'push_managed.dart';
 import 'settings_section.dart';
 
 /// 一个扩展模块（商业版、第三方插件、内部实验功能……）。
@@ -31,6 +32,8 @@ import 'settings_section.dart';
 /// | [securityExtras] | `security_section.dart`（「设置 → 安全」页的正文末尾） |
 /// | [aiTransport] | `ai_providers.dart`（AI 能力改走托管通道）/ `ai_section.dart`（设置页「通道」行） |
 /// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
+/// | [managedPushConfig] | `push_service.dart#refreshManagedConfig`（推送三条值优先从哪来） |
+/// | [pushSettings] | `settings_screen.dart#_pushBody`（「设置 → 后台推送」整块正文） |
 /// | [autoLoadExternalResources] / [rewriteExternalResourceUrl] | `external_resource_banner.dart#_HtmlBodyViewState` / `html_body_view.dart`（读信页外联资源） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
 /// | [allowsNotification] | `NotificationGate.select` / `countNotifiable` |
@@ -186,6 +189,59 @@ abstract class AppExtension {
   /// 可以公开、可以编进客户端；能伪造 webhook 的 `webhookSecret` **绝不**从
   /// 这里进来（它在实例后台那一侧）。见 [PushDefaults] 的注释。
   PushDefaults? get pushDefaults => null;
+
+  /// **托管推送配置**：中转地址 / 实例位 / 设备配对码在运行时到手，而不是
+  /// 编译进包里（见 [ManagedPushConfig]）。
+  ///
+  /// 返回非 null 且 [ManagedPushConfig.usable] 时，核心的推送链路改用它：
+  /// 三条值优先取这里，回落才是 prefs / 钥匙串里的手填值；订阅凭证随四个
+  /// 请求（register / unregister / devices / events）透传。
+  ///
+  /// ## 拿到了也**不落盘**
+  ///
+  /// 核心**不会**把这三条写进 prefs / 钥匙串（落盘与否是扩展自己的事，
+  /// 典型做法是把**密文**存进自己的 secret 存储）。核心只维护两样本机的值：
+  /// 推送开关（`cm_push_enabled`）与设备号（`cm_push_device_id`，带实例位
+  /// 前缀、需要跟着它变）。
+  ///
+  /// ## 只该返回**内存里已经解好的**那一份
+  ///
+  /// 核心在每次推送操作前问一次（30 秒节流），所以这里**不要**做网络往返：
+  /// 取回 / 解密 / 续期是扩展自己的生命周期（典型在 [onBootstrap] 与登录、
+  /// 续期的节点上做），这里只要把现成的那一份交出来。
+  ///
+  /// 返回 `null`（公开版的默认）= 没有托管配置，核心按手填值走 —— 空注册表
+  /// 时推送链路与加这条接缝之前逐字相同。
+  ///
+  /// 多个扩展都返回非 null 时，注册表按注册顺序取**第一个**（与
+  /// [aiTransport] 同一口径：一个进程里只该有一条托管配置）。
+  Future<ManagedPushConfig?> managedPushConfig() async => null;
+
+  /// 画「设置 → 后台推送」的**替身 UI**。
+  ///
+  /// 返回非 null 时核心用它替换掉自带的七页向导（[PushSection]）；返回
+  /// `null`（公开版的默认）或所有扩展都返回 null 时，核心**原样构造**那套
+  /// 七页向导 —— 公开版行为因此逐字不变。
+  ///
+  /// ## 参数
+  ///
+  /// - [facade]：核心对推送能力的门面（开关 / 登记 / 退订 / 检查链路）。
+  ///   扩展**不要**依赖核心的 `PushService`，从这里走；
+  /// - [fallback]：自带向导的构造器。扩展自己决定「这一块现在轮不到我画」
+  ///   时（订阅到期、没有托管配置）调用它，把七页向导要回去 —— **别自己
+  ///   搭一个简化版**，用户得有手填三条值的路可走。
+  ///
+  /// ## 文案里不许出现三条值
+  ///
+  /// 托管模式下这三条值本来就是「用户不必知道」的东西，因此**不要**在界面、
+  /// 日志或 `toString` 里显示中转地址 / 实例位 / 配对码（见
+  /// [ManagedPushConfig] 的注释）。要显示「在不在」就显示状态，不显示值。
+  Widget? pushSettings(
+    BuildContext context,
+    PushFacade facade,
+    Widget Function() fallback,
+  ) =>
+      null;
 
   /// AI 能力的**托管通道**（见 [AiTransport]）。
   ///

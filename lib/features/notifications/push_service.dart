@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -112,14 +113,44 @@ class PushService {
     required this._tokens,
     required this._readProfiles,
     required this._readMailboxes,
+    @visibleForTesting Future<ManagedPushConfig?> Function()? readManagedConfig,
     @visibleForTesting bool? forceAvailable,
     @visibleForTesting this._clientFactory,
-  }) : available = forceAvailable ?? _detectAvailable();
+  })  : available = forceAvailable ?? _detectAvailable(),
+        _readManagedConfig =
+            readManagedConfig ?? AppExtensionRegistry.instance.managedPushConfig;
 
   final PrefsStore _prefs;
   final TokenStore _tokens;
   final Future<List<Profile>> Function() _readProfiles;
   final Future<List<MailboxAccount>> Function(String profileId) _readMailboxes;
+
+  /// 去哪儿问**托管推送配置**（见 [AppExtension.managedPushConfig]）。
+  ///
+  /// 生产上就是注册表出口；测试注入一个纯函数即可，不必为了造一份托管配置
+  /// 去改全局的单例注册表。
+  final Future<ManagedPushConfig?> Function() _readManagedConfig;
+
+  /// 最近一次问到并解好的托管配置。null = 没有（或者上次问也是 null）。
+  ///
+  /// 它**只活在内存里**：托管配置的三条值绝不落 prefs / 钥匙串 —— 落盘与否
+  /// 是扩展自己的事（典型做法是存密文）。
+  ManagedPushConfig? _managed;
+
+  /// 上一次问扩展的时间（30 秒节流的基准）。
+  DateTime? _managedAt;
+
+  /// 正在飞的那次取回。并发调用共用同一次，避免一启动几个操作各问一遍。
+  Future<void>? _managedInFlight;
+
+  /// 两次取回之间至少隔这么久。
+  ///
+  /// 之所以要节流：每个公开操作前面都会问一次，而登记一轮就是「每封信一次
+  /// 请求」。不节流的话，扩展那侧要么被打穿，要么被迫自己再缓存一层。
+  static const Duration managedConfigTtl = Duration(seconds: 30);
+
+  /// 现在生效的托管配置；没有就是 null（公开版恒为 null）。
+  ManagedPushConfig? get managedConfig => _managed;
 
   /// 这个平台 + 这份构建能不能用 FCM。
   final bool available;
@@ -150,8 +181,70 @@ class PushService {
   /// token 轮换），所以每次注册都现取，拿不到就不注册。
   String get fcmToken => _fcmToken;
 
-  String get relayUrl => _prefs.pushRelayUrl;
-  String get instanceId => _prefs.pushInstanceId;
+  // -------------------------------------------------------------- 托管配置
+
+  /// 问一次扩展「有没有托管推送配置」，按 30 秒节流缓存。
+  ///
+  /// 每个公开操作（[initialize] / [syncAll] / [unsubscribe] /
+  /// [remoteMailboxes] / [verifyWebhook] / [ensureDeviceId] / [configure]）
+  /// 开头都调它：托管配置可能中途消失（订阅到期、退登），也可能刚被续期，
+  /// 而**三条值的读取全是同步的**（[relayUrl] 之类）—— 只能在异步入口处把
+  /// 缓存先刷新好，同步 getter 才有一份新鲜的值可读。
+  ///
+  /// 空注册表（公开版）时这就是一次「问一下、立刻拿到 null」，除了一个已
+  /// 完成的 `await` 之外没有任何行为差异。
+  ///
+  /// [force] 跳过节流（扩展刚续费 / 刚登录时用）。
+  Future<void> refreshManagedConfig({bool force = false}) {
+    final now = DateTime.now();
+    final at = _managedAt;
+    if (!force && at != null && now.difference(at) < managedConfigTtl) {
+      return Future<void>.value();
+    }
+    final inFlight = _managedInFlight;
+    if (inFlight != null) return inFlight;
+    final future = _loadManagedConfig().whenComplete(() {
+      _managedInFlight = null;
+    });
+    _managedInFlight = future;
+    return future;
+  }
+
+  Future<void> _loadManagedConfig() async {
+    _managedAt = DateTime.now();
+    try {
+      final next = await _readManagedConfig();
+      _managed = next;
+      if (next != null && next.usable) await _adoptManagedDeviceId();
+    } catch (e) {
+      // 扩展读失败不该把整条推送链路弄断：沿用上一份（如果有），下一次
+      // 节流窗口过去再问。
+      debugPrint('推送：取托管配置失败（沿用上一次）：$e');
+    }
+  }
+
+  /// 托管配置的实例位变了之后，把本机设备号改成带新前缀的形状。
+  ///
+  /// 设备号**不是**三条值之一（它是本机生成的、只用于「注销哪些注册」），
+  /// 所以它照常落 prefs —— 不落的话下次冷启动就注销不掉上一次的注册。
+  Future<void> _adoptManagedDeviceId() async {
+    final slot = instanceId;
+    if (slot.isEmpty) return;
+    if (deviceIdMatchesInstance(_prefs.pushDeviceId, slot)) return;
+    await _prefs.setPushDeviceId(mintDeviceId(slot));
+  }
+
+  /// 托管配置里那份订阅凭证；没有就是空串（= 不带 `X-Push-Entitlement`）。
+  String get _entitlement => _managed?.entitlement.trim() ?? '';
+
+  /// 中转地址。**托管配置优先**，没有才读 prefs。
+  String get relayUrl => _managed?.relayUrl ?? _prefs.pushRelayUrl;
+
+  /// 实例位 id。**托管配置优先** —— `resolveProfileId` 也读它，所以推送
+  /// 里带来的 `instanceId` 能对上托管位。
+  String get instanceId => _managed?.instanceId ?? _prefs.pushInstanceId;
+
+  /// 本机设备号。它永远在 prefs 里（见 [_adoptManagedDeviceId]）。
   String get deviceId => _prefs.pushDeviceId;
 
   /// 三条必须值是不是都填了。
@@ -195,6 +288,7 @@ class PushService {
   /// 「已存的是裸 UUID」这种情况**重新掷一个**、不保留原有尾段：那个值
   /// 从来没有注册成功过（带它的每一次登记都 401），没有任何东西值得保。
   Future<String> ensureDeviceId() async {
+    await refreshManagedConfig();
     final current = _prefs.pushDeviceId;
     if (deviceIdMatchesInstance(current, instanceId)) return current;
     // 没有实例位就没有前缀可挂 —— 不掷（否则会掷出一个 `-xxxx` 的残废值，
@@ -216,8 +310,11 @@ class PushService {
   bool get enabled => _prefs.pushEnabled;
 
   /// 有没有设备配对码（它在密钥库里，读起来是异步的）。
+  ///
+  /// 托管配置下这一条是**内存里的**，不必问钥匙串。
   Future<bool> hasPairingCode() async {
     if (!isConfigured) return false;
+    if ((_managed?.deviceCode.trim() ?? '').isNotEmpty) return true;
     return await _tokens.readPushToken(instanceId) != null;
   }
 
@@ -255,6 +352,7 @@ class PushService {
   /// 用户于是去系统设置里白找一圈。所以失败原因在这里就分好，交给
   /// [lastFailure] 报给界面。
   Future<bool> initialize() async {
+    await refreshManagedConfig();
     if (!available || !isConfigured) return false;
     if (_initialized) return _fcmToken.isNotEmpty;
 
@@ -548,6 +646,15 @@ class PushService {
     required String pairingCode,
     String? deviceId,
   }) async {
+    await refreshManagedConfig();
+    // 托管配置在接手时**什么都不落盘**（见 [AppExtension.managedPushConfig]）。
+    // 这条路径只有自带向导会走，而托管模式下那一块 UI 根本不会出现 —— 留着
+    // 这个守卫是为了「扩展返回了托管配置，但核心的向导仍被别处打开」这种
+    // 边角情况：宁可说清楚「不用手动填」，也不要悄悄把托管值写进 prefs。
+    if ((_managed?.usable ?? false)) {
+      await ensureDeviceId();
+      return const PushSyncResult(ok: true, message: '推送配置由托管服务提供，无需手动填写');
+    }
     final nextRelayUrl = relayUrl.trim();
     final nextInstanceId = instanceId.trim();
     final oldInstanceId = _prefs.pushInstanceId;
@@ -615,13 +722,14 @@ class PushService {
   /// 一个 `instanceId`，但两个 profile 指向同一台服务器时它们共用同一个位 ——
   /// 分开登记会把同一批邮箱重复上报。
   Future<PushSyncResult> syncAll({String reason = ''}) async {
+    await refreshManagedConfig();
     if (!available) return const PushSyncResult(ok: false, message: '这个平台不支持 FCM 推送');
     if (!enabled) return const PushSyncResult(ok: false, message: '后台推送开关是关着的');
     if (!isConfigured) {
       return const PushSyncResult(ok: false, message: '还没有填推送中转的三条配置');
     }
 
-    final deviceToken = await _tokens.readPushToken(instanceId);
+    final deviceToken = await _deviceCode();
     if (deviceToken == null) {
       return const PushSyncResult(ok: false, message: '缺少设备配对码');
     }
@@ -646,6 +754,8 @@ class PushService {
 
     final registered = <String>[];
     final failures = <String>[];
+    var subscriptionRequired = false;
+    final entitlement = _entitlement;
 
     for (final profile in loggedIn) {
       final mailboxes = await _readMailboxes(profile.id);
@@ -660,12 +770,20 @@ class PushService {
             mailboxEmail: email,
             fcmToken: _fcmToken,
             platform: _platformName(),
+            entitlement: entitlement,
           );
           registered.add(email);
+        } on PushSubscriptionRequiredException catch (e) {
+          // 凭证失效不是「这个邮箱登记失败」：同一份凭证下每个邮箱都会
+          // 401，接着打只是替中转端刷一串拒绝。停下来，把这事标出来。
+          subscriptionRequired = true;
+          failures.add('$email：${e.userMessage}');
+          break;
         } on AppException catch (e) {
           failures.add('$email：${e.userMessage}');
         }
       }
+      if (subscriptionRequired) break;
     }
 
     await _prefs.setPushMailboxes(registered);
@@ -677,6 +795,7 @@ class PushService {
     return PushSyncResult(
       ok: registered.isNotEmpty,
       message: '登记成功 ${registered.length} 个，失败 ${failures.length} 个：${failures.first}',
+      subscriptionRequired: subscriptionRequired,
     );
   }
 
@@ -685,8 +804,9 @@ class PushService {
   /// 同样先 [ensureDeviceId]：**注销不校验前缀**（中转端按 `device_id`
   /// 精确匹配），拿一个裸 UUID 去删只会「删成功 0 条」，注册原样留着继续推。
   Future<PushSyncResult> unsubscribe() async {
+    await refreshManagedConfig();
     if (!isConfigured) return const PushSyncResult(ok: true, message: '本来就没登记');
-    final deviceToken = await _tokens.readPushToken(instanceId);
+    final deviceToken = await _deviceCode();
     if (deviceToken == null) return const PushSyncResult(ok: true, message: '本来就没登记');
 
     try {
@@ -694,31 +814,42 @@ class PushService {
         instanceId: instanceId,
         deviceToken: deviceToken,
         deviceId: await ensureDeviceId(),
+        entitlement: _entitlement,
       );
       await _prefs.setPushMailboxes(const <String>[]);
       return PushSyncResult(ok: true, message: '已退订 $removed 个邮箱');
+    } on PushSubscriptionRequiredException catch (e) {
+      return PushSyncResult(ok: false, message: e.userMessage, subscriptionRequired: true);
     } on AppException catch (e) {
       return PushSyncResult(ok: false, message: e.userMessage);
     }
   }
 
   /// 诊断页 / 设置页用：中转端还记着这台设备的哪些邮箱。
+  ///
+  /// 订阅凭证失效时**抛** [PushSubscriptionRequiredException]（而不是回一份
+  /// 空列表）：「中转端不认我的订阅」与「一个都没登记」在界面上不该长成
+  /// 一样，调用方据此把设置页退回手填向导。
   Future<List<String>> remoteMailboxes() async {
+    await refreshManagedConfig();
     if (!isConfigured) return const <String>[];
-    final deviceToken = await _tokens.readPushToken(instanceId);
+    final deviceToken = await _deviceCode();
     if (deviceToken == null) return const <String>[];
     try {
       return await (clientFor(relayUrl) ?? RelayClient(baseUrl: relayUrl)).devices(
         instanceId: instanceId,
         deviceToken: deviceToken,
         deviceId: await ensureDeviceId(),
+        entitlement: _entitlement,
       );
+    } on PushSubscriptionRequiredException {
+      rethrow;
     } on AppException {
       return const <String>[];
     }
   }
 
-  /// 配对码（在密钥库里，所以是异步的）。
+  /// 配对码（在密钥库里，所以是异步的；托管配置下在内存里）。
   ///
   /// 拆分之后它的语义是**设备配对码**（中转端的 `device_code`），只用来
   /// 注册 / 注销 / 读事件。它**不是**实例后台要填的 webhook secret ——
@@ -726,6 +857,16 @@ class PushService {
   /// 显示一次，不落盘，也不归这里管。
   Future<String?> pairingCode() async {
     if (!isConfigured) return null;
+    return _deviceCode();
+  }
+
+  /// 现在生效的设备配对码：**托管配置优先**，其次钥匙串。
+  ///
+  /// 这一条是「托管配置下不写钥匙串」的兑现处：托管配置在时不读也**不写**
+  /// 钥匙串，配对码直接来自内存里那一份。
+  Future<String?> _deviceCode() async {
+    final managed = _managed?.deviceCode.trim() ?? '';
+    if (managed.isNotEmpty) return managed;
     return _tokens.readPushToken(instanceId);
   }
 
@@ -742,14 +883,17 @@ class PushService {
   /// [webhookUrl] 传用户在实例后台里**已经填/准备填**的那个值，
   /// 让中转端顺手比一下路径；传空串就只验凭证。
   Future<RelayVerifyResult> verifyWebhook({String webhookUrl = ''}) async {
+    await refreshManagedConfig();
     final client = _client();
     if (client == null) {
       throw const NetworkException(detail: '还没有填中转地址和实例位');
     }
-    final code = await _tokens.readPushToken(instanceId);
+    final code = await _deviceCode();
     if (code == null) {
       throw const ApiException(code: 401, message: '还没有设备配对码');
     }
+    // 自检这条**不带**订阅凭证：`/verify-webhook` 在中转端不校验它
+    // （它只回布尔值，读不到邮件数据），带上也只是多一个会被忽略的头。
     return client.verifyWebhook(
       instanceId: instanceId,
       deviceCode: code,
@@ -758,9 +902,14 @@ class PushService {
   }
 
   /// 「测试连接」：中转端活着吗、配了 FCM 吗。
+  ///
+  /// 走 [clientFor] 而不是现建一个 `RelayClient`：形状与其它几条一致，
+  /// 测试也能把「健康检查到底问了哪个地址」钉住。
   Future<RelayHealth> checkRelay(String url) async {
-    final client = RelayClient(baseUrl: url);
-    if (!client.isConfigured) throw const NetworkException(detail: '地址是空的');
+    final client = clientFor(url);
+    if (client == null || !client.isConfigured) {
+      throw const NetworkException(detail: '地址是空的');
+    }
     return client.health();
   }
 
@@ -855,10 +1004,21 @@ class PushService {
 /// 一次登记/退订的结果。**不抛异常** —— 推送失败不该有把 App 弄崩的能力。
 @immutable
 class PushSyncResult {
-  const PushSyncResult({required this.ok, required this.message});
+  const PushSyncResult({
+    required this.ok,
+    required this.message,
+    this.subscriptionRequired = false,
+  });
 
   final bool ok;
   final String message;
+
+  /// 中转端判定**订阅凭证失效**（`code=401` 且 `data.reason` 以
+  /// `entitlement_` 开头）。
+  ///
+  /// 为 true 时「登记失败」并不是配置填错了，而是订阅那边出了事 ——
+  /// 托管配置的使用方据此清掉托管配置、退回手填向导。
+  final bool subscriptionRequired;
 }
 
 /// [PushService.initialize] 没成功的原因。
