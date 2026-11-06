@@ -419,6 +419,21 @@ class PrefsStore {
   Future<void> setPushEnabled(bool value) =>
       _prefs.setBool(_kPushEnabled, value);
 
+  /// 清掉**手填**的推送配置：中转地址、实例位、以及「已登记邮箱」的旧记录。
+  ///
+  /// 配对码不在这里（它在 [TokenStore] 里，由调用方连带删掉 —— 见
+  /// `PushFacadeImpl.clearManualConfig`）。
+  ///
+  /// 用在「托管推送」接手或失效的时候：三条值改由下发方提供时，prefs 里留着
+  /// 的旧手填值只会在回退到自带向导时被当成「用户自己填的」再显示一遍。
+  /// 设备号（[pushDeviceId]）与开关（[pushEnabled]）**不清**：前者是本机身份，
+  /// 后者是用户的意愿，两者都不属于「三条值」。
+  Future<void> clearPushConfig() async {
+    await _prefs.remove(_kPushRelayUrl);
+    await _prefs.remove(_kPushInstanceId);
+    await _prefs.remove(_kPushMailboxes);
+  }
+
   static const String _kPushIsAdmin = 'cm_push_is_admin';
 
   /// 推送向导第 ⑤ 页那句话的答案：「这个实例是你在管吗」。

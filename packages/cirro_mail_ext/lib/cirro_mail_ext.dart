@@ -28,6 +28,13 @@ export 'src/mail_store.dart'
     show LocalMail, MailDeleted, MailStore, MailStoreEvent, MailStoreReset, MailUpserted;
 export 'src/notification_policy.dart' show NotificationCandidate;
 export 'src/push_defaults.dart' show PushDefaults;
+export 'src/push_managed.dart'
+    show
+        ManagedPushConfig,
+        PushActionResult,
+        PushChainCheck,
+        PushFacade,
+        PushStatus;
 export 'src/settings_section.dart' show SettingsSection;
 export 'src/settings_widgets.dart'
     show

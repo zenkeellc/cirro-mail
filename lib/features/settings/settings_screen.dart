@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/breakpoints.dart';
 import '../../l10n/app_localizations.dart';
+import '../../providers/core_providers.dart';
+import '../../providers/notification_providers.dart';
 import '../mail_list/mail_panes.dart' show PaneHeader;
+import '../notifications/push_facade.dart';
 import '../shell/nav_sidebar.dart' show NavSidebarItem;
 import 'sections/about_section.dart';
 import 'sections/ai_section.dart';
@@ -239,10 +242,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       SettingsCategory.security => const SecuritySection(),
       SettingsCategory.compose => const ComposeSection(),
       SettingsCategory.ai => const AiSettingsSection(),
-      SettingsCategory.push => PushSection(onExit: _back),
+      SettingsCategory.push => _pushBody(),
       SettingsCategory.diagnostics => const DiagnosticsSection(),
       SettingsCategory.about => const AboutSection(),
     };
+  }
+
+  /// 「设置 → 后台推送」的正文。
+  ///
+  /// 公开展示的七页向导（[PushSection]）只是**回退路径**：扩展可以把整块换
+  /// 成自己的面板（见 [AppExtension.pushSettings]）—— 「三条值由托管服务
+  /// 下发」的版本不该让用户看见地址与配对码。空注册表时这里恒等于
+  /// `PushSection(onExit: _back)`，公开版行为逐字不变。
+  ///
+  /// [fallback] 是**惰性构造**的：`PushSection` 一建出来就会读钥匙串、打
+  /// 中转端的 `/devices`、还可能自动登记一次（见它的 `_load`）。所以只有
+  /// 扩展明确拒绝时才该把它建出来 —— 那也正是「托管推送」这一类实现最想要
+  /// 的形状（自己画，不让核心先跑一轮网络）。
+  Widget _pushBody() {
+    final facade = PushFacadeImpl(
+      push: ref.read(pushServiceProvider),
+      prefs: ref.read(prefsStoreProvider),
+      tokens: ref.read(tokenStoreProvider),
+    );
+    return AppExtensionRegistry.instance.pushSettings(
+      context,
+      facade,
+      () => PushSection(onExit: _back),
+    );
   }
 
   /// 分类页的标题：推送与邮箱用长名字（分类栏里那两个短名字是为了塞得下，

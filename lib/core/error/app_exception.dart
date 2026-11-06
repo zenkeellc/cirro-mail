@@ -32,6 +32,26 @@ final class AuthExpiredException extends AppException {
       : super(code: ApiEnvelope.codeUnauthorized);
 }
 
+/// 中转端判定**订阅凭证失效**：`code=401` 且 `data.reason` 以 `entitlement_`
+/// 开头（见 `mail-push` 的凭证校验）。
+///
+/// 与 [AuthExpiredException] 刻意分开：那个说的是「实例登录过期」，这个说的是
+/// 「推送订阅过期」—— 前者要把用户送回登录页，后者该把推送设置退回手填向导。
+/// 两者的处理方向完全相反，混成一个类型一定会有一边被处理错。
+///
+/// 也不与普通的 `ApiException(code: 401)` 合并：中转端的 401 多半是「配对码
+/// 不对」（用户改配置就能修），而这一条只有「重新订阅 / 续期」能修。
+final class PushSubscriptionRequiredException extends AppException {
+  const PushSubscriptionRequiredException({
+    required String message,
+    this.reason = '',
+  }) : super(message, code: ApiEnvelope.codeUnauthorized, rawMessage: message);
+
+  /// 中转端给的原因（`entitlement_missing` / `_invalid` / `_expired` /
+  /// `_unconfigured`），只用于诊断，不参与分支。
+  final String reason;
+}
+
 /// 网络层失败：DNS、TLS、不可达。
 final class NetworkException extends AppException {
   const NetworkException({String? detail})
