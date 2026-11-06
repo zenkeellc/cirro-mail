@@ -158,11 +158,12 @@ class AppDefaults {
   /// 没有那个必要。
   static const int mailboxTotalProbeConcurrency = 3;
 
-  /// 推送中转（mail-push）的默认地址。自建部署可用
-  /// `--dart-define=PUSH_RELAY_URL=...` 覆盖。
+  /// 推送中转（mail-push）的默认地址。**默认空串**：开源仓库不替任何人
+  /// 预填一个中转位（那是部署者自己的服务器），同样也不把发行方的中转地址
+  /// 编进任何安装包。部署者可用 `--dart-define=PUSH_RELAY_URL=...` 注入。
   static const String pushRelayUrl = String.fromEnvironment(
     'PUSH_RELAY_URL',
-    defaultValue: 'https://push.zenkee.com',
+    defaultValue: '',
   );
 
   /// 部署者在本机打包时注入的实例位 id 与**设备配对码**（见
