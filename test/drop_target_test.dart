@@ -1,9 +1,19 @@
+import 'dart:io';
+
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart' as q;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/features/compose/editor/drop_target.dart';
+
+/// 用宿主的路径分隔符造临时路径。
+///
+/// 不能硬编码 `/tmp/...`：`XFile.name` 是按 `Platform.pathSeparator` 切最后
+/// 一段的，Windows 上 `/tmp/photo.PNG` 会被原样返回成整条路径。这里模拟真实
+/// 拖放的路径形状，让两端都只断言 basename。
+String _droppedPath(String name) =>
+    '${Platform.isWindows ? r'C:\tmp' : '/tmp'}${Platform.pathSeparator}$name';
 
 /// 把一条「平台 → Dart」的方法调用塞进 `desktop_drop` 那条 channel。
 /// 这就是拖放真实到达 Dart 侧的路径（`DesktopDrop._handleMethodChannel`），
@@ -48,11 +58,11 @@ void main() {
   group('DropClassifier', () {
     test('按扩展名分图片（桌面端 mimeType 一律是 null）', () {
       final items = <DropItem>[
-        DropItemFile('/tmp/photo.PNG'),
-        DropItemFile('/tmp/report.pdf'),
-        DropItemFile('/tmp/pic.jpeg'),
-        DropItemFile('/tmp/notes.txt'),
-        DropItemFile('/tmp/anim.gif'),
+        DropItemFile(_droppedPath('photo.PNG')),
+        DropItemFile(_droppedPath('report.pdf')),
+        DropItemFile(_droppedPath('pic.jpeg')),
+        DropItemFile(_droppedPath('notes.txt')),
+        DropItemFile(_droppedPath('anim.gif')),
       ];
       expect(
         DropClassifier.images(items).map((i) => i.name),
@@ -66,8 +76,8 @@ void main() {
 
     test('目录两边都不算 —— 读它会抛 PathNotFoundException', () {
       final items = <DropItem>[
-        DropItemDirectory('/tmp/somedir', const []),
-        DropItemFile('/tmp/a.png'),
+        DropItemDirectory(_droppedPath('somedir'), const []),
+        DropItemFile(_droppedPath('a.png')),
       ];
       expect(DropClassifier.images(items).map((i) => i.name), ['a.png']);
       expect(DropClassifier.attachments(items), isEmpty);
@@ -76,13 +86,15 @@ void main() {
 
     test('没有目录时不报「忽略了目录」', () {
       expect(
-        DropClassifier.hasIgnoredDirectories([DropItemFile('/tmp/a.png')]),
+        DropClassifier.hasIgnoredDirectories(
+          [DropItemFile(_droppedPath('a.png'))],
+        ),
         isFalse,
       );
     });
 
     test('未知后缀 → 附件（宁可进附件，也不要插一张打不开的图）', () {
-      final items = <DropItem>[DropItemFile('/tmp/mystery')];
+      final items = <DropItem>[DropItemFile(_droppedPath('mystery'))];
       expect(DropClassifier.images(items), isEmpty);
       expect(DropClassifier.attachments(items).length, 1);
     });
@@ -125,9 +137,10 @@ void main() {
           ),
         ),
       ));
-      await dropFiles(tester, ['/tmp/a.png']);
+      final path = _droppedPath('a.png');
+      await dropFiles(tester, [path]);
       expect(seen, hasLength(1));
-      expect(seen.single.files.map((f) => f.path), ['/tmp/a.png']);
+      expect(seen.single.files.map((f) => f.path), [path]);
       // 松手后遮罩必须收掉，否则它一直盖着正文。
       expect(find.text('松手，图片会插进正文'), findsNothing);
       expect(tester.takeException(), isNull);
@@ -146,7 +159,7 @@ void main() {
           ),
         ),
       ));
-      await dropFiles(tester, ['/tmp/a.png']);
+      await dropFiles(tester, [_droppedPath('a.png')]);
       expect(seen, isEmpty);
       expect(find.text('松手，图片会插进正文'), findsNothing);
     });

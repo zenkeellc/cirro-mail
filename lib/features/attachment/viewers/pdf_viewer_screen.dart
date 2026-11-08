@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
 
@@ -6,6 +8,10 @@ import 'package:pdfx/pdfx.dart';
 /// 用 `PdfViewPinch`（缩放/拖动）而不是 `PdfView`（逐页翻）：
 /// 邮件附件多是合同、发票、登机牌这类**单页或短文档**，连续滚动比
 /// 一页一页翻更自然；`PdfViewPinch` 也顺带给了双指缩放。
+///
+/// Windows 是例外：`pdfx` 的 `PdfViewPinch` 在 Windows 上 `initState` 里
+/// 直接抛 `UnimplementedError`（包内写死的平台判断），那边只能用逐页的
+/// `PdfView`。
 ///
 /// 只接受**本地路径**：`PdfDocument.openFile` 是唯一稳定的入口，
 /// 而 `openData` 要把整个 PDF 读进内存（大 PDF 会直接 OOM）。
@@ -32,11 +38,23 @@ class PdfViewerScreen extends StatefulWidget {
 }
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
-  late final PdfControllerPinch _controller = PdfControllerPinch(
-    document: _open(),
-  );
+  PdfControllerPinch? _pinchController;
+  PdfController? _simpleController;
   int _pages = 0;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // `pdfx` 的 `PdfViewPinch` 在 Windows 上 `initState` 里直接抛
+    // `UnimplementedError`（包内写死的平台判断），只能用逐页的 `PdfView`。
+    // 其余平台保留连续滚动 + 双指缩放。
+    if (Platform.isWindows) {
+      _simpleController = PdfController(document: _open());
+    } else {
+      _pinchController = PdfControllerPinch(document: _open());
+    }
+  }
 
   Future<PdfDocument> _open() async {
     try {
@@ -58,8 +76,34 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pinchController?.dispose();
+    _simpleController?.dispose();
     super.dispose();
+  }
+
+  Widget _buildPdfView() {
+    Widget loader(BuildContext _) =>
+        const Center(child: CircularProgressIndicator());
+
+    final simple = _simpleController;
+    if (simple != null) {
+      return PdfView(
+        controller: simple,
+        builders: PdfViewBuilders<DefaultBuilderOptions>(
+          options: const DefaultBuilderOptions(),
+          documentLoaderBuilder: loader,
+          pageLoaderBuilder: loader,
+        ),
+      );
+    }
+    return PdfViewPinch(
+      controller: _pinchController!,
+      builders: PdfViewPinchBuilders<DefaultBuilderOptions>(
+        options: const DefaultBuilderOptions(),
+        documentLoaderBuilder: loader,
+        pageLoaderBuilder: loader,
+      ),
+    );
   }
 
   @override
@@ -86,18 +130,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
               ),
             ),
           )
-        : PdfViewPinch(
-            controller: _controller,
-            builders: PdfViewPinchBuilders<DefaultBuilderOptions>(
-              options: const DefaultBuilderOptions(),
-              documentLoaderBuilder: (_) => const Center(
-                child: CircularProgressIndicator(),
-              ),
-              pageLoaderBuilder: (_) => const Center(
-                child: CircularProgressIndicator(),
-              ),
-            ),
-          );
+        : _buildPdfView();
 
     if (widget.embedded) {
       // 页数还没解出来（`_open` 是异步的）时那一条先不出现 —— 一条
