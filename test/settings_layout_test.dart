@@ -133,7 +133,10 @@ void main() {
     final settings = find(Routes.settings, router.configuration.routes);
     expect(settings, isNotNull, reason: '设置这一支本身不见了');
 
-    for (final legacy in <String>['ai', 'push', 'diagnostics']) {
+    // `add-instance` 也在这份清单里：添加实例的表单已经并进「实例」那一栏
+    // （页内换右栏，不压栈），这条地址只留兼容 —— 它曾经是设置页里唯一一张
+    // 真的表单页，一进去设置分类栏就整条消失。
+    for (final legacy in <String>['ai', 'push', 'diagnostics', 'add-instance']) {
       final route = settings!.routes.whereType<GoRoute>().firstWhere(
             (r) => r.path == legacy,
             orElse: () => throw StateError('/settings/$legacy 这条旧地址没了'),

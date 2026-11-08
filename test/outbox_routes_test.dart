@@ -15,28 +15,31 @@ void main() {
     expect(Routes.attachmentCache, '/attachment-cache');
   });
 
-  /// 这三条地址**已经不再是一条页面**，但常量必须留着。
+  /// 这几条地址**已经不再是一条页面**，但常量必须留着。
   ///
   /// `/settings/ai`、`/settings/push`、`/settings/diagnostics` 曾经是三个
-  /// 独立整页，现在都并进 `/settings` 自己的分类里（宽屏在右栏内嵌、窄屏
-  /// 是一页）。地址留着是因为**深链不该 404** —— 它们可能出现在用户的浏览
-  /// 历史、通知、或某份旧文档里；`router.dart` 里那三条此刻都是
-  /// `redirect: (…) => Routes.settings`。
+  /// 独立整页，`/settings/add-instance` 曾经是设置页里唯一一张真的表单页
+  /// （挂着自己的 `Scaffold`，一进去设置分类栏就整条消失）—— 现在都并进
+  /// `/settings` 自己的分类里（宽屏在右栏内嵌、窄屏是一页），添加实例成了
+  /// 「实例」那一栏的第二种形态。地址留着是因为**深链不该 404** —— 它们可能
+  /// 出现在用户的浏览历史、通知、或某份旧文档里；`router.dart` 里那几条
+  /// 此刻都是 `redirect: (…) => Routes.settings`。
   ///
   /// 「它们确实是重定向」这件事钉在 `settings_layout_test.dart` 里（那条会
   /// 真的把路由表翻出来看），这里只钉常量本身没被顺手删掉 —— 那一步在界面上
   /// 完全看不出来，只有某个存过旧地址的人会撞上 404。
-  test('设置页那几个真正的子路由还在', () {
+  test('设置页那几个旧子路由常量还在（现在都是重定向）', () {
     expect(Routes.diagnostics, '/settings/diagnostics');
     expect(Routes.pushSettings, '/settings/push');
     expect(Routes.addInstance, '/settings/add-instance');
     expect(Routes.aiSettings, '/settings/ai');
-    // 只有「添加实例」还是一张真的表单页（`ServerSetupScreen`），
-    // 另外三条现在只是兼容用的重定向。
+    // 「添加实例」也不再是表单页了：它与另外三条一样只是兼容用的重定向，
+    // 表单本体在「实例」那一栏里（`AddInstanceSection`）。
     for (final legacy in <String>[
       Routes.diagnostics,
       Routes.pushSettings,
       Routes.aiSettings,
+      Routes.addInstance,
     ]) {
       expect(
         legacy.startsWith('${Routes.settings}/'),

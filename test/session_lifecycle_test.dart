@@ -199,9 +199,16 @@ void main() {
           profileIdParam: param,
         );
 
-    test('一个实例都没有 → 去服务器设置页', () {
-      expect(at(location: '/mail/all', profiles: const <Profile>[]), '/setup');
-      expect(at(location: '/setup', profiles: const <Profile>[]), isNull);
+    test('一个实例都没有 → 去设置页（添加实例是那一页里的一栏）', () {
+      // 新装时不再被钉在那张占满整窗的「服务器设置」页上：壳的一级导航与
+      // 设置分类菜单都得在，用户从设置页的「实例 → 添加第一个实例」开始。
+      expect(
+        at(location: '/mail/all', profiles: const <Profile>[]),
+        '/settings',
+      );
+      expect(at(location: '/settings', profiles: const <Profile>[]), isNull);
+      // `/setup` 是旧地址（现在只是到 `/settings` 的重定向）。
+      expect(at(location: '/setup', profiles: const <Profile>[]), '/settings');
     });
 
     test('有实例但都没登录 → 去第一个的登录页', () {
@@ -248,7 +255,8 @@ void main() {
         at(location: '/login/B', profiles: <Profile>[a, b], param: 'B'),
         '/mail/all',
       );
-      expect(at(location: '/setup', profiles: <Profile>[a, b]), '/mail/all');
+      // `/setup` 现在是旧地址：有实例时也落到设置页（添加实例在那页里）。
+      expect(at(location: '/setup', profiles: <Profile>[a, b]), '/settings');
     });
 
     test('实例列表还没读出来时停在原地（避免冷启动闪一下设置页）', () {

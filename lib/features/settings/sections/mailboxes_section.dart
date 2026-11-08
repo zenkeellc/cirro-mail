@@ -64,7 +64,10 @@ class MailboxesSection extends ConsumerWidget {
               SettingsTile(
                 icon: Icons.add,
                 title: l10n.addFirstInstance,
-                // 与 `InstancesSection` 同一写法（`router.dart` 的常量而不是字面量）。
+                // 走 `Routes.setup` 这条**旧地址**（现在是到 `/settings` 的
+                // 重定向）：加实例的表单已经并进「实例」那一栏，落地就是
+                // 设置页（宽屏默认选中的正是「实例」）。这里不复刻一份
+                // 「打开表单」的逻辑 —— 那份状态归 `SettingsScreen`。
                 onTap: () => context.go(app_router.Routes.setup),
               ),
             ],

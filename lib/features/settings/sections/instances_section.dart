@@ -14,6 +14,7 @@ import '../../../providers/profile_providers.dart';
 import '../../../providers/sync_providers.dart';
 import '../../../router.dart' as app_router;
 import '../settings_widgets.dart';
+import 'add_instance_section.dart';
 
 /// 设置 → 实例。
 ///
@@ -23,17 +24,53 @@ import '../settings_widgets.dart';
 /// 分类栏由 `SettingsScreen` 给。所有弹出物（底部详情面板、两个对话框）
 /// 仍然直接 `showModalBottomSheet` / `showDialog` —— 它们挂在最近的那个
 /// `Navigator` 上，与宿主是整页还是右栏无关。
+///
+/// ## 「添加实例」是这一栏的**第二种形态**，不是另一张整页
+///
+/// `adding` 为真时这里换成正片表单 [AddInstanceSection]：宽屏留在分类栏
+/// 右侧，窄屏是设置分类页。**开关状态归宿主**（`SettingsScreen`）—— 窄屏
+/// 下设置页 AppBar 那颗返回箭头要能退回实例列表，只有宿主知道「现在是不是
+/// 正开着一张表单」。表单自己不再改地址、不压栈（与其余设置分类同一套规矩）。
 class InstancesSection extends ConsumerWidget {
-  const InstancesSection({super.key});
+  const InstancesSection({
+    super.key,
+    this.adding = false,
+    this.onAdd,
+    this.onCancel,
+    this.onCreated,
+  });
+
+  /// 是否正在展示「添加实例」表单。
+  final bool adding;
+
+  /// 点「添加（第一个）实例」。宿主负责把 [adding] 翻成 true。
+  final VoidCallback? onAdd;
+
+  /// 表单左上角那颗返回箭头：退回实例列表。
+  final VoidCallback? onCancel;
+
+  /// 实例已建好、即将跳登录页。宿主据此退回列表形态。
+  final VoidCallback? onCreated;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final profiles = ref.watch(profilesProvider).value ?? const <Profile>[];
 
+    if (adding) {
+      return AddInstanceSection(
+        onCancel: onCancel ?? () {},
+        onCreated: onCreated,
+      );
+    }
+
     // 版面：一张「实例」卡片装全部实例行，卡内行间分隔线由 `SettingsGroup`
     // 画；「添加实例」也是卡里的一行（不再是卡片外一颗独立的按钮）——
     // 它和上面那些行是同一件事的两面（已经有哪些 / 再加一个）。
+    //
+    // 新装（一个实例都没有）时也走这一栏：App 落在设置页，用户点的就是
+    // 「添加第一个实例」→ 同一张内嵌表单。这也是 `/setup` 那张全屏页
+    // 不再需要的理由（见 `AddInstanceSection` 的类文档）。
     return SettingsPage(
       children: <Widget>[
         SettingsGroup(
@@ -44,7 +81,7 @@ class InstancesSection extends ConsumerWidget {
               SettingsTile(
                 icon: Icons.add,
                 title: l10n.addFirstInstance,
-                onTap: () => context.go(app_router.Routes.setup),
+                onTap: onAdd,
               )
             else ...<Widget>[
               for (final profile in profiles)
@@ -55,7 +92,7 @@ class InstancesSection extends ConsumerWidget {
               SettingsTile(
                 icon: Icons.add,
                 title: l10n.addInstance,
-                onTap: () => context.go(app_router.Routes.addInstance),
+                onTap: onAdd,
               ),
             ],
           ],

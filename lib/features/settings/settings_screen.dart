@@ -194,6 +194,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 看两列 → 拖回来」仍然停在外观，不会莫名退回分类列表。
   bool _opened = false;
 
+  /// 「实例」那一栏此刻是不是开着**添加实例表单**。
+  ///
+  /// 状态归宿主（而不是 `InstancesSection` 自己）：窄屏那颗设置页返回箭头
+  /// 要先退回实例列表、再退回分类列表，两级语义只有宿主分得清。
+  ///
+  /// 表单不占地址、不压栈 —— 与其余分类的切换同一套规矩（见类文档）。
+  bool _addingInstance = false;
+
   /// **已经构造过**的分类，按 [_SectionRef.key] 记。
   ///
   /// 宽屏右栏用 `IndexedStack` 把构造过的分类留着（切走再切回来，草稿还在），
@@ -220,12 +228,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     setState(() {
       _selected = next;
       _built.add(next.key);
+      // 换了分类，「添加实例」那张表单就收起来 —— 它只属于「实例」那一栏，
+      // 用户已经走开了。
+      _addingInstance = false;
       // 窄屏：点分类栏里的项 = 进那一页。
       _opened = true;
     });
   }
 
-  void _back() => setState(() => _opened = false);
+  /// 返回。窄屏两级：**表单 → 实例列表 → 分类列表**。
+  ///
+  /// 宽屏也走这里（表单里那颗返回箭头），但那时 `_opened` 恒为 true，
+  /// 只走第一级 —— 分类栏本来就一直在。
+  void _back() {
+    setState(() {
+      if (_addingInstance) {
+        _addingInstance = false;
+        return;
+      }
+      _opened = false;
+    });
+  }
+
+  void _openAddInstance() => setState(() => _addingInstance = true);
 
   /// 这一栏的正文。宿主已经搭好 Scaffold / AppBar / 分类栏，这里只出内容。
   ///
@@ -235,7 +260,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final builder = ref.section?.body;
     if (builder != null) return builder(context);
     return switch (ref.category!) {
-      SettingsCategory.instances => const InstancesSection(),
+      SettingsCategory.instances => InstancesSection(
+          adding: _addingInstance,
+          onAdd: _openAddInstance,
+          onCancel: _back,
+          // 建完实例就往登录页跳了：先把表单收起来，回设置页时看到的是
+          // 实例列表（新实例以「需要登录」的状态躺在里面）。
+          onCreated: () => setState(() => _addingInstance = false),
+        ),
       SettingsCategory.mailboxes => const MailboxesSection(),
       SettingsCategory.polling => const PollingSection(),
       SettingsCategory.appearance => const AppearanceSection(),
@@ -277,6 +309,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ///
   /// 扩展栏的标题就是它自己给的那个（扩展自己按 locale 选好了）。
   String _titleOf(_SectionRef ref, AppLocalizations l10n) {
+    // 「实例」那一栏开着添加表单时，页头说清楚现在在干什么 —— 窄屏它是
+    // AppBar 的标题，宽屏是右栏顶部那条 `PaneHeader`。分类栏里高亮的仍然
+    // 是「实例」，用户知道自己还在这一栏里。
+    if (ref.category == SettingsCategory.instances && _addingInstance) {
+      return l10n.addInstance;
+    }
     final section = ref.section;
     if (section != null) return section.title;
     return switch (ref.category!) {

@@ -249,10 +249,11 @@ void main() {
       await tester.tap(find.widgetWithText(TextButton, '删除实例').last);
       await tester.pumpAndSettle();
 
-      // 实例删光了 → redirect 把人送到「服务器设置」页，用户能重新填地址。
+      // 实例删光了 → redirect 把人送到设置页（添加实例是那一页里的一栏），
+      // 用户在那里重新填地址；不再是一张占满整窗的服务器设置页。
       expect(
         r.uri,
-        Routes.setup,
+        Routes.settings,
         reason: '删掉最后一个实例之后没有实例了，`resolveRedirect` 该送到设置页',
       );
       await settleAndDispose(tester);

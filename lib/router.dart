@@ -15,7 +15,6 @@ import 'features/mail_detail/mail_detail_screen.dart';
 import 'features/home/home_menu_screen.dart';
 import 'features/mail_list/mail_list_screen.dart';
 import 'features/onboarding/login_screen.dart';
-import 'features/onboarding/server_setup_screen.dart';
 import 'features/outbox/outbox_preview.dart';
 import 'features/outbox/outbox_screen.dart';
 import 'features/settings/attachment_cache_screen.dart';
@@ -34,6 +33,14 @@ import 'providers/profile_providers.dart';
 class Routes {
   const Routes._();
 
+  /// 服务器设置（添加实例）的**旧地址**，现在是一个重定向到 `/settings`。
+  ///
+  /// 它曾经是一个整屏的独立页面（`ServerSetupScreen`，顶层路由、壳之外）——
+  /// 新装（零实例）时 `redirect` 还会把人**整窗**钉在那儿：一级导航与设置页
+  /// 的分类菜单全都不在，看着像另一个 App。表单现在并进设置页的「实例」
+  /// 那一栏（`AddInstanceSection`，宽屏在右栏、窄屏是分类页），地址这一层
+  /// 只留兼容：`/setup` 可能出现在旧文档 / 浏览历史里，落到 404 会让人以为
+  /// 坏了。
   static const String setup = '/setup';
   static const String login = '/login';
 
@@ -45,13 +52,12 @@ class Routes {
   static const String starred = '/starred';
   static const String settings = '/settings';
 
-  /// 这三条**曾经是三个独立整页**（AI / 推送 / 诊断各一页），现在都并进
-  /// `/settings` 自己的分类里（宽屏在右栏内嵌、窄屏是一页）。
+  /// 这几条**曾经是独立整页**（AI / 推送 / 诊断 / 添加实例各一页），现在都
+  /// 并进 `/settings` 自己的分类里（宽屏在右栏内嵌、窄屏是一页）。
   ///
   /// 常量留着与 [pushSetupGuide] 同一条理由：**深链不该断**。这几个地址可能
   /// 出现在用户的浏览历史、通知、或某份旧文档里，落到 404 会让人以为坏了 ——
   /// 路由表里它们此刻都是 `redirect: (…) => Routes.settings`。
-  /// 只有 [addInstance] 还是一张真的表单页。
   static const String diagnostics = '/settings/diagnostics';
   static const String pushSettings = '/settings/push';
   static const String aiSettings = '/settings/ai';
@@ -109,9 +115,12 @@ class Routes {
       : Uri(path: outbox, queryParameters: <String, String>{'sel': '$id'})
           .toString();
 
-  /// 「添加实例」。单独一条路由而不是复用 [setup]：`redirect` 已经把
-  /// `/setup` 钉死成「一个实例都没有时」的去处，已登录时从设置页再进
-  /// `/setup` 会被弹回聚合页，第二个实例就加不上了。
+  /// 「添加实例」的**旧地址**，现在是一个重定向到 `/settings`。
+  ///
+  /// 它曾经是设置页里唯一一张真的表单页（挂着自己的 `Scaffold`，压在这一支
+  /// 的 Navigator 上）：一进去设置分类栏就整条消失，只剩一张填地址的表单
+  /// —— 而设置页里其余十来个分类都是「同一屏内换右栏」。表单现在并入
+  /// 「实例」那一栏（`AddInstanceSection`），地址这一层只留兼容。
   static const String addInstance = '/settings/add-instance';
 
   static const String startupFailure = '/startup-failure';
@@ -283,7 +292,15 @@ class _AuthRefresh extends ChangeNotifier {
       (previous, next) {
         // 只在「路由该不该变」的结论改变时通知。列表页每次同步都会往
         // profiles 表写 `lastSyncAt`，不设这道闸的话每轮轮询都会重算路由。
-        final signature = _signature(next.value ?? const <Profile>[]);
+        //
+        // **「还没读出来」与「读出来是空表」必须算两个签名**：空表拼出来的
+        // 串与初值（空串）逐字相同，早期版本因此漏掉了那条通知 ——
+        // 新装（零实例）冷启动时 redirect 一次都没再跑，App 停在空的收件箱
+        // 上；用户**点哪一下**（设置 / 底部导航）都会触发一次 redirect，
+        // 然后整窗被那张「添加实例」页接走。现在这一跳会把用户送到设置页。
+        final signature = next.hasValue
+            ? _signature(next.value ?? const <Profile>[])
+            : '<loading>';
         if (signature == _lastSignature) return;
         _lastSignature = signature;
         notifyListeners();
@@ -327,9 +344,12 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
           builder: (context, state) => const StartupFailureScreen(),
         ),
         GoRoute(
+          // 旧地址：整屏的「服务器设置」页已经没有位置了（添加实例现在是
+          // 设置页「实例」那一栏的表单，见 `AddInstanceSection`）。留着这条
+          // 是为了深链不 404。
           path: Routes.setup,
           name: 'setup',
-          builder: (context, state) => const ServerSetupScreen(),
+          redirect: (context, state) => Routes.settings,
         ),
         GoRoute(
           path: '${Routes.login}/:profileId',
@@ -550,10 +570,12 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
                       redirect: (context, state) => Routes.settings,
                     ),
                     GoRoute(
+                      // 旧地址：添加实例现在是「实例」那一栏**页内**的第二种
+                      // 形态（`SettingsScreen._addingInstance`），不再压一条
+                      // 路由。深链留着重定向到 `/settings`。
                       path: 'add-instance',
                       name: 'addInstance',
-                      builder: (context, state) =>
-                          const ServerSetupScreen(returnToCaller: true),
+                      redirect: (context, state) => Routes.settings,
                     ),
                   ],
                 ),
@@ -601,13 +623,16 @@ String? resolveRedirect({
   }
 
   // 表还没读出来 —— 停在原地（shell 会显示加载态），否则冷启动会先闪一下
-  // 「服务器设置」页，用户会以为实例丢了。
+  // 设置页 / 服务器设置页，用户会以为实例丢了。
   if (async.isLoading && !async.hasValue) return null;
   final profiles = async.value ?? const <Profile>[];
 
-  // 没有任何实例 → 只能去加一个。
+  // 一个实例都没有（新装）→ 落在**设置页**，而不是那张占满整窗的服务器
+  // 设置页：壳的一级导航与设置分类菜单都得在，用户在那里点「添加第一个
+  // 实例」才开始加。这条同时是 `setup` 路由退役的原因 —— 那张表已经并进
+  // 设置页的「实例」那一栏（`AddInstanceSection`）。
   if (profiles.isEmpty) {
-    return location == Routes.setup ? null : Routes.setup;
+    return location == Routes.settings ? null : Routes.settings;
   }
 
   final anyLoggedIn = profiles.any((p) => p.isLoggedIn);
@@ -627,7 +652,7 @@ String? resolveRedirect({
     if (target != null && !target.isLoggedIn) return null;
     return Routes.mailAll;
   }
-  if (location == Routes.setup) return Routes.mailAll;
+  if (location == Routes.setup) return Routes.settings;
 
   final id = Routes.parseProfileId(profileIdParam);
   if (id != null) {
