@@ -735,6 +735,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeDark => 'Dark';
 
   @override
+  String get themeGalleryTitle => 'Theme palettes';
+
+  @override
+  String get themeGalleryHint =>
+      'Pick a palette. Themes recolour the interface only — mail bodies keep a neutral, readable background.';
+
+  @override
+  String get themeDefault => 'Default';
+
+  @override
   String get language => 'Language';
 
   @override

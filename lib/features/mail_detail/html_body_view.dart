@@ -299,8 +299,11 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
         // 里能生效的部分。`height:auto!important` 在 fwfh 里靠不指定高度实现。
         styles['max-width'] = '100%';
       case 'a':
+        // 主题可以带一份 `MailBodyTokens` 把正文链接染成自己的颜色；没有就
+        // 回落到与 Web 端一致的老常量（公开版 / 内置默认主题逐字不变）。
+        final link = theme.extension<MailBodyTokens>()?.link ?? AppTheme.bodyLink;
         styles['color'] =
-            '#${AppTheme.bodyLink.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+            '#${link.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
         styles['text-decoration'] = 'none';
       case 'p':
         // Web 端显式 `p{margin:0}` —— 很多营销邮件用空 <p> 控制行距。

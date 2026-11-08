@@ -1,7 +1,9 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/theme/app_theme.dart';
 import '../features/compose/writing_snippets.dart';
 import '../features/mail_detail/external_allowlist.dart';
 import 'core_providers.dart';
@@ -32,6 +34,66 @@ final NotifierProvider<ThemeModeController, ThemeMode> themeModeProvider =
     NotifierProvider<ThemeModeController, ThemeMode>(
   ThemeModeController.new,
   name: 'themeMode',
+);
+
+/// 扩展注册表里提供的全部主题包（公开版为空列表）。
+///
+/// 注册发生在 `runApp` 之前、之后只读，所以这里不需要监听 —— 用普通
+/// `Provider` 把「读注册表」这件事收成一处，UI 只认这个 provider。
+final Provider<List<ThemePack>> registeredThemePacksProvider =
+    Provider<List<ThemePack>>(
+  (ref) => AppExtensionRegistry.instance.themePacks(),
+  name: 'registeredThemePacks',
+);
+
+/// 用户选中的主题包 id。null = 内置默认主题。
+class ThemePackController extends Notifier<String?> {
+  @override
+  String? build() => ref.watch(prefsStoreProvider).themePackId;
+
+  Future<void> set(String? id) async {
+    state = (id == null || id.isEmpty) ? null : id;
+    await ref.read(prefsStoreProvider).setThemePackId(state);
+  }
+}
+
+final NotifierProvider<ThemePackController, String?> themePackProvider =
+    NotifierProvider<ThemePackController, String?>(
+  ThemePackController.new,
+  name: 'themePack',
+);
+
+/// 当前**生效**的主题包；null = 用内置默认主题。
+///
+/// 三种情况都回退到 null（而不是抛）：没选过、选中的 id 在注册表里查不到
+/// （卸载了扩展 / 换了构建）、公开版根本没有主题包。用户看到的都是内置那套蓝，
+/// 不会白屏。
+final Provider<ThemePack?> activeThemePackProvider = Provider<ThemePack?>(
+  (ref) {
+    final id = ref.watch(themePackProvider);
+    if (id == null) return null;
+    for (final pack in ref.watch(registeredThemePacksProvider)) {
+      if (pack.id == id) return pack;
+    }
+    return null;
+  },
+  name: 'activeThemePack',
+);
+
+/// 当前生效主题包的亮色 / 暗色两版 `ThemeData`。
+///
+/// `app.dart` 直接把它俩喂给 `MaterialApp.theme` / `darkTheme`；画廊预览也用
+/// 同一对数据，避免「预览一套、用起来另一套」。
+final Provider<({ThemeData light, ThemeData dark})> activeThemeDataProvider =
+    Provider<({ThemeData light, ThemeData dark})>(
+  (ref) {
+    final pack = ref.watch(activeThemePackProvider);
+    return (
+      light: pack?.build(Brightness.light) ?? AppTheme.light(),
+      dark: pack?.build(Brightness.dark) ?? AppTheme.dark(),
+    );
+  },
+  name: 'activeThemeData',
 );
 
 /// 语言。null = 跟随系统。

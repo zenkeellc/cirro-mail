@@ -36,6 +36,8 @@ export 'src/push_managed.dart'
         PushFacade,
         PushStatus;
 export 'src/settings_section.dart' show SettingsSection;
+export 'src/mail_body_tokens.dart' show MailBodyTokens;
+export 'src/theme_pack.dart' show ThemePack;
 export 'src/settings_widgets.dart'
     show
         SettingsEmptyState,

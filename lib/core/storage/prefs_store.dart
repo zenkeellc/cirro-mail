@@ -29,6 +29,11 @@ class PrefsStore {
   static const String _kActiveProfile = 'cm_active_profile';
   static const String _kLocale = 'cm_locale';
   static const String _kThemeMode = 'cm_theme_mode';
+  /// 选中的**主题包** id（见扩展接缝 `ThemePack`）。null / 空 = 用内置默认主题。
+  ///
+  /// 与 [_kThemeMode] 是两个正交的维度：这个决定「哪一套颜色」，那个决定
+  /// 「亮还是暗」。主题包被卸载 / id 失效时读出来只是查不到，调用方安静回退。
+  static const String _kThemePack = 'cm_theme_pack';
   /// 收信轮询的间隔（秒）。**只有一个** —— 活跃/空闲两档已合并，见
   /// `AppDefaults.pollDefault`。旧版本那两个 key（`cm_poll_active_seconds`
   /// / `cm_poll_idle_seconds`）不再读，也不清：用户降级回旧版本时那两档
@@ -101,6 +106,20 @@ class PrefsStore {
   String get themeMode => _prefs.getString(_kThemeMode) ?? 'system';
 
   Future<void> setThemeMode(String mode) => _prefs.setString(_kThemeMode, mode);
+
+  /// 选中的主题包 id；null = 没选过 / 已清空，用内置默认主题。
+  String? get themePackId {
+    final id = _prefs.getString(_kThemePack);
+    return (id == null || id.isEmpty) ? null : id;
+  }
+
+  Future<void> setThemePackId(String? id) async {
+    if (id == null || id.isEmpty) {
+      await _prefs.remove(_kThemePack);
+    } else {
+      await _prefs.setString(_kThemePack, id);
+    }
+  }
 
   // ---- 轮询间隔 ----
   /// 每隔多久检查一次新邮件。服务端 `autoRefresh` 只作建议（线上为 0），

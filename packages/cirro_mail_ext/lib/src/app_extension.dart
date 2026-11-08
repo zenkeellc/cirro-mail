@@ -8,6 +8,7 @@ import 'notification_policy.dart';
 import 'push_defaults.dart';
 import 'push_managed.dart';
 import 'settings_section.dart';
+import 'theme_pack.dart';
 
 /// 一个扩展模块（商业版、第三方插件、内部实验功能……）。
 ///
@@ -29,6 +30,7 @@ import 'settings_section.dart';
 /// | [aboutExtras] | `about_section.dart` 的「关于」页 |
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
+/// | [themes] | `app.dart`（`MaterialApp` 的 theme / darkTheme + 背板）、`appearance_section.dart`（主题画廊） |
 /// | [aiUsageExtras] | `ai_section.dart`（「设置 → AI」页「用量」分组末尾） |
 /// | [securityExtras] | `security_section.dart`（「设置 → 安全」页的正文末尾） |
 /// | [aiTransport] | `ai_providers.dart`（AI 能力改走托管通道）/ `ai_section.dart`（设置页「通道」行） |
@@ -158,6 +160,22 @@ abstract class AppExtension {
   /// 现选 —— 核心的 ARB 是公开仓库的资产，不会为扩展加词条。
   List<SettingsSection> settingsSections(BuildContext context) =>
       const <SettingsSection>[];
+
+  /// 本扩展提供的可选主题（「设置 → 外观」里的主题画廊）。
+  ///
+  /// 核心在**两处**用它：
+  /// - `app.dart`：当前选中的那套覆盖 `MaterialApp.theme` / `darkTheme`，
+  ///   并把它 [ThemePack.buildBackdrop] 的背板铺在最底下；
+  /// - `appearance_section.dart`：注册表非空时在「外观」页画一排主题卡片
+  ///   （选中即生效，选择按 [ThemePack.id] 存进 prefs）。
+  ///
+  /// 返回空列表（公开版）时两处都**逐字退回原状**：仍然是核心内置的那套蓝，
+  /// 外观页仍然只有「跟随系统 / 浅色 / 深色」一个下拉。这条对公开版零影响
+  /// 是硬要求 —— 商业版与公开版共用同一份核心代码。
+  ///
+  /// 内置的默认主题没有 id，也不需要在这里出现：它是「没有选中任何扩展主题」
+  /// 时的兜底。
+  List<ThemePack> themes() => const <ThemePack>[];
 
   /// 追加进「设置 → AI」页「用量」分组末尾的块。
   ///

@@ -686,6 +686,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeDark => '深色';
 
   @override
+  String get themeGalleryTitle => '主题配色';
+
+  @override
+  String get themeGalleryHint => '选一套喜欢的配色。主题只改界面颜色，邮件正文始终是中性的可读底色。';
+
+  @override
+  String get themeDefault => '默认';
+
+  @override
   String get language => '语言';
 
   @override

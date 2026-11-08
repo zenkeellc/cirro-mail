@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/branding/app_brand.dart';
-import 'core/theme/app_theme.dart';
 import 'core/version/window_title.dart';
 import 'features/deeplink/external_link_host.dart';
 import 'features/notifications/icon_badge_host.dart';
@@ -29,6 +28,10 @@ class MailApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
+    // 主题包（扩展接缝 `AppExtension.themes`）。公开版注册表为空 → 下面两个
+    // provider 直接回退到内置那套蓝，行为与接缝出现之前逐字一致。
+    final themeData = ref.watch(activeThemeDataProvider);
+    final themePack = ref.watch(activeThemePackProvider);
 
     return MaterialApp.router(
       // 任务切换器 / 任务栏那一行名字。与侧栏左上角同源（见 `AppBrand`）。
@@ -41,8 +44,8 @@ class MailApp extends ConsumerWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       locale: locale,
       themeMode: themeMode,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: themeData.light,
+      darkTheme: themeData.dark,
       // 通知的接线柱。**必须在 `MaterialApp.router` 里面**：它要用
       // `AppLocalizations`（文案）和 router（点通知后导航），两者都只有
       // 在 MaterialApp 之下才拿得到。它自己是个不画东西的 widget
@@ -82,18 +85,40 @@ class MailApp extends ConsumerWidget {
       //   任务栏 / 托盘 / 手机桌面图标）。它只要 `ref`，放在最外面 —— 越靠外
       //   越早挂上，冷启动时的首推才不会漏掉（见
       //   `features/notifications/icon_badge_host.dart`）。
-      builder: (context, child) => IconBadgeHost(
-        child: WindowTitleHost(
-          child: UpdateHost(
-            child: MailShortcutHost(
-              child: ExternalLinkHost(
-                child:
-                    NotificationHost(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) {
+        // 主题背板：铺在**整棵 UI 下面**（路由内容之上没有、之下有一层）。
+        // 主题包把 `scaffoldBackgroundColor` 留了透明度，所以它透得出来。
+        // 没有背板（公开版、或纯配色主题）时这里原样返回 content —— 多一层
+        // IgnorePointer 也不该出现，否则空注册表的构建与接缝之前不是逐字相同。
+        final backdrop = themePack?.buildBackdrop(context);
+        final Widget content = IconBadgeHost(
+          child: WindowTitleHost(
+            child: UpdateHost(
+              child: MailShortcutHost(
+                child: ExternalLinkHost(
+                  child: NotificationHost(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+        if (backdrop == null) return content;
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Positioned.fill(
+              child: IgnorePointer(
+                // 背板是静态的：一层 RepaintBoundary 把它的绘制与上方列表/滚动的
+                // 重绘隔开，滚动邮件列表时它不会被带着重画。
+                child: RepaintBoundary(child: backdrop),
+              ),
+            ),
+            content,
+          ],
+        );
+      },
       debugShowCheckedModeBanner: false,
     );
   }

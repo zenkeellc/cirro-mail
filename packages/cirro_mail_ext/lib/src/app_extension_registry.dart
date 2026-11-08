@@ -9,6 +9,7 @@ import 'mail_store.dart';
 import 'notification_policy.dart';
 import 'push_managed.dart';
 import 'settings_section.dart';
+import 'theme_pack.dart';
 
 /// 已注册扩展的**只读**清单。
 ///
@@ -91,6 +92,22 @@ class AppExtensionRegistry {
   List<RouteBase> routes() => <RouteBase>[
         for (final ext in _extensions) ...ext.routes(),
       ];
+
+  /// 所有扩展提供的主题包，按注册顺序拼接。
+  ///
+  /// 空注册表（公开版）恒为空列表 —— 核心据此判断「外观页要不要画主题画廊」，
+  /// 所以公开版不会因为这个接缝多出任何 UI。
+  ///
+  /// `id` 重复时**保留第一个**（与 [registerAll] 的去重口径一致）：主题 id 是
+  /// prefs 里那份选择的键，两个扩展撞 id 会让选择指向不确定的一套。
+  List<ThemePack> themePacks() {
+    final seen = <String>{};
+    return <ThemePack>[
+      for (final ext in _extensions)
+        for (final pack in ext.themes())
+          if (seen.add(pack.id)) pack,
+    ];
+  }
 
   /// 所有扩展往**邮件那一支**（壳里）加的路由，按注册顺序拼接。
   ///

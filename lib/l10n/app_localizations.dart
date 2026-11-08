@@ -1364,6 +1364,24 @@ abstract class AppLocalizations {
   /// **'Dark'**
   String get themeDark;
 
+  /// No description provided for @themeGalleryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme palettes'**
+  String get themeGalleryTitle;
+
+  /// No description provided for @themeGalleryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a palette. Themes recolour the interface only — mail bodies keep a neutral, readable background.'**
+  String get themeGalleryHint;
+
+  /// No description provided for @themeDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get themeDefault;
+
   /// No description provided for @language.
   ///
   /// In en, this message translates to:
