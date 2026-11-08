@@ -146,7 +146,7 @@ https://cirro.zenkee.com/app-version.json
 
 `channels` 里为什么有两个渠道：同一份构建参数只注入一个 `APP_UPDATE_CHANNEL`，客户端只读自己那个渠道。`public` 是公开仓库发的版本；`pro` 是商业版（私有仓库）发的版本，两边各自独立比较。
 
-**`pro` 渠道的下载地址与公开渠道不同**：安装包不放在公开 release 里，清单也不给直链 —— `downloads` 五个平台一律 `null`，`releaseUrl` 指向官网下载页 `https://cirro.zenkee.com/pro/download/`。用户在那一页用激活码换一个 **5 分钟有效**的签名链接（网关 `mail-ai` 的 `POST /v1/download`，安装包在 R2 私有桶 `cirro-pro`），客户端只负责把 `releaseUrl` 打开（见第七节「先直链、后 release 页」的回退）。细节见 `mail-ai/README.md` 的「Pro 安装包分发」。
+**`pro` 渠道的下载地址与公开渠道不同**：安装包不放在公开 release 里（私有仓 release 未登录访问会 404，别往清单里写），但仍然**给直链** —— `downloads.macos` / `downloads.linux` / `downloads.android` 是网关的公开直出地址 `https://ai.cirro.zenkee.com/v1/download/{macos,linux,android}`，**不需要登录、不需要订阅、不需要任何 token**（2026-11-08 晚起；安装包仍在 R2 私有桶 `cirro-pro`，由网关按 `pro/index.json` 流式发出，见 `mail-ai/README.md` 的「Pro 安装包分发」）。`windows` / `ios` 没有产物，写 `null`；`releaseUrl` 仍指向官网下载页 `https://cirro.zenkee.com/pro/download/`，作为客户端没有直链时的回退（见第七节「先直链、后 release 页」）。这三条地址与版本无关，发版时只需要改版本三件套。
 
 ## 五、发布时怎么更新清单
 
@@ -193,7 +193,7 @@ https://cirro.zenkee.com/app-version.json
 
 5. **提交并部署**：把 `mail-site/public/app-version.json` 的改动提交、推到 `main`。官网的 GitHub Actions 会在改动落在 `mail-site/**` 时跑构建与测试并部署到 Cloudflare Pages；部署完成后 <https://cirro.zenkee.com/app-version.json> 就是新内容。**不需要重启任何服务**。
 
-> 发 `pro` 渠道：`--channel pro`，`--release-url https://cirro.zenkee.com/pro/download/`，五个 `--*-url` 全部传空（写成 `null`）；**不要把私有仓库的 release 资产地址写进清单**（未登录 404）。版本名照旧去掉 `-pro.N`（写 `0.1.4` 而不是 `0.1.4-pro.1`，脚本会拒绝后者）。安装包上传走 `mail-ai/tool/upload-pro-downloads.mjs`，由网关按 license 发限时链接。清单里两个渠道互不影响，所以「公开版先发、商业版晚一天」也没问题。
+> 发 `pro` 渠道：`--channel pro`，`--release-url https://cirro.zenkee.com/pro/download/`，**通常只改 `--version` / `--build` / `--notes` 三件套** —— `downloads` 里那三条网关公开直链（`https://ai.cirro.zenkee.com/v1/download/{macos,linux,android}`）与版本无关，不要动；只有某个平台确实没有产物时才把它传空写成 `null`（`--android-url=`）。**不要把私有仓库的 release 资产地址写进清单**（未登录 404）。版本名照旧去掉 `-pro.N`（写 `0.1.4` 而不是 `0.1.4-pro.1`，脚本会拒绝后者）。安装包上传走 `mail-ai/tool/upload-pro-downloads.mjs`，网关按 `pro/index.json` 公开直出，下载不需要登录或订阅。清单里两个渠道互不影响，所以「公开版先发、商业版晚一天」也没问题。
 
 ## 六、隐私与关闭
 
@@ -223,7 +223,7 @@ https://cirro.zenkee.com/app-version.json
 2. 是 `null`（或空串）→ 用 `releaseUrl`（release 页面上有全部资产，含 `SHA256SUMS.txt`）；
 3. 两者都没有 → **不出现「下载」按钮**，只展示 `notes`。
 
-当前的实际状态：macOS 与 Linux 有直链，`windows` / `android` / `ios` 是 `null`（还没有这些平台的产物）—— 所以这三个平台一律回退到 release 页。以后补了产物，按第五节把对应 `--windows-url` 等填上即可，客户端不用改。
+当前的实际状态（两个渠道分开看）：`public` 渠道 macOS 与 Linux 有直链，`windows` / `android` / `ios` 是 `null`（还没有这些平台的产物），所以这三个平台一律回退到 release 页；`pro` 渠道 macOS / Linux / Android 三条都是网关公开直链，`windows` / `ios` 是 `null`。直链缺失的平台回退到 `releaseUrl` —— 对 `pro` 那次回退落在官网下载页，那一页也是公开的（不需要登录）。以后补了产物，按第五节把对应 `--windows-url` 等填上即可，客户端不用改。
 
 关于页那一块长这样：版本行（`0.1.0+131`）、构建提交/构建时间/渠道小字、「检查更新」区域（手动「检查」按钮 + 「自动检查更新」开关）。检查结果就地显示：检查中 / 已是最新（+ 重新检查）/ 发现新版本（+ 清单 `notes` 原样展示 +「下载」「稍后」）/ 检查失败（+「重试」）。启动时发现新版本另弹一条提示，动作是「下载」，点提示文字进设置页（关于分类在最后一项；设置页目前没有 `?section=about` 这类深链，只能先到设置首页）。下载走系统浏览器/外部打开，不在 App 内安装。
 
