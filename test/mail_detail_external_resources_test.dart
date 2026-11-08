@@ -152,7 +152,7 @@ void main() {
 
     expect(find.text('无法启用'), findsNWidgets(2));
     expect(find.text('启用'), findsNothing);
-    expect(find.textContaining('渲染器不应用外链样式表'), findsOneWidget);
+    expect(find.textContaining('外部样式表不会生效'), findsOneWidget);
     expect(find.textContaining('脚本不会执行'), findsOneWidget);
   });
 

@@ -343,7 +343,7 @@ class RelayClient {
     if (envelope == null) {
       // 不是信封 —— 多半是打到了别的服务上（比如把实例地址当成了中转地址）。
       throw ServerException(
-        message: '推送中转的响应看不懂（HTTP ${response.statusCode}）—— 地址是不是填成了实例地址？',
+        message: '推送中转暂时没有给出可用的答复（错误 ${response.statusCode}）—— 地址是不是填成了实例地址？',
         statusCode: response.statusCode,
         body: response.data?.toString(),
       );

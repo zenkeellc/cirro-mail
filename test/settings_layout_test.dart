@@ -44,7 +44,7 @@ void main() {
       expect(
         SettingsCategory.values.map((c) => c.label(zh)).toList(),
         const <String>[
-          '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
+          '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
         ],
       );
     });
@@ -204,7 +204,7 @@ void main() {
     // 一进来是**分类列表**：标题「设置」+ 十个入口，而不是某个分类的正文。
     expect(find.text('设置'), findsOneWidget);
     for (final label in <String>[
-      '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
+      '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
     ]) {
       expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
     }
@@ -290,7 +290,7 @@ void main() {
         );
 
     // 分类栏十个项常驻，且**没有**窄屏那张分类列表。
-    for (final label in <String>['实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于']) {
+    for (final label in <String>['实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于']) {
       expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
     }
     expect(find.byType(NavSidebarItem), findsNWidgets(10));
@@ -355,7 +355,7 @@ void main() {
 
       // 内置十栏原样都在 —— 扩展是**追加**，不是替换。
       for (final label in <String>[
-        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
+        '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
       ]) {
         expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
       }
@@ -367,7 +367,7 @@ void main() {
           .map((tile) => (tile.title! as Text).data)
           .toList();
       expect(labels, <String>[
-        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
+        '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
       ]);
     });
 
@@ -399,7 +399,7 @@ void main() {
             matching: find.text(label),
           );
       for (final label in <String>[
-        '实例', '邮箱', '轮询', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
+        '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
       ]) {
         expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
       }

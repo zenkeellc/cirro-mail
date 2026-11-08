@@ -144,17 +144,17 @@ class PushFacadeImpl implements PushFacade {
     required RelayVerifyResult verify,
   }) {
     final problems = <String>[
-      if (!health.fcmConfigured) '中转端没有配 FCM 服务账号（推送发不出去）',
+      if (!health.fcmConfigured) '推送中转还没有配好推送服务（推送发不出去）',
       if (verify.credentialOk == false) '设备配对码不对',
-      if (verify.urlOk == false) 'webhook 地址路径不对',
+      if (verify.urlOk == false) '推送地址填得不对',
     ];
     if (problems.isEmpty) {
       final at = verify.lastEventAt ?? '';
       if (at.isEmpty) {
         return '链路检查通过：中转可达、凭证与地址都对。'
-            '中转端还没收到过 webhook —— 确认实例后台里已经填好并开启了推送';
+            '推送中转还没收到过来信 —— 确认实例后台里已经填好地址并打开了开关';
       }
-      return '链路检查通过：中转可达、凭证与地址都对。最近一次收到 webhook：$at';
+      return '链路检查通过：中转可达、凭证与地址都对。最近一次收到推送：$at';
     }
     return '链路检查未通过：${problems.join('；')}';
   }

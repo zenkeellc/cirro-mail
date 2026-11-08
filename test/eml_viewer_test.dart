@@ -85,7 +85,7 @@ void main() {
     expect(_renders(tester, 'boundary='), isFalse);
     // 标题栏里是附件名，且给了一条「看原文」的退路。
     expect(find.text('sample.eml'), findsOneWidget);
-    expect(find.text('Source'), findsOneWidget);
+    expect(find.text('Plain text'), findsOneWidget);
   });
 
   testWidgets('没有 HTML 时退回纯文本正文', (tester) async {
@@ -115,7 +115,7 @@ void main() {
     await tester.pumpWidget(_host(EmlViewerScreen(path: path)));
     await _settle(tester);
 
-    await tester.tap(find.text('Source'));
+    await tester.tap(find.text('Plain text'));
     await _settle(tester);
     // 路线动画。
     await tester.pump(const Duration(milliseconds: 400));
@@ -131,9 +131,9 @@ void main() {
     await tester.pumpWidget(_host(EmlViewerScreen(path: path)));
     await _settle(tester);
 
-    expect(find.text('This message can\'t be parsed — try the raw source'),
+    expect(find.text('This message cannot be read — try the raw content'),
         findsOneWidget);
-    expect(find.text('Source'), findsOneWidget);
+    expect(find.text('Plain text'), findsOneWidget);
   });
 
   testWidgets('文件不在了给一句人话，不是空白页', (tester) async {

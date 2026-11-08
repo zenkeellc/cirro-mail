@@ -362,8 +362,8 @@ class AiService {
         ),
       );
       if (!provider.isCompletionResponse(body)) {
-        return AiTestFailed('端点回了 HTTP 200，但响应里没有模型回复的内容'
-            '（当前地址 ${provider.baseUrl} 可能少了 /v1）');
+        return AiTestFailed('服务有响应，但没返回模型回复'
+            '（检查地址是否完整，比如末尾的 /v1）');
       }
       // 通没通**只看上面那一条**。字数只是「确实通了」的实感：思考回了、
       // `content` 空时它是 0，界面按 0 换一句不会让人误会的文案（见设置页）。

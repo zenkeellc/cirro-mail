@@ -145,7 +145,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Turning this off still fetches mail (the list keeps updating) — it just stops the pop-ups.';
 
   @override
-  String get pushTitle => 'Background push (FCM)';
+  String get pushTitle => 'System notifications';
 
   @override
   String get pushShort => 'Push';
@@ -159,7 +159,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushRelayUrlHint =>
-      'Your self-hosted mail-push worker, e.g. https://push.example.com';
+      'The relay you deployed, e.g. https://push.example.com';
 
   @override
   String get pushInstanceId => 'Instance slot id';
@@ -183,11 +183,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Generated automatically on this device and tied to the slot id — you never need to edit it. Handy for support: it\'s what the relay knows this device as.';
 
   @override
-  String get pushEnable => 'Enable background push';
+  String get pushEnable => 'Enable system notifications';
 
   @override
   String get pushEnabledHint =>
-      'Affects background alerts only — foreground sync, polling and in-app banners are unaffected.';
+      'Affects background alerts only — foreground sync and in-app banners are unaffected.';
 
   @override
   String get pushRegister => 'Register this device';
@@ -207,7 +207,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushUnsupported =>
-      'No FCM implementation on this platform (only Linux / Windows — those rely on the app polling while it runs).';
+      'System notifications are not available on this platform (only Linux / Windows — those rely on the app fetching mail while it runs).';
 
   @override
   String get pushNotConfigured =>
@@ -215,29 +215,29 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushNoFirebaseConfig =>
-      'This build has no Firebase config file (google-services.json / GoogleService-Info.plist), so FCM is unavailable. Create a Firebase project and rebuild.';
+      'This installer has no push configuration, so system notifications cannot work — please use an official build.';
 
   @override
   String get pushRelayFcmMissing =>
-      'The relay has no FCM service account configured, so nothing can be delivered.';
+      'The relay has no push service configured yet, so nothing can be delivered.';
 
   @override
   String get pushWebhookHint =>
-      'Paste the webhook URL below into the \"Webhook push\" settings of *your* cloud-mail instance, then turn that switch on; see the note below about the secret field. This step can only be done by you — the relay doesn\'t know the instance\'s login system and can\'t do it for you.';
+      'Paste the push address below into the \"Webhook push\" settings of your cloud-mail instance, then turn that switch on; see the note below about the secret field. This step can only be done by you — the relay does not know how the instance signs users in and cannot do it for you.';
 
   @override
-  String get pushWebhookUrl => 'Webhook URL';
+  String get pushWebhookUrl => 'Push address';
 
   @override
-  String get pushWebhookSecret => 'Webhook secret';
+  String get pushWebhookSecret => 'Push secret';
 
   @override
   String get pushWebhookSecretCustodian =>
-      'The webhook secret is held by whoever created the relay slot — the app neither stores nor shows it.';
+      'The push secret is held by whoever created the relay slot — the app neither stores nor shows it.';
 
   @override
   String get pushWebhookSecretOnce =>
-      'The webhook secret is shown only this once: copy it now and paste it into the instance admin; it\'s gone as soon as you leave this page.';
+      'The push secret is shown only this once: copy it now and paste it into the instance admin; it is gone as soon as you leave this page.';
 
   @override
   String get pushCopy => 'Copy';
@@ -265,7 +265,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String pushSelfCheckGotEvent(String time) {
-    return 'Last webhook received: $time';
+    return 'Last push received: $time';
   }
 
   @override
@@ -277,15 +277,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushLimit1 =>
-      'External mail only: mail sent inside the instance, and mail from other clients, never triggers a push — only polling sees those.';
+      'External mail only: mail sent inside the instance, and mail from other clients, never triggers a push — you only see those while the app is open.';
 
   @override
   String get pushLimit2 =>
-      'If the instance is set to rule-based receiving, the webhook never fires.';
+      'If the instance is set to rule-based receiving, it never sends push notifications.';
 
   @override
   String get pushLimit3 =>
-      'The push carries metadata only (sender / subject / code); the app still fetches the body from the instance with its own token.';
+      'The push carries only the sender, subject and code; the app fetches the body from the instance itself.';
 
   @override
   String get pushLimit4 =>
@@ -319,7 +319,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Three things are independent: this platform, the three relay values, and whether this device is registered. If any one of them is missing, nothing reaches you while the app is closed.';
 
   @override
-  String get pushPageStatusPlatform => 'This platform supports FCM';
+  String get pushPageStatusPlatform =>
+      'This platform supports system notifications';
 
   @override
   String get pushPageStatusOk => 'Looks good';
@@ -344,7 +345,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushPageValuesBody =>
-      'All three come from the relay: the URL is the worker\'s domain, the slot id is the slot it created for you, and the device pairing code is shown once, at creation.';
+      'All three come from the relay: the address is the relay\'s domain, the slot id is the slot it created for you, and the device pairing code is shown once, at creation.';
 
   @override
   String get pushPageValuesSave => 'Save these three values';
@@ -360,11 +361,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pushPageValuesProvision => 'I run the relay — create a new slot';
 
   @override
-  String get pushPageEnableTitle => 'Turn on background push';
+  String get pushPageEnableTitle => 'Turn on system notifications';
 
   @override
   String get pushPageEnableBody =>
-      'This switch only governs alerts while the app isn\'t in the foreground — foreground sync, polling and in-app banners are unaffected.';
+      'This switch only governs alerts while the app isn\'t in the foreground — foreground sync and in-app banners are unaffected.';
 
   @override
   String get pushPageEnableOff =>
@@ -375,7 +376,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushPageEnrollBody =>
-      'Binds each mailbox to this device\'s FCM token. It also runs automatically on launch, so this step is mainly here to confirm it worked.';
+      'Binds each mailbox to this device. It also runs automatically on launch, so this step is mainly here to confirm it worked.';
 
   @override
   String get pushPageEnrollPermission =>
@@ -420,12 +421,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String pushPageWebhookRelayMessageNoSecret(String url) {
-    return 'Please open \"Webhook push\" in the cloud-mail instance admin, fill in the URL $url, and turn that switch on. The webhook secret has to be obtained separately from whoever created the relay slot (the app doesn\'t show it). New mail can only reach my phone after that.';
+    return 'Please open \"Webhook push\" in the cloud-mail instance admin, fill in the address $url, and turn that switch on. The push secret has to be obtained separately from whoever created the relay slot (the app does not show it). New mail can only reach my phone after that.';
   }
 
   @override
   String get pushPageWebhookStatus0 =>
-      'Note: that switch is stored as webhookStatus, and 0 means enabled — the field name reads backwards, so it is the first suspect when nothing arrives.';
+      'Note: first check that the switch in the instance admin is on — it is the first suspect when nothing arrives.';
 
   @override
   String get pushPageWebhookConfirm =>
@@ -441,7 +442,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String pushPageWebhookEvidence(String time) {
-    return 'The relay has already received a webhook ($time) — this step works, no confirmation needed.';
+    return 'The relay has already received a push ($time) — this step works, no confirmation needed.';
   }
 
   @override
@@ -476,7 +477,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushPageCheckBody =>
-      'One pass answers four things: can the relay be reached, does it have FCM, is this device pairing code right, and is the URL saved in your instance correct.';
+      'One pass answers four things: can the relay be reached, is its push service configured, is this device pairing code right, and is the address saved in your instance correct.';
 
   @override
   String get pushPageCheckAction => 'Check this chain';
@@ -486,14 +487,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'You changed the values above — run the check again for a fresh result.';
 
   @override
-  String get pushPageCheckFcmOk => 'The relay has an FCM service account';
+  String get pushPageCheckFcmOk => 'The relay has its push service configured';
 
   @override
   String get pushPageNotesTitle => 'A few things worth knowing first';
 
   @override
   String get pushPageNotesBody =>
-      'Background push is deliberately narrow: it covers external mail only, and everything else still arrives through polling.';
+      'System notifications are deliberately narrow: they cover external mail only, and everything else still arrives while the app is running.';
 
   @override
   String get pushPageNotesTurnOff => 'How to turn it off';
@@ -624,7 +625,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get notifyEnabledHint =>
-      'Turning this off stops polling and new-mail alerts; mail you already received stays readable.';
+      'Turning this off stops scheduled fetching and new-mail alerts; mail you already received stays readable.';
 
   @override
   String get clearCache => 'Clear cache';
@@ -658,7 +659,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keystoreDegraded =>
-      'The system keystore is unavailable; sign-in state will only live in memory and must be entered again after a restart.';
+      'The system secure storage is unavailable, so the sign-in cannot be saved — you will need to sign in again after a restart.';
 
   @override
   String get removeServerLostDrafts =>
@@ -716,7 +717,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noInstancesLoggedIn => 'No instance is signed in';
 
   @override
-  String get polling => 'Polling';
+  String get polling => 'Fetching';
 
   @override
   String get appearance => 'Appearance';
@@ -766,7 +767,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cursor => 'Cursor';
 
   @override
-  String get endpointSelfCheck => 'Endpoint self-check';
+  String get endpointSelfCheck => 'Service self-check';
 
   @override
   String get rawEnvelope => 'Raw response';
@@ -825,22 +826,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get prefetchHint =>
-      'Pulls full=1 while paging so messages open instantly; turn off to save data';
+      'Prefetches full message bodies while paging so messages open instantly; turn off to save data';
 
   @override
   String get selfCheckHint =>
-      'Tap to hit the key endpoints once and see what the server actually returns';
+      'Tap to check the key services once and see what the server actually returns';
 
   @override
   String get selfCheckLoginFirst =>
-      'Sign in first — these endpoints would only return 401';
+      'Sign in first — checking without signing in only gets you \"not signed in\"';
 
   @override
   String get noMailboxCache => 'No mailbox cache yet';
 
   @override
   String get noScheduler =>
-      'Scheduler not running — no instance is signed in, or polling is paused';
+      'Background fetching is not running — no instance is signed in, or scheduled fetching is paused';
 
   @override
   String get allMailboxes => 'All mailboxes';
@@ -856,7 +857,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sessionExpiringSoon =>
-      'The server extends a session only while it is used: any authenticated request within 30 days resets the 30-day window. If this instance sends no request for 30 days (or the same account signs in from a 12th device), its token is dropped and you have to enter the password again.';
+      'The server extends a session only while it is used: any request within 30 days resets the 30-day window. If this instance sends no request for 30 days (or the same account signs in from a 12th device), the sign-in is dropped and you have to enter the password again.';
 
   @override
   String get domainList => 'Domains';
@@ -981,7 +982,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'This format can\'t be previewed in-app; download it and open it with another app';
 
   @override
-  String get viewerSource => 'Source';
+  String get viewerSource => 'Plain text';
 
   @override
   String get viewerRendered => 'Rendered';
@@ -993,19 +994,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String viewerEncodingLossy(String encoding) {
-    return 'Decoded as $encoding; some characters may show as ?';
+    return 'Unusual text encoding ($encoding) — some characters may show as ?';
   }
 
   @override
   String get viewerMarkdownTooDeep =>
-      'Nested too deeply to render as Markdown — showing the source';
+      'Too deeply nested to display formatted — switch to the plain text';
 
   @override
   String get viewerFileGone => 'The file is no longer on disk';
 
   @override
   String get emlUnreadable =>
-      'This message can\'t be parsed — try the raw source';
+      'This message cannot be read — try the raw content';
 
   @override
   String get emlNoBody => 'This message has no body';
@@ -1351,7 +1352,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composeLargeAttachmentHint =>
-      'Large attachments are uploaded in chunks — keep the app open until it finishes';
+      'Large attachments take a while to upload — keep the app open until it finishes';
 
   @override
   String get close_ => 'Close';
@@ -1469,10 +1470,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushAutoProvisionHint =>
-      'Creates a relay slot for this device using the deployer admin token. The token is used for this request only — it is never saved to prefs, the keychain, or any log.';
+      'Creates a relay slot for this device using the deployer\'s admin password. It is used for this request only — never saved, never written to a log.';
 
   @override
-  String get pushAdminToken => 'Admin token';
+  String get pushAdminToken => 'Admin password';
 
   @override
   String get pushAdminTokenHint =>
@@ -1480,11 +1481,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pushAutoProvisionDone =>
-      'Provisioned — slot id and device pairing code filled in; the webhook secret is shown once below';
+      'Provisioned — slot id and device pairing code filled in; the push secret is shown once below';
 
   @override
   String get pushAutoProvisionNoDeviceCode =>
-      'The slot was created, but the relay didn\'t return a device pairing code (it may be an older version) — upgrade mail-push first, or enter the device pairing code manually';
+      'The slot was created, but the relay did not return a device pairing code (it may be an older version) — upgrade the relay first, or enter the device pairing code manually';
 
   @override
   String get sendDelay => 'Send delay';
@@ -1544,11 +1545,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get pushAdminTokenNeeded => 'Enter the admin token first';
+  String get pushAdminTokenNeeded => 'Enter the admin password first';
 
   @override
   String get pushBuiltInApplied =>
-      'Pre-filled from this build; the device pairing code is stored in the keychain only.';
+      'Pre-filled from this installer; the device pairing code is stored in the system keychain only.';
 
   @override
   String get aiTitle => 'AI';
@@ -1585,7 +1586,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiModelHint => 'Model name — type it, or use Fetch to pick one';
 
   @override
-  String get aiBaseUrlLabel => 'Endpoint URL';
+  String get aiBaseUrlLabel => 'API address';
 
   @override
   String get aiBaseUrlHint => 'https://api.openai.com/v1';
@@ -1607,7 +1608,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiBaseUrlHintNewapi =>
-      'https://your-gateway-host — with or without /v1';
+      'https://your-new-api-address — with or without /v1';
 
   @override
   String get aiBaseUrlInvalid => 'The URL must start with http:// or https://';
@@ -1623,7 +1624,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiModelsEmpty =>
-      'This endpoint has no model list — just type the name';
+      'This service address has no model list — just type the model name';
 
   @override
   String aiModelsFailed(String message) {
@@ -2235,13 +2236,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get externalResourcesStylesheetNote =>
-      'External stylesheets are not applied by the renderer';
+      'External stylesheets are not applied';
 
   @override
   String get externalResourcesScriptNote => 'Scripts are never executed';
 
   @override
-  String get externalResourcesFrameNote => 'Frames are never rendered';
+  String get externalResourcesFrameNote => 'Embedded frames are not shown';
 
   @override
   String get externalResourcesKindImage => 'Image';
@@ -2347,5 +2348,5 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get securityExternalResourcesNote =>
-      '* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact domain applies to that host only. Scripts and stylesheets are still never run.';
+      '* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact address applies to that domain only. Scripts and stylesheets are still never run.';
 }

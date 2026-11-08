@@ -64,7 +64,7 @@ enum SettingsCategory {
 
   /// 分类栏与窄屏列表里显示的名字。
   ///
-  /// 推送用 `pushShort`（「推送」）而不是 `pushTitle`（「后台推送（FCM）」）：
+  /// 推送用 `pushShort`（「推送」）而不是 `pushTitle`（「系统推送」）：
   /// 分类栏只有 [Breakpoints.settingsRailWidth] 宽，后者会挤爆。分类**页内**
   /// 的标题仍然用长的那个。
   String label(AppLocalizations l10n) => switch (this) {

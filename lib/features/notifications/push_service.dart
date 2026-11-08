@@ -438,7 +438,7 @@ class PushService {
   /// 不同的动作**（去系统设置开权限 / 去 Xcode 查权利与描述文件 / 看日志），
   /// 说错比不说更糟。
   String _initFailureMessage() {
-    if (!available) return '这个平台没有 FCM 实现，推送只能靠 App 运行时轮询';
+    if (!available) return '这个平台用不了系统推送，新邮件提醒只能靠 App 在运行时收信';
     return switch (_lastFailure) {
       PushInitFailure.permissionDenied =>
         '通知权限被拒了。去「系统设置 → 通知」里把本 App 的通知打开',
@@ -446,14 +446,12 @@ class PushService {
       // 卡在 APNs 注册上。文案必须点明「不是权限」，否则用户会去系统设置
       // 里白翻（macOS 上甚至没有影响这条链路的开关）。
       PushInitFailure.apnsUnavailable => defaultTargetPlatform == TargetPlatform.macOS
-          ? 'APNs 注册没成功：这份 macOS 构建缺推送权利或描述文件（不是通知权限的问题）。'
-              '需要 App ID 钩上 Push Notifications，并在 macos/Runner 的两个 entitlements 里'
-              '补 com.apple.developer.aps-environment 后重新构建'
-          : 'Apple 推送注册没成功（APNs 还没拿到设备令牌）。先确认通知权限开着，再重新构建试试',
-      PushInitFailure.firebaseConfig =>
-        '这份构建里没有 Firebase 配置文件（google-services.json / GoogleService-Info.plist），FCM 用不了',
-      PushInitFailure.unexpected => '初始化 FCM 时出错，看日志里那一行「推送：初始化 FCM 失败」',
-      null => '这台设备拿不到 FCM token',
+          ? '系统推送没注册成功：这份 macOS 安装包缺少推送配置（不是通知权限的问题），'
+              '通知无法送达，请换一份正式安装包'
+          : '系统推送没注册成功。先确认通知权限开着，再重新打开 App 试试',
+      PushInitFailure.firebaseConfig => '这份安装包没有带推送配置，系统通知用不了，请换正式安装包',
+      PushInitFailure.unexpected => '系统推送初始化时出错，重启 App 再试一次',
+      null => '这台设备拿不到推送标识，重启 App 再试一次',
     };
   }
 
@@ -723,8 +721,8 @@ class PushService {
   /// 分开登记会把同一批邮箱重复上报。
   Future<PushSyncResult> syncAll({String reason = ''}) async {
     await refreshManagedConfig();
-    if (!available) return const PushSyncResult(ok: false, message: '这个平台不支持 FCM 推送');
-    if (!enabled) return const PushSyncResult(ok: false, message: '后台推送开关是关着的');
+    if (!available) return const PushSyncResult(ok: false, message: '这个平台用不了系统推送');
+    if (!enabled) return const PushSyncResult(ok: false, message: '系统推送开关是关着的');
     if (!isConfigured) {
       return const PushSyncResult(ok: false, message: '还没有填推送中转的三条配置');
     }

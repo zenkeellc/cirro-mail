@@ -416,7 +416,7 @@ void main() {
     await tester.pumpAndSettle();
     await tapAction(tester, const ValueKey('ai-models-fetch'));
 
-    expect(find.text('这个端点没有模型列表，手动填模型名即可'), findsOneWidget);
+    expect(find.text('这个服务地址没有模型列表，手动填模型名即可'), findsOneWidget);
     expect(find.textContaining('拉取失败'), findsNothing);
   });
 

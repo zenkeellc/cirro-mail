@@ -359,7 +359,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushTitle.
   ///
   /// In en, this message translates to:
-  /// **'Background push (FCM)'**
+  /// **'System notifications'**
   String get pushTitle;
 
   /// No description provided for @pushShort.
@@ -383,7 +383,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushRelayUrlHint.
   ///
   /// In en, this message translates to:
-  /// **'Your self-hosted mail-push worker, e.g. https://push.example.com'**
+  /// **'The relay you deployed, e.g. https://push.example.com'**
   String get pushRelayUrlHint;
 
   /// No description provided for @pushInstanceId.
@@ -425,13 +425,13 @@ abstract class AppLocalizations {
   /// No description provided for @pushEnable.
   ///
   /// In en, this message translates to:
-  /// **'Enable background push'**
+  /// **'Enable system notifications'**
   String get pushEnable;
 
   /// No description provided for @pushEnabledHint.
   ///
   /// In en, this message translates to:
-  /// **'Affects background alerts only — foreground sync, polling and in-app banners are unaffected.'**
+  /// **'Affects background alerts only — foreground sync and in-app banners are unaffected.'**
   String get pushEnabledHint;
 
   /// No description provided for @pushRegister.
@@ -467,7 +467,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushUnsupported.
   ///
   /// In en, this message translates to:
-  /// **'No FCM implementation on this platform (only Linux / Windows — those rely on the app polling while it runs).'**
+  /// **'System notifications are not available on this platform (only Linux / Windows — those rely on the app fetching mail while it runs).'**
   String get pushUnsupported;
 
   /// No description provided for @pushNotConfigured.
@@ -479,43 +479,43 @@ abstract class AppLocalizations {
   /// No description provided for @pushNoFirebaseConfig.
   ///
   /// In en, this message translates to:
-  /// **'This build has no Firebase config file (google-services.json / GoogleService-Info.plist), so FCM is unavailable. Create a Firebase project and rebuild.'**
+  /// **'This installer has no push configuration, so system notifications cannot work — please use an official build.'**
   String get pushNoFirebaseConfig;
 
   /// No description provided for @pushRelayFcmMissing.
   ///
   /// In en, this message translates to:
-  /// **'The relay has no FCM service account configured, so nothing can be delivered.'**
+  /// **'The relay has no push service configured yet, so nothing can be delivered.'**
   String get pushRelayFcmMissing;
 
   /// No description provided for @pushWebhookHint.
   ///
   /// In en, this message translates to:
-  /// **'Paste the webhook URL below into the \"Webhook push\" settings of *your* cloud-mail instance, then turn that switch on; see the note below about the secret field. This step can only be done by you — the relay doesn\'t know the instance\'s login system and can\'t do it for you.'**
+  /// **'Paste the push address below into the \"Webhook push\" settings of your cloud-mail instance, then turn that switch on; see the note below about the secret field. This step can only be done by you — the relay does not know how the instance signs users in and cannot do it for you.'**
   String get pushWebhookHint;
 
   /// No description provided for @pushWebhookUrl.
   ///
   /// In en, this message translates to:
-  /// **'Webhook URL'**
+  /// **'Push address'**
   String get pushWebhookUrl;
 
   /// No description provided for @pushWebhookSecret.
   ///
   /// In en, this message translates to:
-  /// **'Webhook secret'**
+  /// **'Push secret'**
   String get pushWebhookSecret;
 
   /// No description provided for @pushWebhookSecretCustodian.
   ///
   /// In en, this message translates to:
-  /// **'The webhook secret is held by whoever created the relay slot — the app neither stores nor shows it.'**
+  /// **'The push secret is held by whoever created the relay slot — the app neither stores nor shows it.'**
   String get pushWebhookSecretCustodian;
 
   /// No description provided for @pushWebhookSecretOnce.
   ///
   /// In en, this message translates to:
-  /// **'The webhook secret is shown only this once: copy it now and paste it into the instance admin; it\'s gone as soon as you leave this page.'**
+  /// **'The push secret is shown only this once: copy it now and paste it into the instance admin; it is gone as soon as you leave this page.'**
   String get pushWebhookSecretOnce;
 
   /// No description provided for @pushCopy.
@@ -563,7 +563,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushSelfCheckGotEvent.
   ///
   /// In en, this message translates to:
-  /// **'Last webhook received: {time}'**
+  /// **'Last push received: {time}'**
   String pushSelfCheckGotEvent(String time);
 
   /// No description provided for @pushNeedLoginFirst.
@@ -581,19 +581,19 @@ abstract class AppLocalizations {
   /// No description provided for @pushLimit1.
   ///
   /// In en, this message translates to:
-  /// **'External mail only: mail sent inside the instance, and mail from other clients, never triggers a push — only polling sees those.'**
+  /// **'External mail only: mail sent inside the instance, and mail from other clients, never triggers a push — you only see those while the app is open.'**
   String get pushLimit1;
 
   /// No description provided for @pushLimit2.
   ///
   /// In en, this message translates to:
-  /// **'If the instance is set to rule-based receiving, the webhook never fires.'**
+  /// **'If the instance is set to rule-based receiving, it never sends push notifications.'**
   String get pushLimit2;
 
   /// No description provided for @pushLimit3.
   ///
   /// In en, this message translates to:
-  /// **'The push carries metadata only (sender / subject / code); the app still fetches the body from the instance with its own token.'**
+  /// **'The push carries only the sender, subject and code; the app fetches the body from the instance itself.'**
   String get pushLimit3;
 
   /// No description provided for @pushLimit4.
@@ -653,7 +653,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageStatusPlatform.
   ///
   /// In en, this message translates to:
-  /// **'This platform supports FCM'**
+  /// **'This platform supports system notifications'**
   String get pushPageStatusPlatform;
 
   /// No description provided for @pushPageStatusOk.
@@ -695,7 +695,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageValuesBody.
   ///
   /// In en, this message translates to:
-  /// **'All three come from the relay: the URL is the worker\'s domain, the slot id is the slot it created for you, and the device pairing code is shown once, at creation.'**
+  /// **'All three come from the relay: the address is the relay\'s domain, the slot id is the slot it created for you, and the device pairing code is shown once, at creation.'**
   String get pushPageValuesBody;
 
   /// No description provided for @pushPageValuesSave.
@@ -725,13 +725,13 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageEnableTitle.
   ///
   /// In en, this message translates to:
-  /// **'Turn on background push'**
+  /// **'Turn on system notifications'**
   String get pushPageEnableTitle;
 
   /// No description provided for @pushPageEnableBody.
   ///
   /// In en, this message translates to:
-  /// **'This switch only governs alerts while the app isn\'t in the foreground — foreground sync, polling and in-app banners are unaffected.'**
+  /// **'This switch only governs alerts while the app isn\'t in the foreground — foreground sync and in-app banners are unaffected.'**
   String get pushPageEnableBody;
 
   /// No description provided for @pushPageEnableOff.
@@ -749,7 +749,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageEnrollBody.
   ///
   /// In en, this message translates to:
-  /// **'Binds each mailbox to this device\'s FCM token. It also runs automatically on launch, so this step is mainly here to confirm it worked.'**
+  /// **'Binds each mailbox to this device. It also runs automatically on launch, so this step is mainly here to confirm it worked.'**
   String get pushPageEnrollBody;
 
   /// No description provided for @pushPageEnrollPermission.
@@ -821,13 +821,13 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageWebhookRelayMessageNoSecret.
   ///
   /// In en, this message translates to:
-  /// **'Please open \"Webhook push\" in the cloud-mail instance admin, fill in the URL {url}, and turn that switch on. The webhook secret has to be obtained separately from whoever created the relay slot (the app doesn\'t show it). New mail can only reach my phone after that.'**
+  /// **'Please open \"Webhook push\" in the cloud-mail instance admin, fill in the address {url}, and turn that switch on. The push secret has to be obtained separately from whoever created the relay slot (the app does not show it). New mail can only reach my phone after that.'**
   String pushPageWebhookRelayMessageNoSecret(String url);
 
   /// No description provided for @pushPageWebhookStatus0.
   ///
   /// In en, this message translates to:
-  /// **'Note: that switch is stored as webhookStatus, and 0 means enabled — the field name reads backwards, so it is the first suspect when nothing arrives.'**
+  /// **'Note: first check that the switch in the instance admin is on — it is the first suspect when nothing arrives.'**
   String get pushPageWebhookStatus0;
 
   /// No description provided for @pushPageWebhookConfirm.
@@ -851,7 +851,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageWebhookEvidence.
   ///
   /// In en, this message translates to:
-  /// **'The relay has already received a webhook ({time}) — this step works, no confirmation needed.'**
+  /// **'The relay has already received a push ({time}) — this step works, no confirmation needed.'**
   String pushPageWebhookEvidence(String time);
 
   /// No description provided for @pushPageCheckRememberedAt.
@@ -905,7 +905,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageCheckBody.
   ///
   /// In en, this message translates to:
-  /// **'One pass answers four things: can the relay be reached, does it have FCM, is this device pairing code right, and is the URL saved in your instance correct.'**
+  /// **'One pass answers four things: can the relay be reached, is its push service configured, is this device pairing code right, and is the address saved in your instance correct.'**
   String get pushPageCheckBody;
 
   /// No description provided for @pushPageCheckAction.
@@ -923,7 +923,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageCheckFcmOk.
   ///
   /// In en, this message translates to:
-  /// **'The relay has an FCM service account'**
+  /// **'The relay has its push service configured'**
   String get pushPageCheckFcmOk;
 
   /// No description provided for @pushPageNotesTitle.
@@ -935,7 +935,7 @@ abstract class AppLocalizations {
   /// No description provided for @pushPageNotesBody.
   ///
   /// In en, this message translates to:
-  /// **'Background push is deliberately narrow: it covers external mail only, and everything else still arrives through polling.'**
+  /// **'System notifications are deliberately narrow: they cover external mail only, and everything else still arrives while the app is running.'**
   String get pushPageNotesBody;
 
   /// No description provided for @pushPageNotesTurnOff.
@@ -1163,7 +1163,7 @@ abstract class AppLocalizations {
   /// No description provided for @notifyEnabledHint.
   ///
   /// In en, this message translates to:
-  /// **'Turning this off stops polling and new-mail alerts; mail you already received stays readable.'**
+  /// **'Turning this off stops scheduled fetching and new-mail alerts; mail you already received stays readable.'**
   String get notifyEnabledHint;
 
   /// No description provided for @clearCache.
@@ -1223,7 +1223,7 @@ abstract class AppLocalizations {
   /// No description provided for @keystoreDegraded.
   ///
   /// In en, this message translates to:
-  /// **'The system keystore is unavailable; sign-in state will only live in memory and must be entered again after a restart.'**
+  /// **'The system secure storage is unavailable, so the sign-in cannot be saved — you will need to sign in again after a restart.'**
   String get keystoreDegraded;
 
   /// No description provided for @removeServerLostDrafts.
@@ -1331,7 +1331,7 @@ abstract class AppLocalizations {
   /// No description provided for @polling.
   ///
   /// In en, this message translates to:
-  /// **'Polling'**
+  /// **'Fetching'**
   String get polling;
 
   /// No description provided for @appearance.
@@ -1427,7 +1427,7 @@ abstract class AppLocalizations {
   /// No description provided for @endpointSelfCheck.
   ///
   /// In en, this message translates to:
-  /// **'Endpoint self-check'**
+  /// **'Service self-check'**
   String get endpointSelfCheck;
 
   /// No description provided for @rawEnvelope.
@@ -1529,19 +1529,19 @@ abstract class AppLocalizations {
   /// No description provided for @prefetchHint.
   ///
   /// In en, this message translates to:
-  /// **'Pulls full=1 while paging so messages open instantly; turn off to save data'**
+  /// **'Prefetches full message bodies while paging so messages open instantly; turn off to save data'**
   String get prefetchHint;
 
   /// No description provided for @selfCheckHint.
   ///
   /// In en, this message translates to:
-  /// **'Tap to hit the key endpoints once and see what the server actually returns'**
+  /// **'Tap to check the key services once and see what the server actually returns'**
   String get selfCheckHint;
 
   /// No description provided for @selfCheckLoginFirst.
   ///
   /// In en, this message translates to:
-  /// **'Sign in first — these endpoints would only return 401'**
+  /// **'Sign in first — checking without signing in only gets you \"not signed in\"'**
   String get selfCheckLoginFirst;
 
   /// No description provided for @noMailboxCache.
@@ -1553,7 +1553,7 @@ abstract class AppLocalizations {
   /// No description provided for @noScheduler.
   ///
   /// In en, this message translates to:
-  /// **'Scheduler not running — no instance is signed in, or polling is paused'**
+  /// **'Background fetching is not running — no instance is signed in, or scheduled fetching is paused'**
   String get noScheduler;
 
   /// No description provided for @allMailboxes.
@@ -1583,7 +1583,7 @@ abstract class AppLocalizations {
   /// No description provided for @sessionExpiringSoon.
   ///
   /// In en, this message translates to:
-  /// **'The server extends a session only while it is used: any authenticated request within 30 days resets the 30-day window. If this instance sends no request for 30 days (or the same account signs in from a 12th device), its token is dropped and you have to enter the password again.'**
+  /// **'The server extends a session only while it is used: any request within 30 days resets the 30-day window. If this instance sends no request for 30 days (or the same account signs in from a 12th device), the sign-in is dropped and you have to enter the password again.'**
   String get sessionExpiringSoon;
 
   /// No description provided for @domainList.
@@ -1805,7 +1805,7 @@ abstract class AppLocalizations {
   /// No description provided for @viewerSource.
   ///
   /// In en, this message translates to:
-  /// **'Source'**
+  /// **'Plain text'**
   String get viewerSource;
 
   /// text viewer: switch a .md attachment back to formatted rendering
@@ -1823,13 +1823,13 @@ abstract class AppLocalizations {
   /// text viewer: footer note when the text had to be decoded with a lossy fallback
   ///
   /// In en, this message translates to:
-  /// **'Decoded as {encoding}; some characters may show as ?'**
+  /// **'Unusual text encoding ({encoding}) — some characters may show as ?'**
   String viewerEncodingLossy(String encoding);
 
   /// text viewer: markdown preview fell back to plain source because MarkdownDoc refused it
   ///
   /// In en, this message translates to:
-  /// **'Nested too deeply to render as Markdown — showing the source'**
+  /// **'Too deeply nested to display formatted — switch to the plain text'**
   String get viewerMarkdownTooDeep;
 
   /// No description provided for @viewerFileGone.
@@ -1841,7 +1841,7 @@ abstract class AppLocalizations {
   /// eml viewer: the file doesn't look like an RFC 822 message at all
   ///
   /// In en, this message translates to:
-  /// **'This message can\'t be parsed — try the raw source'**
+  /// **'This message cannot be read — try the raw content'**
   String get emlUnreadable;
 
   /// eml viewer: parsed fine but there is neither an HTML nor a plain-text body part
@@ -2405,7 +2405,7 @@ abstract class AppLocalizations {
   /// No description provided for @composeLargeAttachmentHint.
   ///
   /// In en, this message translates to:
-  /// **'Large attachments are uploaded in chunks — keep the app open until it finishes'**
+  /// **'Large attachments take a while to upload — keep the app open until it finishes'**
   String get composeLargeAttachmentHint;
 
   /// No description provided for @close_.
@@ -2597,13 +2597,13 @@ abstract class AppLocalizations {
   /// No description provided for @pushAutoProvisionHint.
   ///
   /// In en, this message translates to:
-  /// **'Creates a relay slot for this device using the deployer admin token. The token is used for this request only — it is never saved to prefs, the keychain, or any log.'**
+  /// **'Creates a relay slot for this device using the deployer\'s admin password. It is used for this request only — never saved, never written to a log.'**
   String get pushAutoProvisionHint;
 
   /// No description provided for @pushAdminToken.
   ///
   /// In en, this message translates to:
-  /// **'Admin token'**
+  /// **'Admin password'**
   String get pushAdminToken;
 
   /// No description provided for @pushAdminTokenHint.
@@ -2615,13 +2615,13 @@ abstract class AppLocalizations {
   /// No description provided for @pushAutoProvisionDone.
   ///
   /// In en, this message translates to:
-  /// **'Provisioned — slot id and device pairing code filled in; the webhook secret is shown once below'**
+  /// **'Provisioned — slot id and device pairing code filled in; the push secret is shown once below'**
   String get pushAutoProvisionDone;
 
   /// No description provided for @pushAutoProvisionNoDeviceCode.
   ///
   /// In en, this message translates to:
-  /// **'The slot was created, but the relay didn\'t return a device pairing code (it may be an older version) — upgrade mail-push first, or enter the device pairing code manually'**
+  /// **'The slot was created, but the relay did not return a device pairing code (it may be an older version) — upgrade the relay first, or enter the device pairing code manually'**
   String get pushAutoProvisionNoDeviceCode;
 
   /// No description provided for @sendDelay.
@@ -2711,13 +2711,13 @@ abstract class AppLocalizations {
   /// push settings: pushAdminTokenNeeded
   ///
   /// In en, this message translates to:
-  /// **'Enter the admin token first'**
+  /// **'Enter the admin password first'**
   String get pushAdminTokenNeeded;
 
   /// push settings: pushBuiltInApplied
   ///
   /// In en, this message translates to:
-  /// **'Pre-filled from this build; the device pairing code is stored in the keychain only.'**
+  /// **'Pre-filled from this installer; the device pairing code is stored in the system keychain only.'**
   String get pushBuiltInApplied;
 
   /// No description provided for @aiTitle.
@@ -2789,7 +2789,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiBaseUrlLabel.
   ///
   /// In en, this message translates to:
-  /// **'Endpoint URL'**
+  /// **'API address'**
   String get aiBaseUrlLabel;
 
   /// No description provided for @aiBaseUrlHint.
@@ -2831,7 +2831,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiBaseUrlHintNewapi.
   ///
   /// In en, this message translates to:
-  /// **'https://your-gateway-host — with or without /v1'**
+  /// **'https://your-new-api-address — with or without /v1'**
   String get aiBaseUrlHintNewapi;
 
   /// No description provided for @aiBaseUrlInvalid.
@@ -2861,7 +2861,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiModelsEmpty.
   ///
   /// In en, this message translates to:
-  /// **'This endpoint has no model list — just type the name'**
+  /// **'This service address has no model list — just type the model name'**
   String get aiModelsEmpty;
 
   /// No description provided for @aiModelsFailed.
@@ -3899,7 +3899,7 @@ abstract class AppLocalizations {
   /// No description provided for @externalResourcesStylesheetNote.
   ///
   /// In en, this message translates to:
-  /// **'External stylesheets are not applied by the renderer'**
+  /// **'External stylesheets are not applied'**
   String get externalResourcesStylesheetNote;
 
   /// No description provided for @externalResourcesScriptNote.
@@ -3911,7 +3911,7 @@ abstract class AppLocalizations {
   /// No description provided for @externalResourcesFrameNote.
   ///
   /// In en, this message translates to:
-  /// **'Frames are never rendered'**
+  /// **'Embedded frames are not shown'**
   String get externalResourcesFrameNote;
 
   /// No description provided for @externalResourcesKindImage.
@@ -4085,7 +4085,7 @@ abstract class AppLocalizations {
   /// No description provided for @securityExternalResourcesNote.
   ///
   /// In en, this message translates to:
-  /// **'* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact domain applies to that host only. Scripts and stylesheets are still never run.'**
+  /// **'* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact address applies to that domain only. Scripts and stylesheets are still never run.'**
   String get securityExternalResourcesNote;
 }
 

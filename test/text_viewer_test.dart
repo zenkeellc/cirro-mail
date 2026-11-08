@@ -143,14 +143,14 @@ void main() {
       expect(_renders(tester, '# Title'), isFalse);
       expect(_renders(tester, 'Some bold text.'), isTrue);
       // 切换按钮在，且当前是「去看源码」。
-      expect(find.text('Source'), findsOneWidget);
+      expect(find.text('Plain text'), findsOneWidget);
       expect(find.text('Rendered'), findsNothing);
     });
 
     testWidgets('切到源码后看得到原始标记，也能切回来', (tester) async {
       await pumpDoc(tester, '# Title\n\nSome **bold** text.\n');
 
-      await tester.tap(find.text('Source'));
+      await tester.tap(find.text('Plain text'));
       await _settle(tester);
 
       expect(_renders(tester, '# Title'), isTrue);
@@ -174,9 +174,9 @@ void main() {
       // 守卫的括号阈值是 200 层；这里给 400 层，稳过线。
       await pumpDoc(tester, '${'[' * 400}a${']' * 400}\n');
 
-      expect(find.textContaining('Nested too deeply'), findsOneWidget);
+      expect(find.textContaining('Too deeply nested'), findsOneWidget);
       // 退回源码：既没有排版按钮（连渲染都没成功），原始文本在。
-      expect(find.text('Source'), findsNothing);
+      expect(find.text('Plain text'), findsNothing);
       expect(find.textContaining('[[[['), findsOneWidget);
       // 走到的是源码那一路（ListView），不是 HTML 那一路。
       expect(find.byType(ListView), findsOneWidget);
@@ -186,8 +186,8 @@ void main() {
       // 回归：括号计数是「运行峰值」，`[文本](链接)` 一开一合不该攒成深度。
       await pumpDoc(tester, 'See [the site](https://example.com) for details.\n');
 
-      expect(find.textContaining('Nested too deeply'), findsNothing);
-      expect(find.text('Source'), findsOneWidget);
+      expect(find.textContaining('Too deeply nested'), findsNothing);
+      expect(find.text('Plain text'), findsOneWidget);
     });
   });
 

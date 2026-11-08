@@ -29,7 +29,7 @@ Future<BootstrapData> bootstrap() async {
     // 属于必须让用户看见的错误，所以就让它抛。
     await db.customSelect('SELECT 1').get();
   } catch (e, st) {
-    error = _describe('本地数据库打不开', e, st);
+    error = _describe('本地数据打不开', e, st);
     db = null;
   }
 

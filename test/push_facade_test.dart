@@ -280,7 +280,7 @@ void main() {
 
       expect(result.ok, isFalse);
       expect(result.chain?.fcmConfigured, isFalse);
-      expect(result.message, contains('FCM'));
+      expect(result.message, contains('推送服务'));
     });
 
     test('配对码不对 → 指出是哪一项', () async {

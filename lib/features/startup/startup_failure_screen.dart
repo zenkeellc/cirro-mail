@@ -68,8 +68,7 @@ class StartupFailureScreen extends ConsumerWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                        '系统密钥库不可用，本次运行只能把登录状态放在内存里，'
-                        '重启后需要重新登录。Linux 上通常是没装 libsecret。',
+                        AppLocalizations.of(context).keystoreDegraded,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onErrorContainer,
                         ),

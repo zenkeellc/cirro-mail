@@ -143,7 +143,7 @@ class UpdateService {
     if (status < 200 || status >= 300) {
       throw UpdateException(
         UpdateFailureKind.http,
-        '版本清单返回 HTTP $status',
+        '检查更新失败（错误 $status），稍后重试',
         statusCode: status,
       );
     }

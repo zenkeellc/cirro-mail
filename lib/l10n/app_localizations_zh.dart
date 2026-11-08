@@ -144,7 +144,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get notifyBannerHint => '关闭后照样收信（列表会更新），只是不再弹通知。';
 
   @override
-  String get pushTitle => '后台推送（FCM）';
+  String get pushTitle => '系统推送';
 
   @override
   String get pushShort => '推送';
@@ -156,8 +156,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushRelayUrl => '中转地址';
 
   @override
-  String get pushRelayUrlHint =>
-      '自建的 mail-push Worker，形如 https://push.example.com';
+  String get pushRelayUrlHint => '你部署的推送中转，形如 https://push.example.com';
 
   @override
   String get pushInstanceId => '实例位 id';
@@ -178,10 +177,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushDeviceIdHint => '本机自动生成、并且带实例位前缀，不需要你改。排查时有用：中转端就是靠它认这台设备的。';
 
   @override
-  String get pushEnable => '开启后台推送';
+  String get pushEnable => '开启系统推送';
 
   @override
-  String get pushEnabledHint => '只影响后台提醒。前台收信、轮询、应用内提醒都不受影响。';
+  String get pushEnabledHint => '只影响后台提醒。前台收信、应用内提醒都不受影响。';
 
   @override
   String get pushRegister => '登记这台设备';
@@ -200,35 +199,32 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pushUnsupported =>
-      '这个平台没有 FCM 实现（只有 Linux / Windows 是这样，那两端的后台提醒靠 App 在运行时轮询）。';
+      '这个平台用不了系统推送（只有 Linux / Windows 是这样，那两端的后台提醒靠 App 在运行时收信）。';
 
   @override
   String get pushNotConfigured => '还没有填中转配置，当前只能靠 App 在运行时收信。';
 
   @override
-  String get pushNoFirebaseConfig =>
-      '这份构建里没有 Firebase 配置文件（google-services.json / GoogleService-Info.plist），FCM 不可用。需要你先在 Firebase 建项目再重新构建。';
+  String get pushNoFirebaseConfig => '这份安装包没有带推送配置，系统通知用不了，请换正式安装包。';
 
   @override
-  String get pushRelayFcmMissing => '中转端没有配 FCM 服务账号，推送发不出去。';
+  String get pushRelayFcmMissing => '推送中转还没有配好推送服务，推送发不出去。';
 
   @override
   String get pushWebhookHint =>
-      '把下面的 Webhook 地址填进**你那个 cloud-mail 实例**后台的「Webhook 推送」里，再把开关打开；密钥那一栏见下方说明。这一步只能你自己做：中转端不认识实例的登录体系，替不了。';
+      '把下面的推送地址填进你那个 cloud-mail 实例后台的「Webhook 推送」里，再把开关打开；密钥那一栏见下方说明。这一步只能你自己做：推送中转不认识实例的登录方式，替不了。';
 
   @override
-  String get pushWebhookUrl => 'Webhook 地址';
+  String get pushWebhookUrl => '推送地址';
 
   @override
-  String get pushWebhookSecret => 'Webhook 密钥';
+  String get pushWebhookSecret => '推送密钥';
 
   @override
-  String get pushWebhookSecretCustodian =>
-      'Webhook 密钥由中转位的创建者保管 —— App 里不存、也不显示它。';
+  String get pushWebhookSecretCustodian => '推送密钥由中转位的创建者保管 —— App 里不存、也不显示它。';
 
   @override
-  String get pushWebhookSecretOnce =>
-      'Webhook 密钥只显示这一次：现在复制走填进实例后台，离开这一页就再也看不到了。';
+  String get pushWebhookSecretOnce => '推送密钥只显示这一次：现在复制走填进实例后台，离开这一页就再也看不到了。';
 
   @override
   String get pushCopy => '复制';
@@ -254,7 +250,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String pushSelfCheckGotEvent(String time) {
-    return '最近一次收到 webhook：$time';
+    return '最近一次收到推送：$time';
   }
 
   @override
@@ -264,13 +260,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushLimits => '限制（先说清楚，免得白等）';
 
   @override
-  String get pushLimit1 => '只覆盖外部来信：站内互发、以及别的客户端发出的信不触发推送，只有轮询能收到。';
+  String get pushLimit1 => '只覆盖外部来信：站内互发、以及别的客户端发出的信不触发推送，那些只有 App 开着时收信才看得到。';
 
   @override
-  String get pushLimit2 => '实例若把收信规则设成「按规则收信」，webhook 完全不触发。';
+  String get pushLimit2 => '实例若把收信规则设成「按规则收信」，实例就不会发推送通知。';
 
   @override
-  String get pushLimit3 => '推送里只有元数据（发件人/主题/验证码），正文仍由 App 带 token 去实例拉。';
+  String get pushLimit3 => '推送里只有发件人、主题与验证码，正文仍由 App 自己从实例取。';
 
   @override
   String get pushLimit4 => '中转端能看到所有实例的来信元数据 —— 自建的话就是你自己。';
@@ -303,7 +299,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '三件事互相独立：这个平台支不支持、三条值填没填全、这台设备在中转端登记上没有。缺任何一件，App 不在时都不会有提醒。';
 
   @override
-  String get pushPageStatusPlatform => '这个平台支持 FCM';
+  String get pushPageStatusPlatform => '这个平台支持系统推送';
 
   @override
   String get pushPageStatusOk => '没问题';
@@ -327,7 +323,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pushPageValuesBody =>
-      '三条都从中转端来：地址是那个 Worker 的域名，实例位是它给你开的位置，设备配对码只在开位那一刻显示一次。';
+      '三条都从中转端来：地址是那个推送中转的域名，实例位是它给你开的位置，设备配对码只在开位那一刻显示一次。';
 
   @override
   String get pushPageValuesSave => '保存这三条值';
@@ -343,10 +339,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushPageValuesProvision => '中转是我部署的 —— 现开一个实例位';
 
   @override
-  String get pushPageEnableTitle => '打开「后台推送」';
+  String get pushPageEnableTitle => '打开「系统推送」';
 
   @override
-  String get pushPageEnableBody => '这个开关只管 App 不在前台时要不要提醒；前台收信、轮询、应用内提醒都不受影响。';
+  String get pushPageEnableBody => '这个开关只管 App 不在前台时要不要提醒；前台收信、应用内提醒都不受影响。';
 
   @override
   String get pushPageEnableOff => '关掉开关会顺手退订，中转不再往这台设备推。';
@@ -356,7 +352,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pushPageEnrollBody =>
-      '把每个邮箱绑到这台设备的 FCM token 上。启动时也会自动登记一次，所以这一步主要是用来确认「真的登记上了」。';
+      '把每个邮箱绑到这台设备上。启动时也会自动登记一次，所以这一步主要是用来确认「真的登记上了」。';
 
   @override
   String get pushPageEnrollPermission => '第一次点登记时，系统会问一次通知权限 —— 就是这一步。';
@@ -395,12 +391,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String pushPageWebhookRelayMessageNoSecret(String url) {
-    return '麻烦在 cloud-mail 实例后台的「Webhook 推送」里填上地址 $url，并把那一栏的开关打开。Webhook 密钥要单独向中转位的创建者要（App 里不显示），填好之后新邮件才能推到我的手机上。';
+    return '麻烦在 cloud-mail 实例后台的「Webhook 推送」里填上地址 $url，并把那一栏的开关打开。推送密钥要单独向中转位的创建者要（App 里不显示），填好之后新邮件才能推到我的手机上。';
   }
 
   @override
-  String get pushPageWebhookStatus0 =>
-      '提醒：那个开关在库里叫 webhookStatus，0 才是「启用」，字段名与直觉相反 —— 收不到推送时第一嫌疑永远是它。';
+  String get pushPageWebhookStatus0 => '提醒：先确认实例后台那个开关是开着的 —— 收不到推送时第一嫌疑永远是它。';
 
   @override
   String get pushPageWebhookConfirm =>
@@ -415,7 +410,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String pushPageWebhookEvidence(String time) {
-    return '中转端已经真的收到过 webhook（$time）—— 这一步通了，不需要再确认。';
+    return '中转端已经真的收到过推送（$time）—— 这一步通了，不需要再确认。';
   }
 
   @override
@@ -448,7 +443,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pushPageCheckBody =>
-      '一次问清四件事：中转连不连得上、它有没有配 FCM、这个设备配对码对不对、实例后台里那个地址填对没有。';
+      '一次问清四件事：推送中转连不连得上、它有没有配好推送服务、这个设备配对码对不对、实例后台里那个地址填对没有。';
 
   @override
   String get pushPageCheckAction => '检查这条链路';
@@ -457,13 +452,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushPageCheckStale => '上面的值改过了 —— 再检查一次才会得到新的结论。';
 
   @override
-  String get pushPageCheckFcmOk => '中转端配了 FCM 服务账号';
+  String get pushPageCheckFcmOk => '推送中转配好了推送服务';
 
   @override
   String get pushPageNotesTitle => '先说清楚的几件事';
 
   @override
-  String get pushPageNotesBody => '后台推送刻意做得很窄：只覆盖外部来信，其余的照旧靠轮询。';
+  String get pushPageNotesBody => '系统推送刻意做得很窄：只覆盖外部来信，其余的照旧靠 App 在运行时收信。';
 
   @override
   String get pushPageNotesTurnOff => '怎么关掉';
@@ -585,7 +580,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get notifications => '通知';
 
   @override
-  String get notifyEnabledHint => '关闭后停止轮询收信，也不再提醒新邮件；已收到的邮件仍可正常阅读。';
+  String get notifyEnabledHint => '关闭后不再定时收信，也不再提醒新邮件；已收到的邮件仍可正常阅读。';
 
   @override
   String get clearCache => '清理缓存';
@@ -617,7 +612,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get startupFailedHint => '本地数据打不开，App 无法继续。下面是具体原因。';
 
   @override
-  String get keystoreDegraded => '系统密钥库不可用，本次运行只能把登录状态放在内存里，重启后需要重新登录。';
+  String get keystoreDegraded => '系统的安全存储不可用，这次的登录状态没法保存，重启后需要重新登录。';
 
   @override
   String get removeServerLostDrafts => '仍然失败时，可以移除实例后重新添加（未发送的草稿会一并丢失）。';
@@ -673,7 +668,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noInstancesLoggedIn => '还没有登录的实例';
 
   @override
-  String get polling => '轮询';
+  String get polling => '收信';
 
   @override
   String get appearance => '外观';
@@ -723,7 +718,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cursor => '游标';
 
   @override
-  String get endpointSelfCheck => '端点自检';
+  String get endpointSelfCheck => '服务自检';
 
   @override
   String get rawEnvelope => '原始响应';
@@ -780,19 +775,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get prefetchTitle => '后台预取完整正文';
 
   @override
-  String get prefetchHint => '列表翻页时顺带拉 full=1，打开邮件更快；关闭可省流量';
+  String get prefetchHint => '列表翻页时顺带预取完整正文，打开邮件更快；关闭可省流量';
 
   @override
-  String get selfCheckHint => '点一下逐个打一遍关键端点，看服务端到底回了什么';
+  String get selfCheckHint => '点一下逐个检查关键服务，看服务端到底回了什么';
 
   @override
-  String get selfCheckLoginFirst => '先登录 —— 没登录打这些端点只会拿到一串 401';
+  String get selfCheckLoginFirst => '先登录 —— 没登录时检查只会得到「未登录」';
 
   @override
   String get noMailboxCache => '还没有邮箱缓存';
 
   @override
-  String get noScheduler => '调度器未运行 —— 没有登录的实例，或用户暂停了轮询';
+  String get noScheduler => '后台收信没有在运行 —— 没有登录的实例，或定时收信被暂停了';
 
   @override
   String get allMailboxes => '全部邮箱';
@@ -808,7 +803,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sessionExpiringSoon =>
-      '服务端只在「用」的时候续期：30 天内有任意一次鉴权请求，30 天窗口就会被重置。这台实例若连续 30 天没有任何请求（或同一账号从第 12 台设备登录），token 会被丢掉，需要重新输密码。';
+      '服务端只在「用」的时候续期：30 天内有任意一次请求，30 天窗口就会被重置。这台实例若连续 30 天没有任何请求（或同一账号从第 12 台设备登录），登录状态会被丢弃，需要重新输密码。';
 
   @override
   String get domainList => '域名单';
@@ -927,7 +922,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get previewUnsupported => '这种格式不能应用内预览，可以下载后用其他应用打开';
 
   @override
-  String get viewerSource => '源码';
+  String get viewerSource => '原始文本';
 
   @override
   String get viewerRendered => '排版';
@@ -939,17 +934,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String viewerEncodingLossy(String encoding) {
-    return '按 $encoding 解码，个别字可能显示为 ?';
+    return '字符编码 $encoding 不太常见，个别字可能显示为 ?';
   }
 
   @override
-  String get viewerMarkdownTooDeep => '嵌套太深，没法按 Markdown 渲染，改看源码';
+  String get viewerMarkdownTooDeep => '嵌套太深，没法按排版显示，改看原始文本';
 
   @override
   String get viewerFileGone => '文件已经不在了';
 
   @override
-  String get emlUnreadable => '这封邮件解析不出来，可以看看原文';
+  String get emlUnreadable => '这封邮件读不出来，可以看看原始内容';
 
   @override
   String get emlNoBody => '这封邮件没有正文';
@@ -1271,7 +1266,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendSavedToOutbox => '已存入发件箱，稍后自动发出';
 
   @override
-  String get composeLargeAttachmentHint => '大附件是分块上传的，完成前请保持应用在前台';
+  String get composeLargeAttachmentHint => '大附件上传需要时间，完成前请保持应用在前台';
 
   @override
   String get close_ => '关闭';
@@ -1382,7 +1377,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pushAutoProvisionHint =>
-      '用部署者的管理员口令为本机开一个中转实例位。口令只用于这一次请求，不落 prefs、不进钥匙串、不写日志。';
+      '用部署者的管理员口令为本机开一个中转实例位。口令只用于这一次请求，不保存，也不写日志。';
 
   @override
   String get pushAdminToken => '管理员口令';
@@ -1391,11 +1386,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushAdminTokenHint => '只在当前页面可见，离开即清空';
 
   @override
-  String get pushAutoProvisionDone => '已开通，实例位与设备配对码已填好；Webhook 密钥在下方显示这一次';
+  String get pushAutoProvisionDone => '已开通，实例位与设备配对码已填好；推送密钥在下方显示这一次';
 
   @override
   String get pushAutoProvisionNoDeviceCode =>
-      '实例位开好了，但中转端没有回设备配对码（它可能还是旧版本）—— 请先升级 mail-push，或手动填写设备配对码';
+      '实例位开好了，但中转端没有回设备配对码（它可能还是旧版本）—— 请先把推送中转升级到新版本，或手动填写设备配对码';
 
   @override
   String get sendDelay => '发送延迟';
@@ -1455,7 +1450,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pushAdminTokenNeeded => '请先填管理员口令';
 
   @override
-  String get pushBuiltInApplied => '已按本次构建的内置配置填好；设备配对码只存进钥匙串，不写 prefs。';
+  String get pushBuiltInApplied => '已按本次安装包的内置配置填好；设备配对码只存进系统钥匙串。';
 
   @override
   String get aiTitle => 'AI';
@@ -1513,7 +1508,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiBaseUrlHintAnthropic => 'https://api.anthropic.com';
 
   @override
-  String get aiBaseUrlHintNewapi => 'https://你的网关域名 —— 带不带 /v1 都行';
+  String get aiBaseUrlHintNewapi => 'https://你的 New API 服务地址 —— 带不带 /v1 都行';
 
   @override
   String get aiBaseUrlInvalid => '地址要以 http:// 或 https:// 开头';
@@ -1528,7 +1523,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiModelsFetchNeedUrl => '先填接口地址';
 
   @override
-  String get aiModelsEmpty => '这个端点没有模型列表，手动填模型名即可';
+  String get aiModelsEmpty => '这个服务地址没有模型列表，手动填模型名即可';
 
   @override
   String aiModelsFailed(String message) {
@@ -2116,13 +2111,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get externalResourcesCannotEnable => '无法启用';
 
   @override
-  String get externalResourcesStylesheetNote => '渲染器不应用外链样式表';
+  String get externalResourcesStylesheetNote => '外部样式表不会生效';
 
   @override
   String get externalResourcesScriptNote => '脚本不会执行';
 
   @override
-  String get externalResourcesFrameNote => '框架不会渲染';
+  String get externalResourcesFrameNote => '内嵌框架不会显示';
 
   @override
   String get externalResourcesKindImage => '图片';
@@ -2228,5 +2223,5 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get securityExternalResourcesNote =>
-      '* 匹配任意字符（包括点）：*.example.com 覆盖所有子域名，但不含 example.com 本身；精确域名只作用于该 host。样式表与脚本仍然不会被执行。';
+      '* 匹配任意字符（包括点）：*.example.com 覆盖所有子域名，但不含 example.com 本身；精确域名只对这一个域名生效。样式表与脚本仍然不会被执行。';
 }

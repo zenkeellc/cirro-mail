@@ -37,7 +37,7 @@ class AuthApi {
       return data['token'] as String;
     }
     // 服务端契约变了（或反代吞了 body）—— 明确报错，别返回空 token。
-    throw StateError('登录响应里没有 token');
+    throw StateError('登录没有成功，请重试');
   }
 
   /// 退出登录。
