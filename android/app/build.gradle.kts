@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -18,7 +21,7 @@ plugins {
 // 的状态 —— 让他们连调试包都编不出来，就等于把一个可选功能变成了整个
 // 工程的前置条件。
 //
-// 检测写在脚本体里（不是 `plugins {}` 块里），所以它对任何一次构建都生效：
+// 检测写在脚本里（不是 `plugins {}` 块里），所以它对任何一次构建都生效：
 // `flutter run`、`flutter build`、IDE 里点运行，走的都是同一条配置阶段。
 if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
@@ -30,10 +33,34 @@ if (file("google-services.json").exists()) {
     )
 }
 
+// Android release 签名：密钥路径与口令只在 `android/key.properties` 里，
+// 该文件与 `*.jks` 都已被 `android/.gitignore` 忽略 —— 仓库里不出现任何秘密。
+//
+// 没有这个文件时（CI、新 clone 的机器、没有备份密钥的贡献者）回退到 debug
+// 签名：本地 `flutter run --release` 照样能跑，但**对外分发的包必须**由正式
+// 密钥签出，否则以后换正式签名时用户只能卸载重装。
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.zenkee.cirromail"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -62,9 +89,12 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // 有正式密钥就用它；缺 `key.properties` 时回退 debug（只适合本地调试）。
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
