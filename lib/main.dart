@@ -92,6 +92,19 @@ class _BootstrapGateState extends State<BootstrapGate> {
     return FutureBuilder<BootstrapData>(
       future: _pending,
       builder: (context, snapshot) {
+        // **先判错误，再判 data**：`bootstrap()` 抛异常时 `data` 也是 null，
+        // 只写 `if (data == null) return splash` 会让任何一次未预期的异常都
+        // 变成永远转圈。Windows 上「AppData 目录建不出来」就是一条真实路径：
+        // 库/偏好设置的异常在 bootstrap 里被兜了一部分，但兜底那次
+        // `SharedPreferences.getInstance()` 再失败就会逃出来。
+        if (snapshot.hasError) {
+          return _BootstrapErrorScreen(
+            error: snapshot.error!,
+            stackTrace: snapshot.stackTrace,
+            onRetry: _retry,
+          );
+        }
+
         final data = snapshot.data;
         if (data == null) return const _SplashScreen();
 
@@ -127,6 +140,112 @@ class _BootstrapGateState extends State<BootstrapGate> {
           child: const MailApp(),
         );
       },
+    );
+  }
+}
+
+/// `bootstrap()` 直接抛异常时的兜底页。
+///
+/// 不能复用 `StartupFailureScreen`：那一页读的是 `bootstrapProvider`，而它只有
+/// 在 `ProviderScope` 建出来之后才存在 —— 走到这里时 scope 还没建。所以这一
+/// 页**自包含**（自己的 `MaterialApp`），只需要主题、错误和重试回调。
+///
+/// 与 `StartupFailureScreen` 的分工：那边是「bootstrap 跑完了，但库/密钥库
+/// 带回了 bootstrapError」；这边是「bootstrap 本身没收住，异常逃出来了」。
+/// 两者都必须让用户看见原因 —— 永远转圈是最糟的一种失败。
+class _BootstrapErrorScreen extends StatelessWidget {
+  const _BootstrapErrorScreen({
+    required this.error,
+    required this.stackTrace,
+    required this.onRetry,
+  });
+
+  final Object error;
+  final StackTrace? stackTrace;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      // 主题要从 `MaterialApp` **下面**取，否则拿到的是框架的 fallback 主题，
+      // 这一页的颜色会和 App 其它地方对不上。
+      home: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Builder(
+                builder: (context) {
+                  final theme = Theme.of(context);
+                  return ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.all(24),
+                    children: <Widget>[
+                      Icon(
+                        Icons.error_outline,
+                        size: 48,
+                        color: theme.colorScheme.error,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '启动失败',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '初始化过程中出现了未处理的异常，App 无法继续。下面是具体原因。',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: SelectableText(
+                            '$error',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (kDebugMode && stackTrace != null) ...<Widget>[
+                        const SizedBox(height: 12),
+                        ExpansionTile(
+                          title: const Text('堆栈'),
+                          children: <Widget>[
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: SelectableText(
+                                '$stackTrace',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重试'),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

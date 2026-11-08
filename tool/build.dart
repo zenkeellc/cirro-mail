@@ -63,9 +63,13 @@ Future<void> main(List<String> args) async {
   if (cli.dryRun) return;
 
   final Process process;
+  // Windows 上 `flutter` 是 `flutter.bat`：`Process.start('flutter')` 走的是
+  // CreateProcess，它不认 PATHEXT，会直接报「系统找不到指定的文件」。
+  // 显式把 `.bat` 带上才能起来（`Process.start('flutter.bat')` 可以）。
+  final executable = Platform.isWindows ? 'flutter.bat' : command.first;
   try {
     process = await Process.start(
-      command.first,
+      executable,
       command.skip(1).toList(),
       mode: ProcessStartMode.inheritStdio,
     );

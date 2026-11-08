@@ -65,7 +65,10 @@ class FlutterWindow : public Win32Window {
 
   // 换上这对窗口图标并回收上一对（nullptr 表示那一档不动）。见
   // [window_icon_small_] 那两个成员上的注释。
-  void SetWindowIcons(HICON small, HICON big);
+  // 参数不能叫 `small` / `big`：`rpcndr.h` 里有 `#define small char` 与
+  // `#define big char`，在 Windows 上会把这行展开成 `HICON char`，MSVC 直接
+  // 报 C2628。之前只在 macOS 上做过语法检查，所以一直没暴露。
+  void SetWindowIcons(HICON small_icon, HICON big_icon);
 
   // The project to run.
   flutter::DartProject project_;

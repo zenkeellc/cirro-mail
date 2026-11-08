@@ -32,6 +32,16 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# 源码里到处是中文注释/字符串（UTF-8，无 BOM）。zh-CN 的 Windows 上 MSVC 默认
+# 按代码页 936 读源文件，插件那些 .cpp 会报 C4819（"该文件包含不能在当前代码页
+# 中表示的字符"），而插件模板把警告当错误（/WX），构建立刻挂掉 —— 报错点在
+# pub 缓存里的第三方插件上，改不到。`/utf-8` 让 MSVC 按 UTF-8 读源码、也按
+# UTF-8 生成窄字符串，在任何区域设置的机器上都安全。
+#
+# 放在 add_subdirectory(flutter) 之前：目录级的编译选项只对**之后**创建的目标
+# 生效，插件（runner 之外的 target）也在这个目录树里创建。
+add_compile_options(/utf-8)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

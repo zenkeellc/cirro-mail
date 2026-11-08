@@ -282,43 +282,45 @@ void FlutterWindow::ApplyWindowIconBadge() {
   // 底图每次都按**当前** DPI 重新载入：窗口被拖到另一块显示器
   // （`WM_DPICHANGED`）之后要画的是另一个像素尺寸，留着旧尺寸的底图只会被
   // Shell 再拉伸一次，数字就糊了。
-  HICON small = LoadAppIcon(small_size);
-  HICON big = LoadAppIcon(big_size);
+  // 局部变量不能叫 `small` / `big`：`rpcndr.h` 把它们 `#define` 成 `char`
+  // （见头文件里的注释），这里用 `_icon` 后缀避开。
+  HICON small_icon = LoadAppIcon(small_size);
+  HICON big_icon = LoadAppIcon(big_size);
 
   if (badge_count_ > 0) {
     // 把数字叠上去。任何一档画不出来就退回那一档的原图 —— 宁可没有数字，
     // 也不能让任务栏图标变成一个透明块（`CreateBadgeIcon` 失败返回 nullptr）。
-    if (small != nullptr) {
-      HICON badged = CreateBadgeIcon(small, badge_count_, small_size);
+    if (small_icon != nullptr) {
+      HICON badged = CreateBadgeIcon(small_icon, badge_count_, small_size);
       if (badged != nullptr) {
-        ::DestroyIcon(small);
-        small = badged;
+        ::DestroyIcon(small_icon);
+        small_icon = badged;
       }
     }
-    if (big != nullptr) {
-      HICON badged = CreateBadgeIcon(big, badge_count_, big_size);
+    if (big_icon != nullptr) {
+      HICON badged = CreateBadgeIcon(big_icon, badge_count_, big_size);
       if (badged != nullptr) {
-        ::DestroyIcon(big);
-        big = badged;
+        ::DestroyIcon(big_icon);
+        big_icon = badged;
       }
     }
   }
 
   // 这一行之后两个句柄的所有权归窗口：由 [SetWindowIcons] 换上并负责销毁
   // 上一对。`badge_count_ == 0` 时传进去的就是刚载入的原图，等于「恢复原图标」。
-  SetWindowIcons(small, big);
+  SetWindowIcons(small_icon, big_icon);
 }
 
-void FlutterWindow::SetWindowIcons(HICON small, HICON big) {
+void FlutterWindow::SetWindowIcons(HICON small_icon, HICON big_icon) {
   HWND hwnd = GetHandle();
   if (hwnd == nullptr) {
     // 窗口已经没了（正常退出流程里不该走到这里）：句柄没人接手，就地销毁，
     // 不留悬空的所有权。
-    if (small != nullptr) {
-      ::DestroyIcon(small);
+    if (small_icon != nullptr) {
+      ::DestroyIcon(small_icon);
     }
-    if (big != nullptr) {
-      ::DestroyIcon(big);
+    if (big_icon != nullptr) {
+      ::DestroyIcon(big_icon);
     }
     return;
   }
@@ -327,19 +329,20 @@ void FlutterWindow::SetWindowIcons(HICON small, HICON big) {
   // 不用 `WM_SETICON` 的返回值回收：它返回的是**先前那个**句柄，可能是窗口类
   // 里 `LoadIcon` 的共享图标（`WM_SETICON` 之前的状态），那种句柄销毁了会
   // 波及所有用同一个图标的窗口。只销毁我们自己记录、自己创建的那一对。
-  if (small != nullptr) {
+  if (small_icon != nullptr) {
     HICON previous = window_icon_small_;
-    window_icon_small_ = small;
+    window_icon_small_ = small_icon;
     ::SendMessageW(hwnd, WM_SETICON, ICON_SMALL,
-                   reinterpret_cast<LPARAM>(small));
+                   reinterpret_cast<LPARAM>(small_icon));
     if (previous != nullptr) {
       ::DestroyIcon(previous);
     }
   }
-  if (big != nullptr) {
+  if (big_icon != nullptr) {
     HICON previous = window_icon_big_;
-    window_icon_big_ = big;
-    ::SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big));
+    window_icon_big_ = big_icon;
+    ::SendMessageW(hwnd, WM_SETICON, ICON_BIG,
+                   reinterpret_cast<LPARAM>(big_icon));
     if (previous != nullptr) {
       ::DestroyIcon(previous);
     }

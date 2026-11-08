@@ -48,7 +48,35 @@ class _NotificationHostState extends ConsumerState<NotificationHost> {
     // 先挂 handler 再 init：冷启动那一路，`init()` 里就会拿到点击事件，
     // 那时如果还没有 handler，事件会被攒起来，等这里挂上之后再补送。
     service.attachOpenHandler(_openFromNotification);
-    unawaited(service.init());
+    // `init()` 必须等到**调度器真正回到 idle** 之后再跑，不能在 initState
+    // 里直接调，也**不能**直接放在 post-frame 回调里：
+    //
+    // Windows 的 `flutter_local_notifications_windows` 走 FFI，它那条
+    // `NotificationsPluginBindings.init` 在原生侧会同步泵一次平台消息循环，
+    // 把引擎的 `_beginFrame()` / `handleDrawFrame()` **重入**到当前调用栈里。
+    // 而 Framework 对这两个入口有硬断言：
+    //   - `handleBeginFrame` 要求 `schedulerPhase == idle`；
+    //   - `handleDrawFrame` 要求 `_schedulerPhase == midFrameMicrotasks`。
+    // 直接调（build 阶段）和放到 `addPostFrameCallback`（postFrameCallbacks
+    // 阶段）都不满足，debug 下是一串未捕获断言，release 下 VM 直接
+    // fail-fast（0xC0000409）—— 窗口上留下的就是首帧那张 loading。
+    //
+    // `scheduleMicrotask` 让 init 排到当前帧彻底收尾之后：`handleDrawFrame`
+    // 末尾会把 phase 置回 idle，microtask 才会跑。这一条顺序是硬要求，别把
+    // 它改回 post-frame 或 `Future.delayed`（后者能跑，但没必要多等一个事件
+    // 循环，而且不如 microtask 的语义明确）。
+    //
+    // **本地库没打开时干脆不初始化**：没有库就没有信可通知，而 Windows
+    // 插件的原生 init 要写 HKCU（注册 AppUserModelId）并
+    // `CoRegisterClassObject`，那条路没有 try/catch —— 不允许这些操作的
+    // 环境里，winrt 异常会穿出 FFI 边界触发 `std::terminate` → `abort()`
+    // （同样是 0xC0000409）。启动失败页不该再被它带走一次。
+    final bootstrap = ref.read(bootstrapProvider);
+    if (bootstrap.bootstrapError == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        scheduleMicrotask(() => unawaited(service.init()));
+      });
+    }
 
     // 「稍后提醒」在 Linux 上只能靠心跳兜底（那边 `zonedSchedule` 没实现，
     // 插件直接抛 `UnimplementedError`）。把 ticker 接到调度器的慢活上，
