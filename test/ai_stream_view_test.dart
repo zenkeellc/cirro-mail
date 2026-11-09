@@ -1,10 +1,25 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart' as ext;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/features/ai/ai_run.dart';
 import 'package:mail_app/features/ai/ai_service.dart';
 import 'package:mail_app/features/ai/ai_stream_view.dart';
 
+/// 只往「失败提示下方」加一颗按钮的假扩展 —— 接缝 S7 的最小实现。
+class _ExtWithNotice extends ext.AppExtension {
+  @override
+  String get id => 'test.ai-notice';
+
+  @override
+  List<Widget> aiNoticeExtras(BuildContext context) => <Widget>[
+        TextButton(onPressed: () {}, child: const Text('去订阅')),
+      ];
+}
+
 void main() {
+  setUp(ext.AppExtensionRegistry.instance.reset);
+  tearDown(ext.AppExtensionRegistry.instance.reset);
+
   Widget host(AiRun run) => MaterialApp(
         home: Scaffold(
           body: SingleChildScrollView(child: AiStreamView(run: run)),
@@ -83,5 +98,40 @@ void main() {
     await tester.pumpWidget(host(run));
     expect(find.byType(SelectableText), findsOneWidget);
     run.dispose();
+  });
+
+  group('aiNoticeExtras 槽（接缝 S7 / 设计稿 §5.3）', () {
+    testWidgets('message 非空 → 提示下方接上实现方的动作', (tester) async {
+      ext.AppExtensionRegistry.instance
+          .registerAll(<ext.AppExtension>[_ExtWithNotice()]);
+      final run = AiRun(const AiNotStarted('积分已用完：续订可获得新积分'));
+      run.running.value = false;
+      await tester.pumpWidget(host(run));
+      expect(find.text('积分已用完：续订可获得新积分'), findsOneWidget);
+      expect(find.text('去订阅'), findsOneWidget);
+      run.dispose();
+    });
+
+    testWidgets('message 为空（生成中 / 有结果）→ 不画那组动作', (tester) async {
+      ext.AppExtensionRegistry.instance
+          .registerAll(<ext.AppExtension>[_ExtWithNotice()]);
+      final run = AiRun(const AiNotStarted(''))..running.value = true;
+      run.text.value = '写到一半';
+      await tester.pumpWidget(host(run));
+      expect(find.text('去订阅'), findsNothing);
+      run.dispose();
+    });
+
+    testWidgets('空注册表 → 失败态只剩那一句话（逐像素不变的护栏）',
+        (tester) async {
+      final run = AiRun(const AiNotStarted(''));
+      run.message.value = 'AI 返回 401：invalid api key';
+      run.running.value = false;
+      await tester.pumpWidget(host(run));
+      expect(find.text('AI 返回 401：invalid api key'), findsOneWidget);
+      // 一个多余的按钮都没有：公开版没有实现方，失败提示与从前一样。
+      expect(find.byType(TextButton), findsNothing);
+      run.dispose();
+    });
   });
 }

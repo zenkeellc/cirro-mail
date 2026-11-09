@@ -30,12 +30,19 @@ class AiPolishSheet extends StatefulWidget {
     super.key,
     required this.start,
     this.initialTone = RewriteTone.polish,
+    this.sourceLabel,
   });
 
   /// 起一次生成。由调用方接上 `AiService`（面板不认识它，只用这个函数）。
   final AiRun Function(RewriteTone tone, String? extra) start;
 
   final RewriteTone initialTone;
+
+  /// 输出处的来源署名（设计稿 §7.5 / 接缝 S5）：非 null 才画那颗 chip。
+  ///
+  /// 由调用方从 `AiService.sourceLabel` 传来 —— 面板不认识 `AiService`。
+  /// null（公开版 / BYOK）时抬头与从前逐像素相同。
+  final String? sourceLabel;
 
   @override
   State<AiPolishSheet> createState() => _AiPolishSheetState();
@@ -86,7 +93,10 @@ class _AiPolishSheetState extends State<AiPolishSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text(l10n.aiPolishTooltip, style: theme.textTheme.titleMedium),
+              AiPanelHeader(
+                title: l10n.aiPolishTooltip,
+                sourceLabel: widget.sourceLabel,
+              ),
               const SizedBox(height: 4),
               Text(
                 // 边界要在用户按下「生成」之前就说清 —— 引用区不会被改，

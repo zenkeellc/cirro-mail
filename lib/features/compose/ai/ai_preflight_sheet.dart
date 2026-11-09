@@ -28,6 +28,7 @@ class AiPreflightSheet extends StatefulWidget {
     super.key,
     required this.local,
     this.startReview,
+    this.sourceLabel,
   });
 
   /// 本地规则的结论。**由调用方算好**（`AiPreflight.checkLocal`）——
@@ -37,6 +38,12 @@ class AiPreflightSheet extends StatefulWidget {
   /// 起一次模型检查。**null = 这次不给模型检查**（没配 Key、或用户在设置里
   /// 关掉了）——这时那一整段都不显示，而不是给一个点不动的按钮。
   final AiRun Function()? startReview;
+
+  /// 输出处的来源署名（设计稿 §7.5 / 接缝 S5）：非 null 才画那颗 chip。
+  ///
+  /// 由调用方从 `AiService.sourceLabel` 传来 —— 面板不认识 `AiService`。
+  /// null（公开版 / BYOK）时抬头与从前逐像素相同。
+  final String? sourceLabel;
 
   @override
   State<AiPreflightSheet> createState() => _AiPreflightSheetState();
@@ -73,7 +80,10 @@ class _AiPreflightSheetState extends State<AiPreflightSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text('发送前检查', style: theme.textTheme.titleMedium),
+              AiPanelHeader(
+                title: '发送前检查',
+                sourceLabel: widget.sourceLabel,
+              ),
               const SizedBox(height: 12),
 
               Text('本地检查', style: theme.textTheme.labelLarge),

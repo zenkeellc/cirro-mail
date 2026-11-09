@@ -28,6 +28,7 @@ class AiRewriteSheet extends StatefulWidget {
     required this.original,
     required this.start,
     this.initialTone = RewriteTone.polish,
+    this.sourceLabel,
   });
 
   /// 被改写的原文。**只用来显示**（同时出现在顶部，用户好对照）。
@@ -37,6 +38,12 @@ class AiRewriteSheet extends StatefulWidget {
   final AiRun Function(RewriteTone tone, String? extra) start;
 
   final RewriteTone initialTone;
+
+  /// 输出处的来源署名（设计稿 §7.5 / 接缝 S5）：非 null 才画那颗 chip。
+  ///
+  /// 由调用方从 `AiService.sourceLabel` 传来 —— 面板不认识 `AiService`。
+  /// null（公开版 / BYOK）时抬头与从前逐像素相同。
+  final String? sourceLabel;
 
   @override
   State<AiRewriteSheet> createState() => _AiRewriteSheetState();
@@ -88,7 +95,10 @@ class _AiRewriteSheetState extends State<AiRewriteSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Text('改写', style: theme.textTheme.titleMedium),
+            AiPanelHeader(
+              title: '改写',
+              sourceLabel: widget.sourceLabel,
+            ),
             const SizedBox(height: 8),
 
             // 原文：只读，且**限高**（选中一段长文时不能把面板撑爆）。

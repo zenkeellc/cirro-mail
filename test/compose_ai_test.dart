@@ -26,9 +26,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 假传输：记下请求，回一段固定文本（不出错、不挂起）。
 class RecordingTransport implements AiTransport {
-  @override
-  String? get sourceLabel => null;
-
   RecordingTransport({this.chunk});
 
   String? chunk;

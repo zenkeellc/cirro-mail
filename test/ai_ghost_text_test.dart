@@ -13,9 +13,6 @@ import 'package:mail_app/features/ai/inline_continuation.dart';
 import 'package:mail_app/features/compose/ai/ai_ghost_text.dart';
 
 class ManualTransport implements AiTransport {
-  @override
-  String? get sourceLabel => null;
-
   ManualTransport(this.reply);
 
   final String reply;
@@ -545,10 +542,6 @@ void main() {
     controller.dispose();
   });
 }
-
-
-  @override
-  String? get sourceLabel => null;
 class _FailingTransport implements AiTransport {
   @override
   Future<void> send({

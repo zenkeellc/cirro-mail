@@ -69,6 +69,39 @@ void useCompactWindow(WidgetTester tester) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('入口可见性（审计 D1 / 设计稿 §7.3）', () {
+    test('channelAvailable：没配 Key 但有托管通道 → 建议入口仍在', () {
+      // 真订阅用户可能从没配过自带 Key：只看 `isUsable` 的话这一项永远不出现
+      // （审计 D1），而这正是「订阅 AI 在 UI 上不可达」的那个反向缺陷。
+      const noKey = AiSettings(model: '', hasApiKey: false);
+      expect(SuggestFlow.visible(summaryRow(), noKey), isFalse);
+      expect(
+        SuggestFlow.visible(summaryRow(), noKey, channelAvailable: true),
+        isTrue,
+      );
+    });
+
+    test('设置里关掉这一项 → 通道也不能绕过它', () {
+      // 「要不要这个功能」与「从哪儿调模型」是两件事。
+      const off = AiSettings(
+        model: 'gpt-4o-mini',
+        hasApiKey: true,
+        mailSuggestEnabled: false,
+      );
+      expect(
+        SuggestFlow.visible(summaryRow(), off, channelAvailable: true),
+        isFalse,
+      );
+    });
+
+    test('设置还没读到（settings == null）→ 仍按从前口径先别说能用', () {
+      expect(
+        SuggestFlow.visible(summaryRow(), null, channelAvailable: true),
+        isFalse,
+      );
+    });
+  });
+
   late AppDatabase db;
   late _FakeAi ai;
   late _FakeRepo repo;
@@ -85,6 +118,36 @@ void main() {
   });
 
   tearDown(() => db.close());
+
+  testWidgets('deps 带上来源署名（公开版为 null）', (tester) async {
+    when(() => ai.sourceLabel).thenReturn('订阅通道');
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        aiServiceProvider.overrideWithValue(ai),
+        capabilitiesProvider.overrideWith(
+          (ref, profileId) => Stream<InstanceCapabilities>.value(
+            const InstanceCapabilities(),
+          ),
+        ),
+      ],
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
+        home: Scaffold(
+          body: Consumer(
+            builder: (context, ref, _) => Text(
+              'label=${SuggestFlow.deps(ref, summaryRow()).sourceLabel}',
+              key: const ValueKey('label'),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(find.text('label=订阅通道'), findsOneWidget);
+  });
 
   /// 走一遍 `SuggestFlow.open`。
   ///

@@ -1,3 +1,4 @@
+import 'package:cirro_mail_ext/cirro_mail_ext.dart' as ext;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -49,6 +50,7 @@ typedef SuggestDeps = ({
   bool starEnabled,
   Future<MailRow?> Function() refresh,
   Future<AiStart> Function(String input, List<String> actionIds) launch,
+  String? sourceLabel,
 });
 
 /// 两个入口（列表行菜单 / 详情页顶栏）共用的那一步（spec §8.4）。
@@ -72,15 +74,43 @@ abstract final class SuggestFlow {
   /// `settings == null`（还没读到）时返回 false —— 与
   /// `AiSettingsController` 里那段 `_hasKey` 三态注释同一个口径：还没读到
   /// 就**别说能用**。
-  static bool visible(MailRow row, AiSettings? settings) {
+  ///
+  /// [channelAvailable] 是**托管通道就绪**（见 [channelConfigured]）：真订阅
+  /// 用户可能从没配过 Key，那时 `settings.isUsable` 恒为 false —— 只看它的话
+  /// 订阅通道的七个 AI 入口一个都画不出来（审计 D1）。带上这一位之后，
+  /// 「有通道」与「有自带 Key」是**并列**的两条路，任一成立即可见。
+  static bool visible(
+    MailRow row,
+    AiSettings? settings, {
+    bool channelAvailable = false,
+  }) {
     // ① 已发送方向：建议怎么处理自己发出去的信号没有意义。
     if (row.isSend) return false;
-    // ② 没配好 Key / 地址 / 模型 —— 点了只会弹一句「去设置里填」，
-    //    那是把一次注定失败的往返做成了一个按钮。
-    if (settings == null || !settings.isUsable) return false;
-    // ③ 用户在设置里关掉了这一项（spec §10）。
+    // ② 设置还没读到（首读在飞）：与从前一样**先别说能用** —— 这一帧过去
+    //    之后 `settings` 就会有值了，用户看到的是一次正常的晚出现。
+    if (settings == null) return false;
+    // ③ 没配好 Key / 地址 / 模型，也**没有**托管通道 —— 点了只会弹一句
+    //    「去设置里填」，那是把一次注定失败的往返做成了一个按钮。
+    //    有通道时不看 BYOK 那三样：通道自己会在 `state()` 里判就绪。
+    if (!channelAvailable && !settings.isUsable) return false;
+    // ④ 用户在设置里关掉了这一项（spec §10）。通道与 Key 都不能绕过它：
+    //    这是「要不要这个功能」，与「从哪儿调模型」是两件事。
     return settings.mailSuggestEnabled;
   }
+
+  /// **托管通道就绪**：注册了实现方，或者实现方要求入口常驻（S8）。
+  ///
+  /// 与 `compose_screen` 的 `channelConfigured` 是同一个口径的两半：
+  /// 那边还要并上 `settings.isUsable`（BYOK 那条路），而 [visible] 自己就在
+  /// 判 BYOK，所以这里只报「通道那一半」。
+  ///
+  /// `aiEntryAlwaysVisible` 为真时**入口不藏**：商业版的规矩是「先让用户点到，
+  /// 点下去再说明原因并给自救路径」—— 它有真正的下一步（登录 / 订阅）。公开版
+  /// 返回 false，仍然按 BYOK 判据藏（沿用「不该出现一个点了只回一句『去设置』
+  /// 的图标」那条理由）。
+  static bool channelConfigured(WidgetRef ref) =>
+      ref.read(aiTransportProvider) != null ||
+      ext.AppExtensionRegistry.instance.aiEntryAlwaysVisible;
 
   /// 组装 [SuggestDeps]（补正文 / 起请求 / 星标能力）。纯读，不导航。
   static SuggestDeps deps(WidgetRef ref, MailRow row) {
@@ -108,6 +138,9 @@ abstract final class SuggestFlow {
       // 池子由会话按当前状态算（`suggestActionPool`），面板与这里都不再算第二遍。
       launch: (input, actionIds) =>
           ref.read(aiServiceProvider).suggest(input: input, actionIds: actionIds),
+      // 输出处的来源署名（设计稿 §7.5）：同步读，不发网络。公开版恒为 null
+      // → 面板抬头不画那颗 chip。
+      sourceLabel: ref.read(aiServiceProvider).sourceLabel,
     );
   }
 
@@ -138,7 +171,26 @@ abstract final class SuggestFlow {
     // 手机：整页。执行仍留在调用方 —— 页面只负责「选」，`onDeleted` 才找得到
     // 正确的宿主（内嵌详情页 / 列表）。
     if (Breakpoints.isCompact(MediaQuery.sizeOf(context).width)) {
-      final choice = await (opener ?? showSuggestPage)(
+      // 默认那一支要**多带一个** `sourceLabel`（整页形态把它画在 AppBar 右侧），
+      // 而 [SuggestPageOpener] 是对外的测试约定（用例照它写假面板）。所以默认
+      // 实现包成一个闭包，不把新参数加到 typedef 上逼每个假实现跟着改。
+      final SuggestPageOpener openPage = opener ??
+          (
+            context, {
+            required MailRow row,
+            required bool starEnabled,
+            required Future<MailRow?> Function() refresh,
+            required Future<AiStart> Function(String, List<String>) launch,
+          }) =>
+              showSuggestPage(
+                context,
+                row: row,
+                starEnabled: starEnabled,
+                refresh: refresh,
+                launch: launch,
+                sourceLabel: deps.sourceLabel,
+              );
+      final choice = await openPage(
         context,
         row: row,
         starEnabled: deps.starEnabled,

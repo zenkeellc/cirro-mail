@@ -39,6 +39,7 @@ class AiDraftSheet extends StatefulWidget {
     this.subject,
     this.initialTone = RewriteTone.polish,
     this.initialLength = DraftLength.medium,
+    this.sourceLabel,
   });
 
   /// 起一次生成，由调用方接上 `AiService`。
@@ -49,6 +50,12 @@ class AiDraftSheet extends StatefulWidget {
 
   final RewriteTone initialTone;
   final DraftLength initialLength;
+
+  /// 输出处的来源署名（设计稿 §7.5 / 接缝 S5）：非 null 才画那颗 chip。
+  ///
+  /// 由调用方从 `AiService.sourceLabel` 传来 —— 面板不认识 `AiService`。
+  /// null（公开版 / BYOK）时抬头与从前逐像素相同。
+  final String? sourceLabel;
 
   @override
   State<AiDraftSheet> createState() => _AiDraftSheetState();
@@ -108,7 +115,10 @@ class _AiDraftSheetState extends State<AiDraftSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text('AI 起草', style: theme.textTheme.titleMedium),
+              AiPanelHeader(
+                title: 'AI 起草',
+                sourceLabel: widget.sourceLabel,
+              ),
               const SizedBox(height: 8),
               TextField(
                 key: const ValueKey('draft-points'),

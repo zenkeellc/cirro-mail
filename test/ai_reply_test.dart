@@ -347,6 +347,10 @@ class _FakeReplyService implements AiService {
   @override
   int get usedToday => 0;
 
+  /// 公开版 / BYOK：没有托管通道，所以没有来源署名（面板抬头因此不画 chip）。
+  @override
+  String? get sourceLabel => null;
+
   @override
   bool overDailyLimit(AiSettings settings) => false;
 

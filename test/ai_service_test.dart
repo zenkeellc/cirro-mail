@@ -12,9 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 假传输：把最后一次请求原封不动记下来，再回一段固定文本。
 class RecordingTransport implements AiTransport {
-  @override
-  String? get sourceLabel => null;
-
   RecordingTransport({this.chunk});
 
   String? chunk;
@@ -752,9 +749,6 @@ void main() {
 }
 
 /// 一发请求就报 401。
-
-  @override
-  String? get sourceLabel => null;
 class _FailingTransport implements AiTransport {
   @override
   Future<void> send({

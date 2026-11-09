@@ -89,6 +89,7 @@ class AiChannelState {
     required this.detail,
     this.tone = AiChannelTone.neutral,
     this.action,
+    this.chipLabel,
   });
 
   /// 这一次能不能调用。
@@ -108,6 +109,13 @@ class AiChannelState {
   /// 挂在 state 上而不是 transport 上：可用性变了动作也该跟着变
   /// （到期 → 续订，可用 → 改用自带 Key）。
   final AiChannelAction? action;
+
+  /// 状态胶囊上的**短标签**（例如「积分用完」「已到期」「N 天后到期」）。
+  ///
+  /// null = 核心只用两档通用词（可用 / 暂不可用）。给具体原因的文字只能由
+  /// 实现方写 —— 它才知道这次不可用是额度、到期还是设备被吊销；核心按
+  /// [tone] 上色、按这一句说事，两处永远一致。
+  final String? chipLabel;
 }
 
 /// 托管通道的一次失败。

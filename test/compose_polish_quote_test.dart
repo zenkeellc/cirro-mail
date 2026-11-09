@@ -189,6 +189,10 @@ class _FakeRewriteService implements AiService {
   @override
   int get usedToday => 0;
 
+  /// 公开版 / BYOK：没有托管通道，所以没有来源署名（润色面板抬头不画 chip）。
+  @override
+  String? get sourceLabel => null;
+
   @override
   bool overDailyLimit(AiSettings settings) => false;
 

@@ -73,7 +73,16 @@ abstract final class MailRowMenu {
       _RowAction.toggleStar,
       // 多选时不出现：对**一批**信问「怎么处理」没有意义，模型给的是一个
       // 单封的建议，套到 5 封上多半是错的。
-      if (rows.isEmpty && SuggestFlow.visible(row, settings)) _RowAction.suggest,
+      //
+      // `channelAvailable` 与详情页那颗图标同一个判据（审计 D1）：托管通道
+      // 就绪时即使没配过自带 Key，「AI 建议」也得在。
+      if (rows.isEmpty &&
+          SuggestFlow.visible(
+            row,
+            settings,
+            channelAvailable: SuggestFlow.channelConfigured(ref),
+          ))
+        _RowAction.suggest,
       _RowAction.delete,
     ];
 

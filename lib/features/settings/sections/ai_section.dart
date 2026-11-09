@@ -13,6 +13,7 @@ import '../../ai/ai_provider.dart' show AiApiFormat, AiProvider;
 // `ai_service.dart` 里，它同样不被 re-export —— 这两个模式的解释要显式 import。
 import '../../ai/ai_service.dart';
 import '../../ai/ai_settings.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../providers/ai_providers.dart';
 
@@ -236,6 +237,13 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
     // 都不会出现，这一页与从前逐字节相同（`ai_transport_gate_test.dart` 钉着）。
     final transport = ref.watch(aiTransportProvider);
 
+    // 扩展（商业版）往页顶插的**通道卡**（设计稿 §5.1 / 接缝 S6）。落点固定在
+    // 隐私声明之后、通道/服务商分组之前；公开版返回 null，这一页逐像素不变。
+    // 直接读注册表而不是加 provider，与下面 `aiUsageExtras` 同一个口径：这里
+    // 只是「有没有扩展要插一块」，没有需要监听的运行时状态。
+    final Widget? channelCard =
+        AppExtensionRegistry.instance.aiChannelCard(context);
+
     final scheme = Theme.of(context).colorScheme;
     return SettingsPage(
       children: <Widget>[
@@ -248,6 +256,9 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
           icon: Icons.privacy_tip_outlined,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
         ),
+        // 扩展的通道卡（见上面 `channelCard` 的注释）：必须排在隐私声明**之后**，
+        // 它是「这台机器的 AI 走哪条通道」的交代，不该压过用户先要读的隐私声明。
+        ?channelCard,
         // 「还差什么」这类一句话说明用 `SettingsHint`（小字、次要色），
         // 不塞进卡片里 —— 「行」与「段落」分开，正是这一版要的版面。
         if (transport == null && !settings.isUsable)
@@ -276,7 +287,7 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
             title: l10n.aiChannelSection,
             icon: Icons.hub_outlined,
             children: <Widget>[
-              _ChannelTile(
+              _ChannelCard(
                 transport: transport,
                 checking: l10n.aiChannelChecking,
                 ready: l10n.aiChannelReady,
@@ -725,18 +736,29 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
   }
 }
 
-/// 「通道」那一行：**名字与状态全由实现方给**。
+/// 「通道」卡片：**名字、状态与动作全由实现方给**。
 ///
-/// 公开仓库的 ARB 里只有这一行自己的通用词（「通道」/「正在检查…」/「可用」/
+/// 公开仓库的 ARB 里只有这张卡自己的通用词（「通道」/「正在检查…」/「可用」/
 /// 「暂不可用」），没有也不该有任何实现方那边的概念（§6.1：商业文案进商业包）。
-/// [AiTransport.channelLabel] 是显示名（可以是产品名），
-/// [AiChannelState.detail] 是那句给人看的话 —— 核心都**原样显示**。
+/// [AiTransport.channelLabel] 是显示名（可以是产品名）；
+/// [AiChannelState.detail] 是那句给人看的话；
+/// [AiChannelState.tone] 只用来选语义色；[AiChannelState.action] 非空时才画
+/// 那颗动作按钮 —— 文案与落点都是实现方的，核心只把 `onTap` 返回的那句话
+/// **原样**弹成 SnackBar（替实现方拼一句「操作成功」就是说谎）。
 ///
-/// 为什么是 `FutureBuilder` 而不是把状态提到 `AiSettingsSection` 里：这一行
+/// 三行结构（设计稿 §5.1 / §9.1）：标题行（图标 + 通道名 + 状态胶囊）→ 一句话
+/// 说明 → 动作按钮。为什么不再是 `ListTile`：它容不下「胶囊 + 说明 + 按钮」这三样
+/// —— 胶囊会和标题挤在同一行的高度里，动作也只能挂到右侧 `trailing` 上、和
+/// 文字抢宽度。
+///
+/// 三个 key（`ai-channel` / `ai-channel-label` / `ai-channel-detail`）是既有测试
+/// 依赖的锚点，升级成卡片也得留着。
+///
+/// 为什么是 `FutureBuilder` 而不是把状态提到 `AiSettingsSection` 里：这张卡
 /// 只在托管模式下存在，它自己的 `state()` 调用（可能是一次网络往返）不该拖住
 /// 整页别的字段；谁等谁的边界就在这个 widget 上。
-class _ChannelTile extends StatefulWidget {
-  const _ChannelTile({
+class _ChannelCard extends StatefulWidget {
+  const _ChannelCard({
     required this.transport,
     required this.checking,
     required this.ready,
@@ -755,11 +777,15 @@ class _ChannelTile extends StatefulWidget {
   final String unavailable;
 
   @override
-  State<_ChannelTile> createState() => _ChannelTileState();
+  State<_ChannelCard> createState() => _ChannelCardState();
 }
 
-class _ChannelTileState extends State<_ChannelTile> {
+class _ChannelCardState extends State<_ChannelCard> {
   late Future<AiChannelState> _state = _load();
+
+  /// 动作正在跑。**只在它自己的执行期间禁用那颗按钮** —— 实现方的 `onTap`
+  /// 可能是一次网络往返（重新登录、续订），连点两次就会发两遍。
+  bool _acting = false;
 
   /// **不让 `state()` 的异常把这一页打成红屏**（契约说它不该抛，但坏掉的
   /// 实现方也不该毁掉设置页）。异常按「不可用、没有说明」处理 —— 文案由
@@ -773,13 +799,36 @@ class _ChannelTileState extends State<_ChannelTile> {
   }
 
   @override
-  void didUpdateWidget(_ChannelTile oldWidget) {
+  void didUpdateWidget(_ChannelCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 换了一个实现方（理论上只发生在测试里）才重问；同一实现方不重刷 ——
     // 每次父级 setState 都重发一次 `state()` 就是给实现方喂请求风暴。
     if (!identical(oldWidget.transport, widget.transport)) {
       setState(() => _state = _load());
     }
+  }
+
+  /// 点了动作按钮：交给实现方，把返回的那句话原样弹出来。
+  ///
+  /// `null` / 空串 = 实现方**没有话要说**（例如它自己已经导航走了），这时
+  /// 什么都不弹 —— 不替它兜一句「已完成」。动作抛异常同理静默收摊：与
+  /// [_load] 一个理由，坏掉的实现方不该把设置页打成错误。
+  Future<void> _runAction(AiChannelAction action) async {
+    if (_acting) return;
+    setState(() => _acting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    String? sentence;
+    try {
+      sentence = await action.onTap();
+    } catch (_) {
+      sentence = null;
+    } finally {
+      if (mounted) setState(() => _acting = false);
+    }
+    if (!mounted || sentence == null || sentence.trim().isEmpty) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(sentence)));
   }
 
   @override
@@ -797,35 +846,153 @@ class _ChannelTileState extends State<_ChannelTile> {
         } else {
           detail = state.usable ? widget.ready : widget.unavailable;
         }
-        return ListTile(
+        // 语气只在**拿到 state 之后**有意义；还在问的时候是中性。
+        final tone = state?.tone ?? AiChannelTone.neutral;
+        // 胶囊文字：实现方给了 `chipLabel` 就用它（「积分用完」「已到期」
+        // 这种具体原因只有实现方知道）；没给时退回这张卡自己的通用两档。
+        // 在问的时候（state == null）说「正在检查…」。
+        final chipLabel = state == null
+            ? widget.checking
+            : (state.chipLabel ?? (state.usable ? widget.ready : widget.unavailable));
+        // 检查中不给动作：这时还不知道该给哪个动作。
+        final action = state?.action;
+        return Padding(
           key: const ValueKey('ai-channel'),
-          leading: Icon(
-            Icons.hub_outlined,
-            size: 20,
-            color: state != null && !state.usable
-                ? theme.colorScheme.error
-                : theme.colorScheme.onSurfaceVariant,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  // 整张卡的语气先由这颗身份图标说出来（hub = 通道），
+                  // 旁边胶囊再用「字 + 图标」把同一件事说一遍。
+                  Icon(
+                    Icons.hub_outlined,
+                    size: 20,
+                    color: _toneColor(context, tone),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.transport.channelLabel,
+                      key: const ValueKey('ai-channel-label'),
+                      style: theme.textTheme.titleSmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _ChannelChip(label: chipLabel, tone: tone),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                detail,
+                key: const ValueKey('ai-channel-detail'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+              if (action != null)
+                Align(
+                  alignment: Alignment.centerRight,
+                  // `TextButton` 保持默认密度（44 的触达区）：这是这张卡上唯一
+                  // 能把用户从「不可用」带到下一步的入口，压扁它等于藏起来。
+                  child: TextButton(
+                    key: const ValueKey('ai-channel-action'),
+                    onPressed: _acting ? null : () => _runAction(action),
+                    child: Text(action.label),
+                  ),
+                ),
+            ],
           ),
-          title: Text(
-            widget.transport.channelLabel,
-            key: const ValueKey('ai-channel-label'),
-          ),
-          subtitle: Text(
-            detail,
-            key: const ValueKey('ai-channel-detail'),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          trailing: state == null
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : null,
         );
       },
+    );
+  }
+}
+
+/// 语气 → 语义色（设计稿 §6.2）。**全部取既有 token**，不新增颜色常量：
+/// 「正常」用主色（M3 的 `ColorScheme` 没有 success，自造绿会和品牌色撞车），
+/// 「警告」用 `AppTheme` 里现成的琥珀。
+Color _toneColor(BuildContext context, AiChannelTone tone) {
+  final theme = Theme.of(context);
+  final scheme = theme.colorScheme;
+  switch (tone) {
+    case AiChannelTone.neutral:
+      return scheme.onSurfaceVariant;
+    case AiChannelTone.positive:
+      return scheme.primary;
+    case AiChannelTone.warning:
+      return AppTheme.warningAccent(theme.brightness);
+    case AiChannelTone.critical:
+      return scheme.error;
+  }
+}
+
+/// 语气 → 图标（设计稿 §6.2 的「同处必须出现」）：颜色不是唯一的信息载体，
+/// 色盲用户靠字与图标也能读出来。
+IconData _toneIcon(AiChannelTone tone) {
+  switch (tone) {
+    case AiChannelTone.neutral:
+      return Icons.info_outline;
+    case AiChannelTone.positive:
+      return Icons.check_circle_outline;
+    case AiChannelTone.warning:
+      return Icons.warning_amber_rounded;
+    case AiChannelTone.critical:
+      return Icons.error_outline;
+  }
+}
+
+/// 状态胶囊（设计稿 §6.1）：`[图标] 一句能读的字`，底与描边都是语义色的
+/// 低透明度版本 —— 让它像一枚「状态」，而不是第二颗按钮。
+///
+/// 高度用**最小**约束而不是写死 20：200% 字号下文字撑高时胶囊跟着长。
+class _ChannelChip extends StatelessWidget {
+  const _ChannelChip({required this.label, required this.tone});
+
+  /// 胶囊文字。必须**自成一句话**（色盲用户只读字）。
+  final String label;
+
+  final AiChannelTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = _toneColor(context, tone);
+    return ConstrainedBox(
+      // 内层 `Flexible(child: Text)` 需要一个有界宽度；实现方的 `detail` 可能
+      // 很长，这里只管住胶囊自己的字，不让它把标题挤没。
+      constraints: const BoxConstraints(maxWidth: 200),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: accent.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(_toneIcon(tone), size: 12, color: accent),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: accent,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

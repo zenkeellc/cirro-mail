@@ -452,6 +452,9 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
           launch: deps.launch,
           onPick: _onSuggestPick,
           onClose: () => setState(() => _suggestOpen = false),
+          // 抬头右侧的来源署名（设计稿 §5.3）：与 `SuggestFlow.open` 那条路
+          // 用的是同一个 `deps.sourceLabel`，两个入口不会一个署名一个不署名。
+          sourceLabel: deps.sourceLabel,
         ),
       ),
     );
@@ -557,8 +560,15 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
     //
     // 条件读的是 `ref.watch` —— 这里在 `build` 里，watch 合法；设置页里
     // 打开开关之后这一颗会自己出现，不需要重建页面。
-    final canSuggest =
-        SuggestFlow.visible(row, ref.watch(aiSettingsProvider).value);
+    //
+    // `channelConfigured` 走 `ref.read`：托管通道在 `runApp` 之前注册、之后
+    // 不再变（`ai_providers.dart` 的注释），没有可 watch 的信号。它是审计 D1
+    // 的修法 —— 真订阅用户从没配过 Key 时，这颗入口也必须画出来。
+    final canSuggest = SuggestFlow.visible(
+      row,
+      ref.watch(aiSettingsProvider).value,
+      channelAvailable: SuggestFlow.channelConfigured(ref),
+    );
     // 星标：实例根本没有 `/star/list`（老版本/别的分支）时不要给一个
     // 点了必然报错的按钮。探测结果是 `unknown`（还没探到）时按可用算 ——
     // 宁可多显示一个按钮，也不要在一个正常的实例上把它藏起来。

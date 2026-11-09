@@ -34,12 +34,22 @@ Future<SuggestionChoice?> showSuggestPage(
   required bool starEnabled,
   required Future<MailRow?> Function() refresh,
   required Future<AiStart> Function(String input, List<String> actionIds) launch,
+  String? sourceLabel,
 }) {
   return Navigator.of(context).push<SuggestionChoice>(
     MaterialPageRoute<SuggestionChoice>(
       builder: (pageContext) => Scaffold(
         appBar: AppBar(
           title: Text(AppLocalizations.of(pageContext).aiSuggestPanelTitle),
+          // 整页形态的标题在 AppBar 上，署名就跟着它（设计稿 §5.3 / §9.6：
+          // 「抬头标题行右侧」）。停靠形态由 [SuggestView._topRow] 画同一颗。
+          actions: <Widget>[
+            if (sourceLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Center(child: AiSourceChip(label: sourceLabel)),
+              ),
+          ],
         ),
         body: SuggestView(
           row: row,
@@ -82,6 +92,7 @@ class SuggestView extends StatefulWidget {
     this.showTitle = true,
     this.onClose,
     this.isPage = false,
+    this.sourceLabel,
   });
 
   final MailRow row;
@@ -103,6 +114,13 @@ class SuggestView extends StatefulWidget {
   /// 是不是整页形态。只影响布局与区块标题：整页永远单列，但显示
   /// 「摘要 / 建议操作」两个区块标题（spec §1.2、§2.2）。
   final bool isPage;
+
+  /// 输出处的来源署名（设计稿 §5.3 / §7.5 / 接缝 S5）。
+  ///
+  /// 只在**停靠面板**里由这里画：整页形态的标题在 `AppBar` 上，那颗 chip 由
+  /// [showSuggestPage] 画，画两处会重复。null（公开版 / BYOK）→ 抬头与从前
+  /// 逐像素相同。
+  final String? sourceLabel;
 
   @override
   State<SuggestView> createState() => _SuggestViewState();
@@ -218,6 +236,13 @@ class _SuggestViewState extends State<SuggestView> {
           )
         else
           const Spacer(),
+        // 署名紧跟在标题后面（`Spacer` 之后、图标之前）。**done 态也保留**：
+        // 结果态渲染的是两列内容、不经过 `AiStreamView`，抬头是唯一跨阶段
+        // 都在的位置。
+        if (widget.showTitle && widget.sourceLabel != null) ...<Widget>[
+          const SizedBox(width: 8),
+          AiSourceChip(label: widget.sourceLabel!),
+        ],
         if (hasInfo) _infoIcon(context, l10n),
         // 失败态里那个「重试」是同一个动作、另一个位置（结果区里）。
         if (showAgain)

@@ -18,13 +18,24 @@ import '../../ai/ai_stream_view.dart';
 /// 输出做的行拆分，流到一半时最后一行还是半截话，点了会把半句插进正文。
 /// 所以按钮只在 `!running` 时可用。
 class AiReplySheet extends StatefulWidget {
-  const AiReplySheet({super.key, required this.incoming, required this.start});
+  const AiReplySheet({
+    super.key,
+    required this.incoming,
+    required this.start,
+    this.sourceLabel,
+  });
 
   /// 来信正文。**只用来显示**（顶部一小段，让用户确认「它在看的是这封信」）。
   final String incoming;
 
   /// 起一次生成，由调用方接上 `AiService`。
   final AiRun Function() start;
+
+  /// 输出处的来源署名（设计稿 §7.5 / 接缝 S5）：非 null 才画那颗 chip。
+  ///
+  /// 由调用方从 `AiService.sourceLabel` 传来 —— 面板不认识 `AiService`。
+  /// null（公开版 / BYOK）时抬头与从前逐像素相同。
+  final String? sourceLabel;
 
   @override
   State<AiReplySheet> createState() => _AiReplySheetState();
@@ -114,7 +125,10 @@ class _AiReplySheetState extends State<AiReplySheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text('回复建议', style: theme.textTheme.titleMedium),
+              AiPanelHeader(
+                title: '回复建议',
+                sourceLabel: widget.sourceLabel,
+              ),
               const SizedBox(height: 8),
 
               // 来信：只读，且**限高**（来信很长时不能把面板撑爆）。

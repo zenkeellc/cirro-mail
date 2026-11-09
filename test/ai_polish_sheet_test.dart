@@ -26,9 +26,6 @@ import 'package:mail_app/l10n/app_localizations.dart';
 /// `CircularProgressIndicator`（永不结束的动画），`pumpAndSettle` 会一直等到
 /// `timed out`，而不是让某条断言失败。
 class ManualTransport implements AiTransport {
-  @override
-  String? get sourceLabel => null;
-
   ManualTransport(this.reply);
 
   final String reply;
@@ -288,10 +285,6 @@ void main() {
     expect(t.cancelled, isTrue, reason: '关掉面板必须取消生成');
   });
 }
-
-
-  @override
-  String? get sourceLabel => null;
 class _FailingTransport implements AiTransport {
   @override
   Future<void> send({

@@ -172,6 +172,14 @@ class AiService {
   /// 今天已经调了几次（设置页显示用）。
   int get usedToday => _usage.usedToday;
 
+  /// 输出处的**来源署名**（设计稿 §7.5 / 接缝 S5）。
+  ///
+  /// 同步读已注册的实现方 `sourceLabel` —— 面板抬头在 `build` 里要立刻拿到
+  /// 它，不能等一次 `state()`（那是 async、实现方还可能联网）。公开版
+  /// （`_transport == null`，BYOK）恒为 null，五处抬头因此一个像素都不变；
+  /// 只有托管模式才画那颗 chip。
+  String? get sourceLabel => _transport?.sourceLabel;
+
   /// ① 选中即改（也是「整篇润色」走的那一条 —— 它只是选区等于全文）。
   Future<AiStart> rewrite({
     required String selection,
