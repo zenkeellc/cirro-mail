@@ -43,6 +43,7 @@ import 'ai/ai_preflight_sheet.dart';
 import 'ai/ai_reply_sheet.dart';
 import 'ai/ai_rewrite_sheet.dart';
 import 'ai/compose_ai.dart';
+import '../suggest/suggest_flow.dart';
 import 'attachment_chips.dart';
 import 'compose_attachments.dart';
 import 'compose_controller.dart';
@@ -304,9 +305,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     // 默认里 `preflightEnabled` 是 true、`hasApiKey` 是 false，于是
     // 「设置还没加载出来」不会让任何一项能力静默关掉，也不会误开。
     final settings = ref.watch(aiSettingsProvider).value ?? const AiSettings();
-    // 「配得上 AI」= 有厂商、有模型、且**存过 Key**。三个条件缺一个都
-    // 意味着按下去只会收到一句「没配 Key」，那不如不显示这个入口。
-    final aiUsable = settings.isUsable && settings.hasApiKey;
+    // 「AI 入口能不能点」= 三条路任一成立（审计 D1 / 设计稿 §7.3）：
+    // ① 托管通道注册了 —— 订阅用户**不需要** BYOK 的三样，以前只看 BYOK
+    //    判据会让「买了订阅但从没填过 Key」的用户一个 AI 按钮都看不到；
+    // ② BYOK 配好了（有厂商、有模型、且存过 Key）；
+    // ③ 商业版要求入口常驻（点了走登录 / 订阅引导）。
+    // 公开版（空注册表 + 没配 Key）仍然藏入口 —— 一个点了只回一句「去设置」
+    // 的图标比没有更糟；Pro 敢常驻是因为它有真正的下一步，不是空话。
+    final aiUsable = SuggestFlow.channelConfigured(ref) || settings.isUsable;
 
     // 当前发件邮箱的签名与常用语（family 的键就是发件地址，见
     // `writingSnippetsProvider`）。发件人还没定时是空串 → 返回空值 →
@@ -434,9 +440,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           // ④ 润色全文。原来这里是「起标题」—— 起标题挪到了主题栏里那颗
           // 内联图标（它属于那一行），这颗图标改成「把整篇正文润一遍」。
           //
-          // 只在设置里开着、且配得上 AI 时出现：没配 Key 的用户不该看到一个
-          // 点了只回一句「去设置」的图标。
-          if (settings.isUsable && settings.polishEnabled)
+          // 只在设置里开着、且**有路可走**时出现（BYOK 配好或托管通道注册了）：
+          // 没配 Key 的用户不该看到一个点了只回一句「去设置」的图标。
+          if (aiUsable && settings.polishEnabled)
             IconButton(
               tooltip: l10n.aiPolishTooltip,
               icon: const Icon(Icons.auto_fix_high_outlined),
@@ -1011,7 +1017,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       isScrollControlled: true,
       builder: (_) => AiPreflightSheet(
         local: local,
-        startReview: settings.isUsable && AiPreflight.shouldRun(settings)
+        sourceLabel: ref.read(aiServiceProvider).sourceLabel,
+        // 「模型那一半」的入口与撰写页其它 AI 入口同一判据（审计 D1）：
+        // 托管通道注册了也算有路可走，不要求用户先配过 BYOK。
+        startReview:
+            (SuggestFlow.channelConfigured(ref) || settings.isUsable) &&
+                    AiPreflight.shouldRun(settings)
             ? () => ComposeAi.startReview(
                   ref.read(aiServiceProvider),
                   subject: _subject.text,
@@ -1419,6 +1430,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       isScrollControlled: true,
       builder: (_) => AiRewriteSheet(
         original: selected,
+        sourceLabel: ref.read(aiServiceProvider).sourceLabel,
         // **传进去而不是什么都不传**：用户点「更简洁」时面板打开就该是
         // 「更简洁」已经选中，否则那颗按钮等于只做了一半。
         initialTone: tone,
@@ -1469,6 +1481,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       builder: (_) => AiDraftSheet(
         subject: subject,
         initialTone: tone,
+        sourceLabel: ref.read(aiServiceProvider).sourceLabel,
         start: (request) => ComposeAi.startDraft(
           ref.read(aiServiceProvider),
           request,
@@ -1502,6 +1515,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       isScrollControlled: true,
       builder: (_) => AiReplySheet(
         incoming: incoming,
+        sourceLabel: ref.read(aiServiceProvider).sourceLabel,
         start: () => ComposeAi.startReply(
           ref.read(aiServiceProvider),
           incoming: incoming,
@@ -1618,6 +1632,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       context: context,
       isScrollControlled: true,
       builder: (_) => AiPolishSheet(
+        sourceLabel: ref.read(aiServiceProvider).sourceLabel,
         start: (tone, extra) => _adopt(
           ref.read(aiServiceProvider).rewrite(
                 selection: composeUserPlainText(),
