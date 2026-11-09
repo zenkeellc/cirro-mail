@@ -39,6 +39,8 @@ import 'theme_pack.dart';
 /// | [aiTransport] | `ai_providers.dart`（AI 能力改走托管通道）/ `ai_section.dart`（设置页「通道」行） |
 /// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
 /// | [managedPushConfig] | `push_service.dart#refreshManagedConfig`（推送三条值优先从哪来） |
+/// | [pushLicenseBinding] | `push_service.dart#syncAll`（`/register` 请求体里的两个 license 字段） |
+/// | [onDraftChanged] | `push_service.dart`（`kind=draft_changed` 的静默推送：前台 / 后台入口 / 点开推送） |
 /// | [pushSettings] | `settings_screen.dart#_pushBody`（「设置 → 后台推送」整块正文） |
 /// | [autoLoadExternalResources] / [rewriteExternalResourceUrl] | `external_resource_banner.dart#_HtmlBodyViewState` / `html_body_view.dart`（读信页外联资源） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
@@ -285,6 +287,46 @@ abstract class AppExtension {
   /// 多个扩展都返回非 null 时，注册表按注册顺序取**第一个**（与
   /// [aiTransport] 同一口径：一个进程里只该有一条托管配置）。
   Future<ManagedPushConfig?> managedPushConfig() async => null;
+
+  /// 本机 Pro 订阅的**设备身份**：`(licenseId, licenseDeviceId)`。
+  ///
+  /// 核心在推送注册（`PushService.syncAll` → `POST /register`）时把它原样带给
+  /// `mail-push`，中转端据此给这台设备打上 `license_id` —— 云草稿的跨设备事件
+  /// （`kind=draft_changed`）就是按这个 license 路由的。
+  ///
+  /// 返回 `null`（公开版的默认，或者用户没登录 / 没订阅）= 不参与，注册请求体
+  /// 与没有这条接缝时**逐字相同**：老中转端、开源版都不受影响。
+  ///
+  /// ## 必须快、只查内存
+  ///
+  /// 核心在每次登记前问一次（每个收件邮箱一次），典型实现在登录 / 续期时就把
+  /// 这两个值解好放在内存里。这里做网络往返会把一次登记拖成 N 次往返。
+  ///
+  /// 多个扩展都返回非 null 时，注册表按注册顺序取**第一个**（与
+  /// [appDisplayName] 同一口径：设备身份只能有一个）。
+  ({String licenseId, String licenseDeviceId})? pushLicenseBinding() => null;
+
+  /// 收到 `kind=draft_changed` 的**静默推送**时调用。
+  ///
+  /// 这是「别的设备改了云草稿」的信号，服务端发的是 data-only 消息（没有
+  /// `notification` 字段），核心**不会**为它构造通知事件、不会弹横幅 ——
+  /// 这里只需要「拉一轮增量」，什么时候弹提示是扩展自己的事。
+  ///
+  /// ## 四个入口都可能走到这里
+  ///
+  /// 前台 `Messaging#onMessage`、后台入口 `pushServiceBackgroundEntry`、用户
+  /// 点开推送 `onMessageOpenedApp`、冷启动 `getInitialMessage` —— 全都过同一处
+  /// `kind` 分派，所以实现必须**幂等**：同一条事件到达两次（比如 iOS 的后台
+  /// 唤醒 + 前台恢复）只能安排一次拉取，不能变成两轮请求。
+  ///
+  /// ## 实现必须快
+  ///
+  /// 核心用 `unawaited` 发起它（FCM 回调不能被挂住），所以这里只该「置标志 /
+  /// 丢进队列」，不要 await 网络。iOS 的静默推送可能被系统延迟或丢弃，前台
+  /// 恢复时的拉取仍然是兜底真相。
+  ///
+  /// 单个扩展抛错不影响其它扩展（注册表逐个 await、吞异常只留日志）。
+  Future<void> onDraftChanged() async {}
 
   /// 画「设置 → 后台推送」的**替身 UI**。
   ///

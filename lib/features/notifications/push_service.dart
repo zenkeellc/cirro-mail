@@ -69,8 +69,17 @@ Map<String, dynamic>? _pendingBackgroundData;
 ///
 /// 它**不查库、不解析** —— 那些是 [PushService.background] 的活。这里只
 /// 决定「现在有人接，还是先存起来」。
+///
+/// **`draft_changed` 是例外**：那是云草稿的跨设备事件，不是「有一封新信」，
+/// 它的归宿是扩展钩子（`AppExtension.onDraftChanged`），不是后台事件流 ——
+/// 存进去只会让前台把它当一封信去同步一轮。所以这里直接交给钩子并返回，
+/// **既不进待取槽也不自己弹通知**（服务端发的本来就是 data-only 静默消息）。
 @pragma('vm:entry-point')
 Future<void> pushServiceBackgroundEntry(RemoteMessage message) async {
+  if (message.data['kind'] == 'draft_changed') {
+    unawaited(AppExtensionRegistry.instance.notifyDraftChanged());
+    return;
+  }
   if (_rawBackground.hasListener) {
     _rawBackground.add(message.data);
   } else {
@@ -558,7 +567,20 @@ class PushService {
   }
 
   /// 把一个 FCM 的 data 载荷折成 [PushMailEvent]；认不出来返回 null。
+  ///
+  /// 三个入口（前台 / 后台点开 / 冷启动点开）与后台事件流都收口到这里，
+  /// 所以 `kind` 的分派**只有这一处**：
+  ///
+  /// - `draft_changed`：云草稿的跨设备静默事件 —— 交给扩展钩子，**不构造
+  ///   通知事件**（没有 `PushMailEvent` 就没有横幅）；服务端发的是 data-only
+  ///   消息，客户端这边不再补一条本地通知；
+  /// - `new_mail`：照旧折成事件（行为逐字不变）；
+  /// - 其它：安静地丢掉。
   Future<PushMailEvent?> _decode(Map<String, dynamic> data) async {
+    if (data['kind'] == 'draft_changed') {
+      unawaited(AppExtensionRegistry.instance.notifyDraftChanged());
+      return null;
+    }
     if (data['kind'] != 'new_mail') return null;
     final emailId = int.tryParse('${data['emailId']}') ?? 0;
     if (emailId <= 0) return null;
@@ -755,6 +777,10 @@ class PushService {
     var subscriptionRequired = false;
     final entitlement = _entitlement;
 
+    // 本机 Pro 订阅的设备身份（公开版恒为 null）。只读一次：这一轮里每个
+    // 收件邮箱带的都该是同一份身份，而且钩子契约要求它只查内存、必须快。
+    final binding = AppExtensionRegistry.instance.pushLicenseBinding;
+
     for (final profile in loggedIn) {
       final mailboxes = await _readMailboxes(profile.id);
       for (final mailbox in mailboxes) {
@@ -769,6 +795,8 @@ class PushService {
             fcmToken: _fcmToken,
             platform: _platformName(),
             entitlement: entitlement,
+            licenseId: binding?.licenseId,
+            licenseDeviceId: binding?.licenseDeviceId,
           );
           registered.add(email);
         } on PushSubscriptionRequiredException catch (e) {

@@ -24,6 +24,9 @@ class _FakeExt extends AppExtension {
     this.name,
     this.closed,
     this.closeFail = false,
+    this.binding,
+    this.draftCalls,
+    this.draftFail = false,
   });
 
   @override
@@ -68,6 +71,24 @@ class _FakeExt extends AppExtension {
 
   /// `onComposeClosed` 抛不抛 —— 用来验注册表吞异常、不影响后面的扩展。
   final bool closeFail;
+
+  /// 本机订阅的设备身份（`AppExtension.pushLicenseBinding`），null = 没有订阅。
+  final ({String licenseId, String licenseDeviceId})? binding;
+
+  /// `onDraftChanged` 被调用时往里记自己的 id（null = 不记账）。
+  final List<String>? draftCalls;
+
+  /// `onDraftChanged` 抛不抛 —— 同样验注册表吞异常。
+  final bool draftFail;
+
+  @override
+  ({String licenseId, String licenseDeviceId})? pushLicenseBinding() => binding;
+
+  @override
+  Future<void> onDraftChanged() async {
+    draftCalls?.add(id);
+    if (draftFail) throw StateError('$id 处理草稿事件失败');
+  }
 
   @override
   String? get appDisplayName => name;
@@ -544,6 +565,57 @@ void main() {
       expect(closed, hasLength(1), reason: '前一个抛错不能挡掉后一个');
       expect(closed.single.profileId, 'p1');
       expect(closed.single.draftUid, 'uid-1', reason: '参数要原样传下去');
+    });
+  });
+
+  group('云草稿推送', () {
+    /// 公开版（空注册表）恒为 null —— 核心的注册请求因此与没有这条接缝时
+    /// 逐字相同，老中转端也不受影响。
+    test('pushLicenseBinding：空注册表是 null', () {
+      expect(AppExtensionRegistry.instance.pushLicenseBinding, isNull);
+    });
+
+    test('pushLicenseBinding：按注册顺序取第一个非 null', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('no-sub'),
+        _FakeExt(
+          'pro-a',
+          binding: (licenseId: 'CM-A', licenseDeviceId: 'dev-a'),
+        ),
+        _FakeExt(
+          'pro-b',
+          binding: (licenseId: 'CM-B', licenseDeviceId: 'dev-b'),
+        ),
+      ]);
+      final binding = AppExtensionRegistry.instance.pushLicenseBinding;
+      expect(binding?.licenseId, 'CM-A', reason: '设备身份只能有一个');
+      expect(binding?.licenseDeviceId, 'dev-a');
+    });
+
+    /// 与 [notifyComposeClosed] 同一纪律：核心是 `unawaited` 调它，这里
+    /// 必须立刻完成、什么都不做，也不能抛。
+    test('notifyDraftChanged：空注册表是安全的空操作', () async {
+      await AppExtensionRegistry.instance.notifyDraftChanged();
+    });
+
+    test('notifyDraftChanged：逐个调用，一个抛错不影响另一个', () async {
+      final calls = <String>[];
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('bad', draftFail: true),
+        _FakeExt('good', draftCalls: calls),
+      ]);
+      await AppExtensionRegistry.instance.notifyDraftChanged();
+      expect(calls, <String>['good'], reason: '前一个抛错不能挡掉后一个');
+    });
+
+    test('notifyDraftChanged：按注册顺序串行', () async {
+      final calls = <String>[];
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a', draftCalls: calls),
+        _FakeExt('b', draftCalls: calls),
+      ]);
+      await AppExtensionRegistry.instance.notifyDraftChanged();
+      expect(calls, <String>['a', 'b']);
     });
   });
 

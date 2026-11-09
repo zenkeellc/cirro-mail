@@ -91,6 +91,11 @@ class RelayClient {
   ///
   /// [entitlement] 非空时作为 `X-Push-Entitlement` 头发出去；中转端那个实例位
   /// 开了订阅校验就靠它，没开的话它被忽略。
+  ///
+  /// [licenseId] / [licenseDeviceId] 是本机 Pro 订阅的设备身份，非空时连同
+  /// 请求体一起带给中转端 —— 它据此给这台设备打上 `license_id`，云草稿的
+  /// 跨设备事件（`kind=draft_changed`）按 license 路由。**不传时请求体与旧
+  /// 形状逐字相同**：老中转端、开源版都不受影响。
   Future<void> register({
     required String instanceId,
     required String deviceToken,
@@ -99,6 +104,8 @@ class RelayClient {
     required String fcmToken,
     required String platform,
     String? entitlement,
+    String? licenseId,
+    String? licenseDeviceId,
   }) async {
     await _post(
       '/register',
@@ -109,6 +116,9 @@ class RelayClient {
         'mailboxEmail': mailboxEmail,
         'token': fcmToken,
         'platform': platform,
+        if (licenseId != null && licenseId.isNotEmpty) 'licenseId': licenseId,
+        if (licenseDeviceId != null && licenseDeviceId.isNotEmpty)
+          'licenseDeviceId': licenseDeviceId,
       },
       entitlement: entitlement,
     );

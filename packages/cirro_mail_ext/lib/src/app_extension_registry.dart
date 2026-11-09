@@ -153,6 +153,45 @@ class AppExtensionRegistry {
     }
   }
 
+  // ---- 云草稿推送（license 绑定 / 跨设备事件） ----
+
+  /// 本机订阅的设备身份（见 [AppExtension.pushLicenseBinding]），按注册顺序
+  /// 取**第一个非 null**。
+  ///
+  /// 与 [appDisplayName] 同一口径：设备身份只能有一个，两个实现同时生效会让
+  /// 中转端把云草稿事件路由到哪台设备变成一件没人答得上来的事。
+  ///
+  /// **单个扩展抛异常不拖累别的扩展**（与 [managedPushConfig] 同一条纪律）：
+  /// 推送登记是尽力而为的东西，一条坏实现按「没有绑定」处理，注册请求退回
+  /// 与没有这条接缝时逐字相同的形状。
+  ({String licenseId, String licenseDeviceId})? get pushLicenseBinding {
+    for (final ext in _extensions) {
+      try {
+        final binding = ext.pushLicenseBinding();
+        if (binding != null) return binding;
+      } catch (e) {
+        debugPrint('扩展 ${ext.id} 的推送订阅身份读取失败：$e');
+      }
+    }
+    return null;
+  }
+
+  /// 逐个通知扩展「云草稿有变化」（见 [AppExtension.onDraftChanged]）。
+  ///
+  /// 与 [notifyComposeClosed] 同一套纪律：**逐个 await**、单个扩展抛错不影响
+  /// 其它扩展（异常在这里吞掉、只留一行日志）。核心在拿到静默推送的那一刻
+  /// 用 `unawaited` 发起它 —— 钩子不许拖住 FCM 回调。空注册表（公开版）时
+  /// 立刻完成、什么都不做。
+  Future<void> notifyDraftChanged() async {
+    for (final ext in _extensions) {
+      try {
+        await ext.onDraftChanged();
+      } catch (e) {
+        debugPrint('扩展 ${ext.id} 的 onDraftChanged 失败：$e');
+      }
+    }
+  }
+
   // ---- 路由 / UI ----
 
   /// 所有扩展的路由，按注册顺序拼接。
