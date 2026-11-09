@@ -142,18 +142,34 @@ class AppDatabase extends _$AppDatabase {
           if (from < 6) {
             // v5 → v6：草稿的跨设备稳定身份 + 删除墓碑。
             //
-            // 与前几条不同，这一段**有回填**：既有草稿行没有 `uid`，而云端
-            // 认草稿全靠它，空串推上去会让所有设备都当成同一份。回填在一个
-            // `user_version` 保护的升级里只做一次（两个 isolate 只有一个能
-            // 拿到写锁执行）；草稿行通常只有几十条，逐行生成 UUID 也远在
-            // 5 秒的 busy_timeout 之内，不会撑爆。
+            // **这一段必须可重入。** drift 的 `onUpgrade` 不在事务里执行，
+            // `user_version` 是 `beforeOpen` 整个跑完之后才写的
+            // （`setSchemaVersion` 在迁移成功后才调用）：
+            //
+            // - 进程（或两个 isolate 中的一个）在迁移中途被杀，库里只留下
+            //   一部分 DDL，而 `user_version` 仍是 5；下次启动会**从同一段
+            //   开头重跑**；
+            // - 于是无条件的 `addColumn` 第二次就撞
+            //   `duplicate column name: uid`，并且**每次启动**都撞 —— 库永远
+            //   打不开。
+            //
+            // 所以这里每个 DDL 都要先判存在：列查 `PRAGMA table_info(drafts)`，
+            // 表查 `sqlite_master`。回填与唯一索引本来就幂等（只填
+            // `uid = ''` 的行、`CREATE ... IF NOT EXISTS`），保留。
             //
             // 回填用 `customSelect`/`customUpdate` 而不是 `select(drafts)`：
             // 迁移代码不该依赖**当前** `Drafts` 的表定义（以后再加列时，
             // 生成的行类会去读升级前还不存在的列）。
-            await m.addColumn(drafts, drafts.uid);
-            await m.addColumn(drafts, drafts.rev);
-            await m.createTable(draftTombstones);
+            final draftColumns = await _columnsOf('drafts');
+            if (!draftColumns.contains('uid')) {
+              await m.addColumn(drafts, drafts.uid);
+            }
+            if (!draftColumns.contains('rev')) {
+              await m.addColumn(drafts, drafts.rev);
+            }
+            if (!await _hasTable('draft_tombstones')) {
+              await m.createTable(draftTombstones);
+            }
             const uuid = Uuid();
             final legacy = await customSelect(
               'SELECT id FROM drafts WHERE uid = ?',
@@ -186,4 +202,22 @@ class AppDatabase extends _$AppDatabase {
           await customStatement('PRAGMA foreign_keys = ON');
         },
       );
+
+  /// `PRAGMA table_info(<table>)` 里的列名集合。迁移里判「这一列加过没有」用。
+  ///
+  /// 表名只来自本文件的字面量，不接受外部输入；表还不存在时返回空集合
+  /// （这时 `addColumn` 本来也会失败，由调用方决定怎么处理）。
+  Future<Set<String>> _columnsOf(String table) async {
+    final rows = await customSelect('PRAGMA table_info($table)').get();
+    return <String>{for (final row in rows) row.read<String>('name')};
+  }
+
+  /// `sqlite_master` 里有没有这张表。迁移里判「墓碑表建过没有」用。
+  Future<bool> _hasTable(String name) async {
+    final rows = await customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      variables: [Variable.withString(name)],
+    ).get();
+    return rows.isNotEmpty;
+  }
 }

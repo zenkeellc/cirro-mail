@@ -260,12 +260,12 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
     List<String> attachmentPaths = const <String>[],
     int? id,
   }) {
+    // 这里**不预先 mint uid**：新建分支在 insert 前才生成，更新分支用原行的
+    // uid（只有迁移没回填的空行才补一个）。先 mint 再覆盖的写法看上去等价，
+    // 但「uid 永不变」就成了「靠后面那行 copyWith 兜住」，任何提前 return
+    // 都可能把新身份写进老行。
     final companion = DraftsCompanion.insert(
       profileId: profileId,
-      // 只在新建时生效；更新分支会用 `copyWith` 换回原行的 uid（见下）——
-      // 身份永不变，整行重写也不能把它刷掉。
-      uid: Value(_uuid.v4()),
-      rev: const Value(1),
       accountEmail: Value(accountEmail),
       recipientsJson: Value(recipientsJson),
       subject: Value(subject),
@@ -291,7 +291,9 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
         return id;
       });
     }
-    return into(drafts).insert(companion);
+    return into(drafts).insert(
+      companion.copyWith(uid: Value(_uuid.v4()), rev: const Value(1)),
+    );
   }
 
   Future<DbDraft?> findDraft(int id) =>
@@ -299,17 +301,28 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
 
   /// 按跨设备身份找草稿（同步层用）。[uid] 全局唯一，仍带 `profileId` 是
   /// 为了**防御性收窄**：冲突副本/远端应用都只会落在同一个实例里。
-  Future<DbDraft?> findDraftByUid(String profileId, String uid) =>
-      (select(drafts)
-            ..where((t) => t.profileId.equals(profileId) & t.uid.equals(uid)))
-          .getSingleOrNull();
+  ///
+  /// 空 `uid` 直接当找不到：空串是「迁移还没回填」的脏行，不是任何一份
+  /// 草稿的身份。放它进去匹配，调用方会拿空串命中任意一条脏行（唯一索引
+  /// 的部分谓词 `WHERE uid != ''` 也放过多条空串）。
+  Future<DbDraft?> findDraftByUid(String profileId, String uid) async {
+    if (uid.isEmpty) return null;
+    return (select(drafts)
+          ..where((t) => t.profileId.equals(profileId) & t.uid.equals(uid)))
+        .getSingleOrNull();
+  }
 
   /// 全部草稿，**跨实例**，按最近修改倒序。
   ///
   /// 供同步层首轮全量推送用（`listAll()`）：这里不按 `profileId` 过滤，
   /// 因为一次推送要覆盖所有已登录实例。同毫秒时用自增 `id` 兜底，保证
   /// 两次查询顺序稳定。
+  ///
+  /// **跳过空 `uid` 的脏行**：那是「迁移还没回填」的历史行，云端认不出它
+  /// 们，推上去只会变成一堆无法区分的草稿。它们留在本地，等下一次
+  /// `saveDraft` / 回填补上身份。
   Future<List<DbDraft>> listAllDrafts() => (select(drafts)
+        ..where((t) => t.uid.isNotValue(''))
         ..orderBy([
           (t) => OrderingTerm(expression: t.updatedAt, mode: OrderingMode.desc),
           (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
@@ -479,7 +492,12 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
   /// 走它）—— 在这里收口，就不会在某条路径上漏删标记、留下一条永远点不开的
   /// 侧栏行；也不会漏写墓碑、让同步层把「本机删了」当成「还没见过」。
   ///
-  /// 墓碑的 `rev = 草稿删除前的 rev + 1`（删除本身是一次内容变更）。
+  /// 墓碑的 `rev = 草稿删除前的 rev + 1`（删除本身是一次内容变更）；同一个
+  /// `(profileId, uid)` 已有墓碑时取**两者中较大的 rev** —— 删除 → 远端/冲突
+  /// 副本把同一 uid 写回来 → 再删，第二次可能是基于一个更旧的副本（rev 更小）。
+  /// 墓碑是「云端该删到哪一版」的账本，只前进不后退，否则会把云端已经见过
+  /// 的高版本墓碑降级成一个旧的删除。
+  ///
   /// 返回值给同步层发云端墓碑用；**调用方忽略返回值不影响**本地行为，所以
   /// UI 那几处 `await dao.deleteDraft(id)` 不用改。
   ///
@@ -497,21 +515,29 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
           await (delete(drafts)..where((t) => t.id.equals(id))).go();
           return null;
         }
+        final existing = await (select(draftTombstones)
+              ..where((t) =>
+                  t.profileId.equals(row.profileId) & t.uid.equals(row.uid)))
+            .getSingleOrNull();
+        final nextRev = row.rev + 1;
+        // 已有墓碑的 rev 更大时保留它：这条删除不能把账本改回旧版本。
+        final rev =
+            existing != null && existing.rev > nextRev ? existing.rev : nextRev;
         final now = DateTime.now().toUtc();
         final tombstone = DraftTombstonesCompanion.insert(
           profileId: row.profileId,
           uid: row.uid,
-          rev: row.rev + 1,
+          rev: rev,
           deletedAt: now,
         );
-        // 同一 (profileId, uid) 可能已有墓碑：（删除 → 远端/冲突副本又把同一
-        // uid 写回来 → 再删）。用 upsert 保留最新一次删除的 rev 与时间。
+        // 同一 (profileId, uid) 可能已有墓碑：用 upsert 保留这次算出来的
+        // rev（= max(旧墓碑, 本次删除 + 1)）与最新的删除时间。
         await into(draftTombstones).insertOnConflictUpdate(tombstone);
         await (delete(drafts)..where((t) => t.id.equals(id))).go();
         return DbDraftTombstone(
           profileId: row.profileId,
           uid: row.uid,
-          rev: row.rev + 1,
+          rev: rev,
           deletedAt: now,
         );
       });

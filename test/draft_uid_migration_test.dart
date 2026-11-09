@@ -35,8 +35,28 @@ CREATE TABLE compose_pages (
   draft_id INTEGER NOT NULL,
   opened_at INTEGER NOT NULL,
   PRIMARY KEY (draft_id)
-)
+);
 ''';
+
+/// v6 的 DDL 全部做完、却还没写 `user_version` 时库里的样子（进程正好在
+/// 最后一步之前被杀）。列 / 墓碑表 / 唯一索引的形状与 `onCreate` 逐字一致。
+const String _v6DdlAfterInterruption = '''
+ALTER TABLE drafts ADD COLUMN uid TEXT NOT NULL DEFAULT '';
+ALTER TABLE drafts ADD COLUMN rev INTEGER NOT NULL DEFAULT 1;
+CREATE TABLE draft_tombstones (
+  profile_id TEXT NOT NULL,
+  uid TEXT NOT NULL,
+  rev INTEGER NOT NULL,
+  deleted_at INTEGER NOT NULL,
+  PRIMARY KEY (profile_id, uid)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS drafts_uid_unique
+  ON drafts (uid) WHERE uid != '';
+''';
+
+const String _insertV5DraftSql = 'INSERT INTO drafts '
+    '(profile_id, account_email, subject, content, updated_at) '
+    'VALUES (?, ?, ?, ?, ?)';
 
 /// 从 `PRAGMA index_list` 里捞某条索引的形状（`unique` / `partial`）。
 Future<List<Object?>> _indexShape(AppDatabase db, String name) async {
@@ -175,6 +195,31 @@ void main() {
       expect(all.first.id, b, reason: '按最近修改倒序（同秒用 id 倒序兜底）');
     });
 
+    test('listAllDrafts 跳过空 uid 脏行；findDraftByUid 对空 uid 返回 null', () async {
+      final dao = db.localDao;
+      final clean = await dao.saveDraft(
+        profileId: 'p1',
+        accountEmail: '',
+        recipientsJson: '',
+        subject: '有身份',
+        content: '',
+      );
+      // 手工造一条「迁移没回填」的脏行（uid 走列默认值，空串）。
+      final dirty = await db.into(db.drafts).insert(DraftsCompanion.insert(
+            profileId: 'p1',
+            updatedAt: DateTime.now().toUtc(),
+          ));
+      final dirtyRow = (await dao.findDraft(dirty))!;
+      expect(dirtyRow.uid, isEmpty);
+
+      // 空串不是身份：不能拿它命中脏行。
+      expect(await dao.findDraftByUid('p1', ''), isNull);
+      // 首轮全量推送不带脏行，干净的那条照常出现。
+      final all = await dao.listAllDrafts();
+      expect(all.map((d) => d.id), <int>[clean]);
+      expect(all.map((d) => d.id), isNot(contains(dirty)));
+    });
+
     test('唯一索引：非空 uid 不能重复；空串可以有多条（部分索引）', () async {
       DraftsCompanion row(String uid) => DraftsCompanion.insert(
             profileId: 'p1',
@@ -231,9 +276,80 @@ void main() {
       expect(stored.single.deletedAt.isAfter(DateTime.utc(2000)), isTrue);
     });
 
+    test('deleteDraft 墓碑 rev 取 max：已有墓碑更高时，旧副本不能把它降级', () async {
+      final dao = db.localDao;
+      final id = await dao.saveDraft(
+        profileId: 'p1',
+        accountEmail: '',
+        recipientsJson: '',
+        subject: 's',
+        content: 'x',
+      );
+      // 把行的 rev 推到 3（两次按列更新）：删除时算出来的是 3 + 1 = 4。
+      await dao.updateDraftFields(id, subject: 's2');
+      await dao.updateDraftFields(id, subject: 's3');
+      final row = (await dao.findDraft(id))!;
+      expect(row.rev, 3);
+
+      // 云端已经见过 rev = 5 的墓碑（同一 uid 在别处删过更晚的版本）。
+      await db.into(db.draftTombstones).insert(DraftTombstonesCompanion.insert(
+            profileId: 'p1',
+            uid: row.uid,
+            rev: 5,
+            deletedAt: DateTime.utc(2026, 1, 1),
+          ));
+
+      final tombstone = await dao.deleteDraft(id);
+      expect(tombstone, isNotNull);
+      expect(tombstone!.rev, 5, reason: '4 < 5：账本只前进，不能退回旧版本');
+      final stored = (await db.select(db.draftTombstones).get()).single;
+      expect(stored.rev, 5);
+      expect(stored.deletedAt.isAfter(DateTime.utc(2026, 1, 1)), isTrue,
+          reason: '删除时间仍然更新成这一次');
+    });
+
+    test('deleteDraft 墓碑 rev 取 max：行比已有墓碑新时，用行 rev + 1', () async {
+      final dao = db.localDao;
+      final id = await dao.saveDraft(
+        profileId: 'p1',
+        accountEmail: '',
+        recipientsJson: '',
+        subject: 's',
+        content: 'x',
+      );
+      await dao.updateDraftFields(id, subject: 's2');
+      final row = (await dao.findDraft(id))!;
+      expect(row.rev, 2);
+
+      await db.into(db.draftTombstones).insert(DraftTombstonesCompanion.insert(
+            profileId: 'p1',
+            uid: row.uid,
+            rev: 2,
+            deletedAt: DateTime.utc(2026, 1, 1),
+          ));
+
+      final tombstone = await dao.deleteDraft(id);
+      expect(tombstone!.rev, 3, reason: '这次删除基于 rev 2，删除后是 3');
+      expect((await db.select(db.draftTombstones).get()).single.rev, 3);
+    });
+
     test('deleteDraft 行不存在：返回 null（幂等），不写墓碑', () async {
       expect(await db.localDao.deleteDraft(999999), isNull);
       expect(await db.select(db.draftTombstones).get(), isEmpty);
+    });
+
+    test('deleteProfileLocal 连墓碑一起清（只清这个实例）', () async {
+      final dao = db.localDao;
+      final p1 = await dao.createComposeDraft(profileId: 'p1');
+      final p2 = await dao.createComposeDraft(profileId: 'p2');
+      await dao.deleteDraft(p1);
+      await dao.deleteDraft(p2);
+      expect(await db.select(db.draftTombstones).get(), hasLength(2));
+
+      await dao.deleteProfileLocal('p1');
+      final left = await db.select(db.draftTombstones).get();
+      expect(left, hasLength(1));
+      expect(left.single.profileId, 'p2', reason: '别把另一个实例的账本一起清了');
     });
 
     test('删实例（cascade）连墓碑一起清', () async {
@@ -256,15 +372,11 @@ void main() {
           setup: (raw) {
             raw.execute(_v5DraftsDdl);
             raw.execute(
-              'INSERT INTO drafts '
-              '(profile_id, account_email, subject, content, updated_at) '
-              'VALUES (?, ?, ?, ?, ?)',
+              _insertV5DraftSql,
               ['p1', 'me@example.com', '旧草稿甲', 'x', 1762650000],
             );
             raw.execute(
-              'INSERT INTO drafts '
-              '(profile_id, account_email, subject, content, updated_at) '
-              'VALUES (?, ?, ?, ?, ?)',
+              _insertV5DraftSql,
               ['p1', 'me@example.com', '旧草稿乙', 'y', 1762650060],
             );
             // 关键：声称自己是 v5，drift 才会走 `onUpgrade` 而不是 `onCreate`。
@@ -294,6 +406,22 @@ void main() {
       expect(await _indexShape(db, 'drafts_uid_unique'), <Object?>[1, 1]);
     });
 
+    test('升级库的唯一索引真生效：再插一条同 uid 抛 UNIQUE', () async {
+      final existing = (await db.select(db.drafts).get()).first.uid;
+      await expectLater(
+        db.into(db.drafts).insert(
+              DraftsCompanion.insert(
+                profileId: 'p1',
+                uid: Value(existing),
+                updatedAt: DateTime.now().toUtc(),
+              ),
+            ),
+        throwsA(predicate((e) => e.toString().contains('UNIQUE'))),
+      );
+      // 冲突那行没写进去。
+      expect(await db.select(db.drafts).get(), hasLength(2));
+    });
+
     test('升级后的行能正常走 DAO：删掉时墓碑带着回填出来的 uid', () async {
       final dao = db.localDao;
       final old = (await db.select(db.drafts).get()).first;
@@ -302,6 +430,82 @@ void main() {
       expect(tombstone!.uid, old.uid);
       expect(tombstone.rev, old.rev + 1);
       expect(await db.select(db.drafts).get(), hasLength(1));
+    });
+  });
+
+  // 进程（或另一个 isolate）在 `onUpgrade` 中途被杀：`user_version` 还是 5，
+  // 库里却已经有一部分 v6 的 DDL。下次启动会从同一段开头重跑 —— 这些用例
+  // 就是那两个「半完成」状态的快照，要求重跑不抛、回填与索引照做。
+  group('中断后重试（onUpgrade 可重入）', () {
+    test('已有 uid 列、user_version 仍是 5：打开不抛，回填与索引照做', () async {
+      final db = AppDatabase.forTesting(
+        NativeDatabase.memory(
+          setup: (raw) {
+            raw.execute(_v5DraftsDdl);
+            // 上次死在第一条 addColumn 之后：uid 有了，rev / 墓碑表还没有。
+            raw.execute(
+              "ALTER TABLE drafts ADD COLUMN uid TEXT NOT NULL DEFAULT ''",
+            );
+            raw.execute(
+              _insertV5DraftSql,
+              ['p1', 'me@example.com', '旧草稿甲', 'x', 1762650000],
+            );
+            raw.execute(
+              _insertV5DraftSql,
+              ['p1', 'me@example.com', '旧草稿乙', 'y', 1762650060],
+            );
+            raw.execute('PRAGMA user_version = 5');
+          },
+        ),
+      );
+      addTearDown(db.close);
+
+      // 能正常打开、能查，就证明 addColumn 没有二次执行（否则这里是
+      // `duplicate column name: uid`）。
+      final rows = await db.select(db.drafts).get();
+      expect(rows, hasLength(2));
+      for (final r in rows) {
+        expect(r.uid, isNotEmpty);
+        expect(r.rev, 1, reason: '补上的 rev 列走默认值 1，回填也写 1');
+      }
+      expect(rows[0].uid, isNot(rows[1].uid));
+      expect(await _tableExists(db, 'draft_tombstones'), isTrue);
+      expect(await _indexShape(db, 'drafts_uid_unique'), <Object?>[1, 1]);
+    });
+
+    test('DDL 全做完、user_version 仍为 5：再跑一遍不炸，已回填的 uid 不变', () async {
+      const keptUid = 'migrated-uid-kept';
+      final db = AppDatabase.forTesting(
+        NativeDatabase.memory(
+          setup: (raw) {
+            raw.execute(_v5DraftsDdl);
+            raw.execute(_v6DdlAfterInterruption);
+            // 上次已经回填过一行、另一行还没轮到就被杀了。
+            raw.execute(
+              'INSERT INTO drafts '
+              '(profile_id, account_email, subject, content, updated_at, uid, rev) '
+              'VALUES (?, ?, ?, ?, ?, ?, ?)',
+              ['p1', 'me@example.com', '已回填', 'x', 1762650000, keptUid, 1],
+            );
+            raw.execute(
+              _insertV5DraftSql,
+              ['p1', 'me@example.com', '没回填', 'y', 1762650060],
+            );
+            raw.execute('PRAGMA user_version = 5');
+          },
+        ),
+      );
+      addTearDown(db.close);
+
+      final rows = await db.select(db.drafts).get();
+      expect(rows, hasLength(2), reason: '重跑不能丢行、也不能重复建表');
+      expect(rows.map((r) => r.uid), contains(keptUid),
+          reason: '已经有 uid 的行不能再改身份');
+      expect(rows.every((r) => r.uid.isNotEmpty), isTrue,
+          reason: '上次没轮到的行这次回填');
+      expect(rows.every((r) => r.rev == 1), isTrue);
+      // 唯一索引仍然只有一条（`CREATE ... IF NOT EXISTS`）。
+      expect(await _indexShape(db, 'drafts_uid_unique'), <Object?>[1, 1]);
     });
   });
 }
