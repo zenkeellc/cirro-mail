@@ -532,7 +532,17 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       // 旁边的列表/预览差 4px，切来切去标题会上下跳。窄屏仍是整屏的 AppBar。
       appBar: compact
           ? AppBar(
-              title: Text(title),
+              // 窄屏标题同样**单行省略**：reply/replyAll 的标题现在是主题
+              // 本身（「答复 xxx」/「回复 xxx」），主题可以很长 —— 376 宽的
+              // AppBar 里标题区只剩一百多像素，不限制的话文字会被硬裁：
+              // 既没有省略号（用户不知道后面还有字），行高还会被撑成多行、
+              // 与两侧按钮挤在一起。宽屏那一支（`PaneHeader`）一直是
+              // `maxLines: 1` + ellipsis，两处口径必须一致。
+              title: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               leading: closeButton,
               actions: actions,
             )

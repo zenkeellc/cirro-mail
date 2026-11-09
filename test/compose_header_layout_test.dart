@@ -57,11 +57,11 @@ const MailboxAccount _boxA9 = MailboxAccount(
 );
 
 /// 被答复/转发的原信（回复预填要用它的主题与正文）。
-MailRow replyMail() => MailRow(
+MailRow replyMail({String subject = '主题'}) => MailRow(
       emailId: 7,
       profileId: 'p1',
       accountId: 3,
-      subject: '主题',
+      subject: subject,
       sendEmail: 'alice@example.com',
       name: 'Alice',
       mailboxEmail: 'me@a.example',
@@ -337,6 +337,12 @@ void main() {
       find.descendant(of: header, matching: find.text(l10n.reply)),
       findsNothing,
     );
+    // 宽屏这一支一直是单行省略；它是窄屏那一支的参照口径。
+    final wideTitle = tester.widget<Text>(
+      find.descendant(of: header, matching: find.text('答复 主题')),
+    );
+    expect(wideTitle.maxLines, 1);
+    expect(wideTitle.overflow, TextOverflow.ellipsis);
 
     // 标题读的就是 `state.subject`：用户改主题要跟着变。
     await tester.enterText(
@@ -417,6 +423,50 @@ void main() {
       tester.getTopLeft(f.subjectInput).dx,
       tester.getTopLeft(f.recipientInput).dx,
       reason: '窄屏下三行的对齐同样不能垮',
+    );
+  });
+
+  testWidgets('380 宽 + 超长答复主题：窄屏标题单行省略，不硬裁也不撑高', (tester) async {
+    // 窄屏判据是 `Breakpoints.compactOf` 读的窗口宽（< 600），所以改的是
+    // `tester.view.physicalSize`，不是给标题外面套 SizedBox。
+    tester.view.physicalSize = const Size(380, 760);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    // 长到在 380 宽里一定放不下：`_title` 对 reply 返回的就是这个主题。
+    const rawSubject =
+        '这是一封标题特别特别长的邮件用来验证窄屏撰写页顶栏的标题只占一行并且带省略号而不是被硬裁掉';
+    await pumpCompose(
+      tester,
+      args: ComposeArgs(
+        mode: ComposeMode.reply,
+        mail: replyMail(subject: rawSubject),
+      ),
+    );
+
+    final l10n = AppLocalizations.of(tester.element(find.byType(ComposeScreen)));
+    final expected = l10n.replySubject(rawSubject);
+
+    final appBar = find.byType(AppBar);
+    final title = find.descendant(of: appBar, matching: find.text(expected));
+    expect(title, findsOneWidget, reason: '窄屏的标题是那个 56 高的 AppBar');
+
+    // 主诉：标题必须**声明**单行 + 省略号。只断言「文字还在」是抓不到
+    // 「文字被裁掉、后面什么都没有」这个形状的（Text 不超范围也能找到）。
+    final text = tester.widget<Text>(title);
+    expect(text.maxLines, 1, reason: '不限制行数的话长主题会把 AppBar 挤成多行');
+    expect(
+      text.overflow,
+      TextOverflow.ellipsis,
+      reason: '被截断时必须给省略号，否则用户不知道后面还有字',
+    );
+
+    // 旁证：真按一行排（行高不会涨到多行的 100+），且没有 RenderFlex 溢出。
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getSize(title).height,
+      lessThanOrEqualTo(32),
+      reason: '标题盒子高度应当是一行（约 20–28），多行排版会明显更高',
     );
   });
 
