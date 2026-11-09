@@ -150,7 +150,10 @@ class _SuggestViewState extends State<SuggestView> {
             !widget.isPage && constraints.maxWidth >= _twoColumnMinWidth;
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            // 头部只留一行（标题 + 信息 / 重新分析 / 关闭），不再单独占一行
+            // 「已阅读：…」——停靠面板的高度是抢正文来的，2026-11-09 起把那段
+            // 信息收进标题旁那颗 ⓘ 的 tooltip（spec §2.1）。
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             // 视图唯一的状态监听点：面板据此决定画哪一块（spec §2.4）。
             child: ValueListenableBuilder<SuggestStage>(
               valueListenable: _session.stage,
@@ -161,10 +164,8 @@ class _SuggestViewState extends State<SuggestView> {
                   children: <Widget>[
                     if (topRow != null) ...<Widget>[
                       topRow,
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                     ],
-                    ..._header(context, l10n),
-                    const SizedBox(height: 8),
                     // 两种形态都是「抬头固定、内容区自己滚」：停靠面板高度被
                     // 父级夹在 240–420 之间（详情页定的），整页则是整屏，
                     // 靠 Expanded 把剩余高度交给滚动区。
@@ -183,8 +184,13 @@ class _SuggestViewState extends State<SuggestView> {
     );
   }
 
-  /// 抬头那一行：标题（停靠面板有、整页没有）、弹性空隙、「重新分析」（结果
-  /// 态常驻，spec §4.5）、关闭（停靠面板的 ×）。三样都没有时整行不画。
+  /// 头部只留**一行**：标题（停靠面板有、整页交给 AppBar）、AI 看到了什么
+  /// （ⓘ tooltip）、重新分析（结果态常驻，spec §4.5）、关闭（停靠面板的 ×）。
+  ///
+  /// 2026-11-09 精简：原来标题下面还有一行「已阅读：主题、发件人、正文 N 字」
+  /// 和一条分隔线，把停靠面板（高度只有阅读区的 45%）的正文区压掉一截。
+  /// 它的价值只是「解释建议为什么可能跑偏」，改成 ⓘ 的 tooltip 后**高度归零**，
+  /// 想知道的用户悬停/长按仍能看到（截断、剥引用、附件数也都在里面）。
   Widget? _topRow(
     BuildContext context,
     AppLocalizations l10n,
@@ -192,7 +198,11 @@ class _SuggestViewState extends State<SuggestView> {
   ) {
     final showAgain = stage == SuggestStage.done;
     final showClose = widget.onClose != null;
-    if (!widget.showTitle && !showAgain && !showClose) return null;
+    // ⓘ 要等 `SuggestInput` 组装完才有内容（补正文那一态还没有）。
+    final hasInfo = _session.inputOrNull != null;
+    if (!widget.showTitle && !showAgain && !showClose && !hasInfo) {
+      return null;
+    }
     final theme = Theme.of(context);
     return Row(
       children: <Widget>[
@@ -208,13 +218,17 @@ class _SuggestViewState extends State<SuggestView> {
           )
         else
           const Spacer(),
+        if (hasInfo) _infoIcon(context, l10n),
         // 失败态里那个「重试」是同一个动作、另一个位置（结果区里）。
         if (showAgain)
-          TextButton.icon(
+          IconButton(
             key: const ValueKey('ai-suggest-again'),
             onPressed: _session.restart,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: Text(l10n.aiSuggestReanalyze),
+            icon: const Icon(Icons.refresh, size: 18),
+            tooltip: l10n.aiSuggestReanalyze,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            padding: EdgeInsets.zero,
           ),
         if (showClose)
           IconButton(
@@ -222,23 +236,23 @@ class _SuggestViewState extends State<SuggestView> {
             onPressed: widget.onClose,
             icon: const Icon(Icons.close, size: 18),
             tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            padding: EdgeInsets.zero,
           ),
       ],
     );
   }
 
-  /// 抬头：**AI 看到了什么**（spec §4.2）。三个态都有，最多两行。
+  /// 「AI 看到了什么」的 ⓘ。**不占高度**，内容与原抬头那两行逐字一致。
   ///
   /// 「主题、发件人」这几个字是固定的、**不进 `.arb`** —— 它们是代码定下的
-  /// 字段名单（附件只给名字不给内容，是 §5.4 的策略，不是文案）。要本地化的
-  /// 只有 `{chars}`（中英语序不同），它必须走占位参数。
-  List<Widget> _header(BuildContext context, AppLocalizations l10n) {
-    // 抬头**常驻**（spec §4.2）。唯一不画的时候是「这一段还没组装出来」——
-    // 也就是补正文那一态（`_input` 要等 `_refresh()` 回来才算）。
-    // **别在这里读 `_session.input`**：它带 `!`，那一态会直接抛。
-    final input = _session.inputOrNull;
-    if (input == null) return const <Widget>[];
+  /// 字段名单（附件只给名字不给内容，是 spec §5.4 的策略，不是文案）。要本地化
+  /// 的只有 `{chars}`（中英语序不同），它必须走占位参数。
+  Widget _infoIcon(BuildContext context, AppLocalizations l10n) {
     final theme = Theme.of(context);
+    final input = _session.inputOrNull;
+    if (input == null) return const SizedBox.shrink();
     final extras = <String>[
       if (input.attachmentCount > 0)
         l10n.aiSuggestAttachments(input.attachmentCount),
@@ -247,21 +261,22 @@ class _SuggestViewState extends State<SuggestView> {
       // 长信取的是「开头 + 结尾」，只报「前 N 字」已经不成立了。
       if (input.truncated) l10n.aiSuggestTruncated(input.originalChars),
     ];
-    return <Widget>[
-      Text(
-        l10n.aiSuggestReading(input.bodyChars),
-        key: const ValueKey('ai-suggest-header'),
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-      ),
-      if (extras.isNotEmpty)
-        Text(
-          extras.join(' · '),
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    final message = <String>[
+      l10n.aiSuggestReading(input.bodyChars),
+      if (extras.isNotEmpty) extras.join(' · '),
+    ].join('\n');
+    return Tooltip(
+      message: message,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Icon(
+          Icons.info_outline,
+          key: const ValueKey('ai-suggest-info'),
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
         ),
-      const Divider(height: 16),
-    ];
+      ),
+    );
   }
 
   // ---------------------------------------------------------------- 两列
@@ -319,21 +334,87 @@ class _SuggestViewState extends State<SuggestView> {
     SuggestStage stage,
   ) {
     final parsed = _session.parsed;
-    final List<Widget> children;
     if (stage == SuggestStage.done && parsed is SuggestionParsed) {
-      final summary =
-          _summaryChildren(context, l10n, parsed.suggestion, withLabel: widget.isPage);
-      final actions =
-          _actionsChildren(context, l10n, parsed.suggestion, withLabel: widget.isPage);
-      children = <Widget>[
-        ...summary,
-        if (summary.isNotEmpty) const SizedBox(height: 8),
-        ...actions,
-      ];
-    } else {
-      children = _statusChildren(context, l10n, stage);
+      // 停靠面板的窄形态：摘要占左边（可滚动），动作收成**右侧一条图标栏**
+      // （图标 + tooltip）—— 原来动作卡片跟在摘要下面，七项时用户要先滚过
+      // 一大段摘要才看得到按钮，而停靠面板本来就只有阅读区 45% 的高度。
+      // 整页形态（手机）仍用卡片：触屏没有 hover，tooltip 不是好的唯一入口。
+      if (!widget.isPage) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(
+              child: _scrollPane(
+                padding: const EdgeInsets.only(right: 8),
+                children: _summaryChildren(
+                  context,
+                  l10n,
+                  parsed.suggestion,
+                  withLabel: false,
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 44,
+              child: _actionRail(context, l10n, parsed.suggestion),
+            ),
+          ],
+        );
+      }
+      final summary = _summaryChildren(
+        context,
+        l10n,
+        parsed.suggestion,
+        withLabel: true,
+      );
+      final actions = _actionsChildren(
+        context,
+        l10n,
+        parsed.suggestion,
+        withLabel: true,
+      );
+      return _scrollPane(
+        children: <Widget>[
+          ...summary,
+          if (summary.isNotEmpty) const SizedBox(height: 8),
+          ...actions,
+        ],
+      );
     }
-    return _scrollPane(children: children);
+    return _scrollPane(children: _statusChildren(context, l10n, stage));
+  }
+
+  /// 停靠面板窄形态的**动作图标栏**（2026-11-09）。
+  ///
+  /// 每一项是一颗 40×40 的圆形按钮，`tooltip` 里给「动作名 + 模型给的理由」；
+  /// 「最推荐」那一项用主色淡底 + tooltip 前缀标出来（与卡片版的徽标同一个
+  /// 判据，`none` 单列时不标）。七项以上由这一栏自己滚 —— 它不会把摘要区
+  /// 挤没，也不会撑破停靠面板的固定高度。
+  Widget _actionRail(
+    BuildContext context,
+    AppLocalizations l10n,
+    Suggestion suggestion,
+  ) {
+    final lone = suggestion.choices.length == 1;
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (var i = 0; i < suggestion.choices.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(height: 6),
+            _RailButton(
+              choice: suggestion.choices[i],
+              label: labelOf(suggestion.choices[i].action, l10n),
+              icon: iconOf(suggestion.choices[i].action),
+              top: i == 0 &&
+                  !(lone && suggestion.choices[i].action == MailAction.none),
+              topLabel: l10n.aiSuggestTopPick,
+              onTap: () => _pick(suggestion.choices[i]),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   /// 一块可滚的内容。外层一定是 `Expanded`（高度有界），所以这里给
@@ -726,6 +807,68 @@ class _TopBadge extends StatelessWidget {
         style: theme.textTheme.labelSmall?.copyWith(
           color: scheme.onPrimaryContainer,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// 窄形态动作栏里的一颗**图标按钮**（2026-11-09）。
+///
+/// 为什么不用 `IconButton`：这里要圆形底、40×40 的固定热区，还要把
+/// 「动作名 + 理由」塞进 tooltip；`IconButton` 的默认尺寸与内边距会撑高整栏。
+/// 键名与卡片版**逐字一致**（`ai-suggest-choice-<id>`）：测试与「点第一项」
+/// 的判断都只认这一个，不该因为布局变了换一套键。
+class _RailButton extends StatelessWidget {
+  const _RailButton({
+    required this.choice,
+    required this.label,
+    required this.icon,
+    required this.top,
+    required this.topLabel,
+    required this.onTap,
+  });
+
+  final SuggestionChoice choice;
+  final String label;
+  final IconData icon;
+
+  /// 是不是「最推荐」那一项。与卡片版同一条判据（`none` 单列时不标）。
+  final bool top;
+  final String topLabel;
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final background = top
+        ? scheme.primaryContainer.withValues(alpha: 0.55)
+        : scheme.surfaceContainerHighest.withValues(alpha: 0.7);
+    final foreground =
+        top ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    // tooltip 是这颗按钮**唯一的说明**（窄形态不再有卡片上的标题行）。
+    // 有理由就换行附上 —— 模型给的 reason 正是「为什么建议做这一件」。
+    final message = <String>[
+      if (top) '$topLabel · $label' else label,
+      if (choice.reason.trim().isNotEmpty) choice.reason.trim(),
+    ].join('\n');
+    return Tooltip(
+      message: message,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Material(
+        color: background,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: ValueKey<String>('ai-suggest-choice-${choice.action.id}'),
+          onTap: onTap,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(icon, size: 20, color: foreground),
+          ),
         ),
       ),
     );

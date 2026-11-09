@@ -246,28 +246,39 @@ void main() {
       expect(find.byType(SingleChildScrollView), findsNWidgets(2));
     });
 
-    testWidgets('宽度 600：单列 —— 无区块标题，摘要在上、动作卡片在下',
+    testWidgets('宽度 600：单列 —— 摘要在左、动作收成右侧图标栏（tooltip 说明）',
         (tester) async {
       await pumpDock(tester, reply: _pointsJson, size: const Size(600, 700));
       await settle(tester);
 
       expect(find.byType(VerticalDivider), findsNothing);
-      // 停靠面板的单列保持旧观感：不硬加区块标题（spec §1.2）。
+      // 停靠面板的单列不硬加区块标题（spec §1.2）。
       expect(find.byKey(const ValueKey('ai-suggest-summary-title')),
           findsNothing);
       expect(find.byKey(const ValueKey('ai-suggest-actions-title')),
           findsNothing);
 
-      final summaryY = tester
+      // 动作在**右侧**，不在摘要下面（2026-11-09：窄形态改成图标栏）。
+      final summaryX = tester
           .getTopLeft(find.byKey(const ValueKey('ai-suggest-summary')))
-          .dy;
-      final choiceY = tester
+          .dx;
+      final choiceX = tester
           .getTopLeft(find.byKey(const ValueKey('ai-suggest-choice-reply')))
-          .dy;
-      expect(summaryY, lessThan(choiceY));
+          .dx;
+      expect(summaryX, lessThan(choiceX));
 
-      // 单列只有一整块滚动区。
-      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      // 图标栏没有卡片标题行，说明收进 tooltip（动作名 + 理由）。
+      final replyTip = tester.widget<Tooltip>(find.ancestor(
+        of: find.byKey(const ValueKey('ai-suggest-choice-reply')),
+        matching: find.byType(Tooltip),
+      ));
+      expect(replyTip.message, contains('回复'));
+      expect(replyTip.message, contains('在等你回'));
+      expect(replyTip.message, contains('最推荐'),
+          reason: '第一项仍是「最推荐」，图标栏用 tooltip 前缀表达');
+
+      // 摘要区一个滚动、图标栏一个滚动。
+      expect(find.byType(SingleChildScrollView), findsNWidgets(2));
     });
 
     testWidgets('要点按「圆点 + 一句」逐条渲染', (tester) async {
@@ -329,9 +340,9 @@ void main() {
       final gate = Completer<void>();
       await pumpDock(tester, reply: '正在想…', gate: gate);
       await settle(tester);
-      expect(find.byKey(const ValueKey('ai-suggest-header')), findsOneWidget);
+      // 头部只有一行：ⓘ 里才是「AI 看到了什么」，不再单独占一行。
+      expect(find.byKey(const ValueKey('ai-suggest-info')), findsOneWidget);
       expect(find.byKey(const ValueKey('ai-stop')), findsOneWidget);
-      expect(find.textContaining('正文'), findsWidgets);
       expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
           findsNothing);
       gate.complete();
@@ -434,17 +445,21 @@ void main() {
         reason: '「无需处理」标成最推荐是荒谬的');
   });
 
-  testWidgets('长正文：抬头用**原文长度**说「取开头和结尾」', (tester) async {
+  testWidgets('长正文：ⓘ 的 tooltip 用**原文长度**说「取开头和结尾」', (tester) async {
     await pumpDock(
       tester,
       reply: _goodJson,
       row: sampleRow(content: '<p>${'x' * 9000}</p>'),
     );
     await settle(tester);
-    expect(find.textContaining('已取开头和结尾'), findsOneWidget);
-    expect(find.textContaining('9000'), findsOneWidget,
+    final info = tester.widget<Tooltip>(find.ancestor(
+      of: find.byKey(const ValueKey('ai-suggest-info')),
+      matching: find.byType(Tooltip),
+    ));
+    expect(info.message, contains('已取开头和结尾'));
+    expect(info.message, contains('9000'),
         reason: '{chars} 是原文长度，不是喂进去的长度');
-    expect(find.textContaining('只取前'), findsNothing);
+    expect(info.message, isNot(contains('只取前')));
   });
 
   // -------------------------------------------------------------- 回车（已删）
