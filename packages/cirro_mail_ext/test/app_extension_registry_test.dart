@@ -153,6 +153,38 @@ class _FakeStore implements MailStore {
   Stream<MailStoreEvent> changes() => const Stream<MailStoreEvent>.empty();
 }
 
+/// 一个只记「谁被挂上来了」的假 [DraftStore]。
+///
+/// 注册表只关心「挂没挂、谁挂的」，不碰数据 —— 所以这里全部返回空。契约细节
+/// 的测试在公开仓的 `test/draft_store_test.dart`（核心实现那一侧）。
+class _FakeDraftStore implements DraftStore {
+  @override
+  Stream<List<DraftSnapshot>> watchAll() =>
+      const Stream<List<DraftSnapshot>>.empty();
+
+  @override
+  Future<List<DraftSnapshot>> listAll() async => const <DraftSnapshot>[];
+
+  @override
+  Future<DraftSnapshot?> byUid(String profileKey, String uid) async => null;
+
+  @override
+  Future<void> applyRemote(DraftSnapshot remote) async {}
+
+  @override
+  Future<void> clearTombstones(String profileKey, Iterable<String> uids) async {}
+
+  @override
+  Future<List<DraftSnapshot>> listTombstones() async =>
+      const <DraftSnapshot>[];
+
+  @override
+  Future<List<DraftProfileRef>> profiles() async => const <DraftProfileRef>[];
+
+  @override
+  Future<String?> profileIdFor(String profileKey) async => null;
+}
+
 void main() {
   // 单例跨用例存活，每个用例前后都清一次，免得互相串味。
   setUp(AppExtensionRegistry.instance.reset);
@@ -347,6 +379,62 @@ void main() {
       AppExtensionRegistry.instance.attachMailStore(_FakeStore());
       AppExtensionRegistry.instance.reset();
       expect(AppExtensionRegistry.instance.mailStore, isNull);
+    });
+  });
+
+  group('本地草稿读取 / 写回口', () {
+    test('没挂时是 null（公开版就是这个样子）', () {
+      expect(AppExtensionRegistry.instance.draftStore, isNull);
+    });
+
+    test('挂上之后读得到，且 Ready 随之完成', () async {
+      final store = _FakeDraftStore();
+      AppExtensionRegistry.instance.attachDraftStore(store);
+      expect(AppExtensionRegistry.instance.draftStore, same(store));
+      expect(await AppExtensionRegistry.instance.draftStoreReady, same(store));
+    });
+
+    /// 第二次必须是**空操作**（与 `attachMailStore` 同一取舍）。
+    ///
+    /// `BootstrapGate` 的重试会重建整棵 `ProviderScope`、建一个新的
+    /// `AppDatabase`，允许覆盖的话同步层会拿着两个库句柄推同一批草稿 ——
+    /// 其中一个可能已经关掉了。那比「不生效」难查得多。
+    test('第二次 attach 是空操作（重试不会换掉 store）', () async {
+      final first = _FakeDraftStore();
+      final second = _FakeDraftStore();
+      AppExtensionRegistry.instance.attachDraftStore(first);
+      AppExtensionRegistry.instance.attachDraftStore(second);
+      expect(AppExtensionRegistry.instance.draftStore, same(first));
+      expect(await AppExtensionRegistry.instance.draftStoreReady, same(first));
+    });
+
+    /// 「挂上来了」这件事**只有一个来源**：扩展在启动钩子里 await 它就能醒，
+    /// 不必轮询、也不必赌「库一定第几帧建好」。
+    test('draftStoreReady 在 attach 之前 await 也不会挂住调用方', () async {
+      final pending = AppExtensionRegistry.instance.draftStoreReady;
+      final store = _FakeDraftStore();
+      AppExtensionRegistry.instance.attachDraftStore(store);
+      expect(await pending, same(store));
+    });
+
+    test('reset 清空并把 ready 重建为未完成', () async {
+      AppExtensionRegistry.instance.attachDraftStore(_FakeDraftStore());
+      AppExtensionRegistry.instance.reset();
+      expect(AppExtensionRegistry.instance.draftStore, isNull);
+
+      var completed = false;
+      unawaited(
+        AppExtensionRegistry.instance.draftStoreReady.then((_) {
+          completed = true;
+        }),
+      );
+      await pumpEventQueue();
+      expect(completed, isFalse, reason: 'reset 后 ready 必须是新的未完成 Completer');
+
+      // 重建后的 ready 跟着下一次 attach 完成，而不是永远挂着。
+      final next = _FakeDraftStore();
+      AppExtensionRegistry.instance.attachDraftStore(next);
+      expect(await AppExtensionRegistry.instance.draftStoreReady, same(next));
     });
   });
 

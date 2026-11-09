@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../data/models/profile.dart';
 import 'database.dart';
@@ -44,6 +45,12 @@ String draftProfileKey(String hostRoot, String email) => sha256
 /// `profileId → Profile` 的映射**读的时候现算**，不缓存。缓存的话，用户改了
 /// 登录邮箱或删了实例之后，同步层会拿着一份过期的 profileKey 继续推。
 ///
+/// 映射是**双向**的：读（快照）走 `profileId → key`；写（[applyRemote]）与
+/// 按 key 定位（[byUid] / [clearTombstones] / [profileIdFor]）走 `key → profileId`。
+/// 后者不能实现成「同 key 第一个 profile 赢」—— 同一台设备上「退出又登回来」
+/// 会留下两条指向同一云端账号的 profile 行，行/墓碑挂在哪个 id 下面是不定的，
+/// 只认第一个就会漏掉另一半（见 [_profileIdsForKey]）。
+///
 /// profile 已经不在表里的草稿行**跳过**：它的 profileKey 算不出来，推上去
 /// 服务端也无处归档（正常路径不会出现 —— `ProfileDao._clearDataOf` 会连草稿
 /// 一起清，这里只防「清到一半被杀」的残行）。
@@ -67,31 +74,74 @@ class CoreDraftStore implements DraftStore {
   }
 
   @override
+  Future<List<DraftProfileRef>> profiles() async {
+    final profiles = await _db.profileDao.allProfiles();
+    return <DraftProfileRef>[
+      for (final profile in profiles)
+        DraftProfileRef(
+          profileId: profile.id,
+          profileKey: _profileKeyOf(profile),
+          accountEmail: profile.email,
+          // `Profile.host` 已经去掉了结尾 `/api`，正是「站点根」。只给展示/诊断
+          // 用 —— 算 key 一律走 [_profileKeyOf]，别让调用方拿它自己再算一遍。
+          instanceHost: profile.host,
+        ),
+    ];
+  }
+
+  @override
+  Future<String?> profileIdFor(String profileKey) async {
+    final ids = await _profileIdsForKey(profileKey);
+    return ids.isEmpty ? null : ids.first;
+  }
+
+  @override
   Future<List<DraftSnapshot>> listAll() async =>
       _snapshotsOfDrafts(await _db.localDao.listAllDrafts());
 
   @override
   Future<DraftSnapshot?> byUid(String profileKey, String uid) async {
-    if (uid.isEmpty) return null;
-    final profile = (await _profilesByKey())[profileKey];
-    if (profile == null) return null;
-    final row = await _db.localDao.findDraftByUid(profile.id, uid);
-    if (row == null) return null;
-    return _snapshotOf(row, profile);
+    final key = _normalizeKey(profileKey);
+    if (uid.isEmpty || key.isEmpty) return null;
+    // 先按 uid 跨 profile 取行，再用**行自己的** profile 算 key 比对 ——
+    // 不能先「profileKey → 第一个 profileId」再按它查行（同一 key 在本机可能
+    // 有两条 profile 行，行未必挂在第一个下面）。
+    final rows = await _db.localDao.draftsByUid(uid);
+    if (rows.isEmpty) return null;
+    final profiles = await _profilesById();
+    for (final row in rows) {
+      final profile = profiles[row.profileId];
+      if (profile == null) continue;
+      if (_profileKeyOf(profile) != key) continue;
+      return _snapshotOf(row, profile);
+    }
+    return null;
   }
 
   @override
-  Future<void> applyRemote(DraftSnapshot remote) {
+  Future<void> applyRemote(DraftSnapshot remote) async {
     if (remote.deleted) {
       // 服务端说这条没了：删本机行，**不**写本地墓碑（否则会把一次远端删除
       // 记成一次本机删除、再推回去，两端互相删）。见 DAO 的
-      // `deleteRemoteDraft`。
+      // `deleteRemoteDraft`。这条分支不做 profile 解析：它只是「让本机不再有
+      // 这条」，按 (profileId, uid) 匹配不到行就静默完成。
       return _db.localDao.deleteRemoteDraft(remote.profileId, remote.uid);
+    }
+    if (remote.uid.isEmpty) return;
+    final profileId = await _resolveProfileId(remote);
+    if (profileId == null) {
+      // 空操作是**目的**，不是遗漏：uid 在草稿表上是全局唯一索引，插一条
+      // profileKey 解析不出来的行会永久占住那个 uid，真正的 profile 之后想
+      // 落地同一份草稿只会撞索引失败。
+      debugPrint('DraftStore.applyRemote: 解析不出 profile，已跳过 '
+          '(profileId=${remote.profileId}, '
+          'key=${_keyPrefix(remote.profileKey)}, uid=${remote.uid})');
+      return;
     }
     // 走 `applyRemoteDraft` 而不是 `saveDraft`：后者会把 rev +1（本地内容
     // 版本语义），而这里写的必须是远端给的 rev。见 DAO 里那段注释。
-    return _db.localDao.applyRemoteDraft(
-      profileId: remote.profileId,
+    await _db.localDao.applyRemoteDraft(
+      profileId: profileId,
       uid: remote.uid,
       rev: remote.rev,
       accountEmail: remote.accountEmail,
@@ -110,9 +160,11 @@ class CoreDraftStore implements DraftStore {
   Future<void> clearTombstones(String profileKey, Iterable<String> uids) async {
     final list = uids.toList(growable: false);
     if (list.isEmpty) return;
-    final profile = (await _profilesByKey())[profileKey];
-    if (profile == null) return;
-    await _db.localDao.deleteTombstones(profile.id, list);
+    // 逐个清所有 key 匹配的 profile：墓碑挂在写下它的那个 profileId 下面，
+    // 只清「第一个」会留下一条永远发不出去、每轮都重发的删除。
+    for (final profileId in await _profileIdsForKey(profileKey)) {
+      await _db.localDao.deleteTombstones(profileId, list);
+    }
   }
 
   @override
@@ -137,6 +189,9 @@ class CoreDraftStore implements DraftStore {
           recipients: const <String>[],
           body: '',
           attachmentPaths: const <String>[],
+          // `updatedAt` = **删除时间**（墓碑的 `deleted_at`），不是草稿最后
+          // 修改时间 —— 行都没了，那个时间也跟着没了。同步层只该拿它判断
+          // 「这次删除发生得早还是晚」。
           updatedAt: row.deletedAt,
         ),
       );
@@ -149,27 +204,71 @@ class CoreDraftStore implements DraftStore {
   String _profileKeyOf(Profile profile) =>
       draftProfileKey(profile.host, profile.email);
 
+  /// `profileKey` 的入参归一化：去首尾空白 + 小写。
+  ///
+  /// `draftProfileKey` 产出的是小写十六进制，但同步层手里的 key 可能来自服务端
+  /// JSON、配置文件或用户手填 —— 大小写不该决定「找不找得到账号」。这里只做
+  /// 大小写/空白，**不做**任何哈希或语义猜测。
+  String _normalizeKey(String profileKey) => profileKey.trim().toLowerCase();
+
+  /// 日志里的 profileKey 前缀（与 `DraftSnapshot.toString` 同一口径）。
+  String _keyPrefix(String profileKey) {
+    final key = _normalizeKey(profileKey);
+    return key.length <= 8 ? key : '${key.substring(0, 8)}…';
+  }
+
   /// `profileId → Profile`。`allProfiles` 已按 `sort` / `createdAt` 排好，
-  /// 这里保持插入顺序（见 [_profilesByKey] 的「第一个赢」说明）。
+  /// 这里保持插入顺序（见 [_profileIdsForKey] 的「多个匹配」说明）。
   Future<Map<String, Profile>> _profilesById() async {
     final profiles = await _db.profileDao.allProfiles();
     return <String, Profile>{for (final p in profiles) p.id: p};
   }
 
-  /// `profileKey → Profile`。
+  /// 计算 key 等于 [profileKey] 的所有 profileId，按核心实例排序。
   ///
-  /// **同一个 key 只保留第一个**（`sort` 最小的那个）：`profileKey` 的语义是
-  /// 「同一实例同一账号」，正常情况下同一台设备只会有一个这样的 profile；
-  /// 出现两个多半是「退出登录又登回来」留下的历史行，两个 id 指向同一个云端
-  /// 账号。取第一个是为了让 [byUid] / [clearTombstones] 的结果稳定，而不是
-  /// 每次查询挑到不同的那一行。
-  Future<Map<String, Profile>> _profilesByKey() async {
+  /// **返回全部而不是「第一个」**：同一个 key 可能对应两条 profile 行（退出又
+  /// 登回来留下的历史行，两个 id 指向同一个云端账号）。`byUid` 要按行自己的
+  /// profile 匹配，`clearTombstones` 要把所有匹配 profile 下的墓碑都清掉 ——
+  /// 只要一个「第一个赢」的映射，就会漏掉挂在第二个 id 上的行/墓碑。
+  /// [profileIdFor] 取 `first`，那是它自己的单值契约。
+  Future<List<String>> _profileIdsForKey(String profileKey) async {
+    final key = _normalizeKey(profileKey);
+    if (key.isEmpty) return const <String>[];
     final profiles = await _db.profileDao.allProfiles();
-    final map = <String, Profile>{};
-    for (final p in profiles) {
-      map.putIfAbsent(_profileKeyOf(p), () => p);
+    return <String>[
+      for (final profile in profiles)
+        if (_profileKeyOf(profile) == key) profile.id,
+    ];
+  }
+
+  /// 为一份远端快照解析要落地的本机 profileId；解析不出来返回 null（= 调用方
+  /// 必须 no-op）。
+  ///
+  /// 优先级是「同一台设备上更可信的证据优先」：
+  /// 1. `remote.profileId` 本机存在 → 用它算出的 key 校验，**不一致就拒绝**
+  ///    （调用方拿错快照/写错 id 时，绝不能落进另一个账号）；
+  /// 2. id 为空、或本机已经没有这个 profile（退登 / 删实例 / 别的设备上的
+  ///    旧 id）→ 用 key 反查，这是唯一还能认回账号的证据；
+  /// 3. 都找不到 → null。
+  ///
+  /// 第 1 步为什么不用「key 对得上就按 key 落地」：id 明确指到一个**别的**账号
+  /// 时，按 key 落进另一个账号会把「调用方搞错了」这种 bug 变成一个安静的
+  /// 串号写入。
+  Future<String?> _resolveProfileId(DraftSnapshot remote) async {
+    final key = _normalizeKey(remote.profileKey);
+    final profiles = await _profilesById();
+    if (remote.profileId.isNotEmpty) {
+      final byId = profiles[remote.profileId];
+      if (byId != null) {
+        if (_profileKeyOf(byId) == key) return byId.id;
+        debugPrint('DraftStore.applyRemote: profileId=${remote.profileId} 的 '
+            'profileKey 与快照不一致（uid=${remote.uid}），跳过');
+        return null;
+      }
     }
-    return map;
+    // id 为空或本机已无此 profile：用 key 反查（同 key 多条时按核心排序取第一个）。
+    final ids = await _profileIdsForKey(key);
+    return ids.isEmpty ? null : ids.first;
   }
 
   Future<List<DraftSnapshot>> _snapshotsOfDrafts(List<DbDraft> rows) async {

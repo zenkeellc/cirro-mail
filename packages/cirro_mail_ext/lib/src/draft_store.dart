@@ -86,12 +86,75 @@ class DraftSnapshot {
   final List<String> attachmentPaths;
 
   /// 草稿最近一次被修改的时间（核心存 UTC）。
+  ///
+  /// **读回来可能是本地时区**：drift 把 `DateTime` 存成 Unix 秒，读出的
+  /// `DateTime` 是同一个瞬间的本地表示（见核心的 `tables.dart`）。所以拿它去
+  /// **比较、排序或者序列化**（发给服务端、写进扩展自己的库）之前先 `.toUtc()`；
+  /// 直接 `toIso8601String()` 会带 `+08:00` 之类的偏移，服务端按字符串比较就会
+  /// 把「同一时刻」判成不同值。
   final DateTime updatedAt;
 
+  /// **不含 subject / body / recipients**（spec §7：日志脱敏）。
+  ///
+  /// 快照经常被同步层整条丢进 debug 日志，而它的字段全是用户的信内容。留
+  /// `profileKey` 前缀够定位「哪个账号」，`uid` / `rev` 够定位「哪一条、哪一
+  /// 版」；主题、正文、收件人一律不进字符串 —— 要看内容的只有撰写页。
   @override
-  String toString() => 'DraftSnapshot($profileKey/$uid, rev=$rev, '
-      'deleted=$deleted, "$subject", '
-      '${recipients.length} 收件人 / ${attachmentPaths.length} 附件)';
+  String toString() => 'DraftSnapshot(${_profileKeyPrefix(profileKey)}/$uid, '
+      'rev=$rev, deleted=$deleted)';
+}
+
+/// 日志里的 `profileKey` 只露前 8 位：够区分账号，又不至于把服务端存的那个
+/// 不透明串整条抄进日志（spec §7 的日志脱敏）。
+String _profileKeyPrefix(String profileKey) =>
+    profileKey.length <= 8 ? profileKey : profileKey.substring(0, 8);
+
+/// 本机一个已登录 profile 的身份（加展示用的 host）。
+///
+/// ## 为什么接缝要单开这个出口
+///
+/// [DraftStore.listAll] / [DraftStore.watchAll] 只会给出**有草稿的** profile：
+/// 一个刚登录、本机一条草稿都没有的账号在里面根本不存在。而云端的草稿是不
+/// 知道「这台设备有没有草稿」的 —— 同步层必须能枚举本机所有账号，才能为每个
+/// 账号拉一次云端草稿。少了这个出口，「在另一台设备上写的草稿，在这台本地零
+/// 草稿的机器上」永远落不下来（只有等用户在本机随便写一条草稿，那个 profile
+/// 才会被 [DraftStore.listAll] 顺带带出来）。
+///
+/// ## 字段的语义边界
+///
+/// - [profileId] **只在本机有意义**（换设备就是另一个 id），所以它不是同步
+///   协议的键，只用来给 [DraftStore.applyRemote] 落地；
+/// - [profileKey] 是跨设备认账号的唯一键，算法只在核心（[DraftSnapshot.profileKey]）；
+/// - [accountEmail] 是登录邮箱（原样，不归一化），用于展示与「这封信从哪发」；
+/// - [instanceHost] 是站点根（`Profile.host`，去掉结尾 `/api`），**不要**拿它
+///   参与 key 计算（那会绕过核心的归一化，在大小写上分叉），只用于展示与
+///   diagnostic。
+@immutable
+class DraftProfileRef {
+  const DraftProfileRef({
+    required this.profileId,
+    required this.profileKey,
+    required this.accountEmail,
+    required this.instanceHost,
+  });
+
+  /// 本机 profile id（换设备就变）。
+  final String profileId;
+
+  /// `sha256(站点根 + "\n" + lowercase(邮箱))`，十六进制小写。
+  final String profileKey;
+
+  /// 登录邮箱（服务端登录用的那个，原样返回）。
+  final String accountEmail;
+
+  /// `Profile.host`：站点根（去掉了结尾 `/api`），用于展示 / diagnostic。
+  final String instanceHost;
+
+  /// 邮箱是诊断「这个账号为什么没同步」时唯一有用的信息（profileKey 是哈希，
+  /// 人看不出是谁），所以留着；除此之外没有别的字段。
+  @override
+  String toString() => 'DraftProfileRef($profileId, '
+      '${_profileKeyPrefix(profileKey)}, $accountEmail, $instanceHost)';
 }
 
 /// 一次变更的方向。
@@ -125,10 +188,15 @@ class DraftChange {
 /// ## 契约（实现方必须满足，消费方可以依赖）
 ///
 /// - **本地库是真相源**：所有方法读写本机 drift 库，不触发任何网络；
+/// - [profiles] 给出**所有**已登录 profile（含本机一条草稿都没有的），
+///   [profileIdFor] 认不出的 key 返回 null；
 /// - [listAll] **跳过 `uid` 为空的脏行**（迁移还没回填的历史行，云端认不出）；
 /// - [watchAll] 每次相关表变化推**全量**列表（可能为空），消费方自行 diff；
 ///   每次订阅都会立刻收到一次当前值，所以「先 [listAll] 再订阅」不会丢变更；
 /// - [applyRemote] 写的 `rev` **就是远端给的 rev**，不 +1；
+/// - [applyRemote] 解析不出 profile（id 与 key 都对不上本机）时**整个调用
+///   no-op**，绝不插孤儿行 —— 草稿表的 `uid` 是全局唯一索引，孤儿行会把那个
+///   uid 永久占住；
 /// - 不存在的 uid **不是错误**：[byUid] 返回 null，[clearTombstones] 静默跳过。
 ///
 /// ## 与 `MailStore` 的分工
@@ -138,6 +206,26 @@ class DraftChange {
 /// 本地删除走核心的既有路径（`LocalDao.deleteDraft`，它顺手落墓碑），这样
 /// 墓碑这条账本只有一个写者。
 abstract class DraftStore {
+  /// 本机**所有已登录 profile** 的身份（[DraftProfileRef]），按核心的实例排序
+  /// （`sort` 升序、同序按创建时间）—— 同一份列表在两次调用之间稳定，同步层
+  /// 可以据此做「上一轮轮询了哪些账号」的 diff。
+  ///
+  /// 为什么需要它：[listAll] 只会给出**有草稿的** profile。一个账号如果本机
+  /// 一条草稿都没有，它在 [listAll] / [watchAll] 里根本不存在，同步层于是永远
+  /// 不会为它拉云端草稿 —— 「在另一台设备上写、这台机器本地零草稿」的那份草稿
+  /// 就永远落不下来。有了这个出口，同步层才能「对每个已登录账号各拉一次」。
+  Future<List<DraftProfileRef>> profiles();
+
+  /// 按 [profileKey] 找本机 profileId；本机没有这个账号时返回 null。
+  ///
+  /// [profileKey] 会先按核心口径归一化（去首尾空白、转小写十六进制）再比较 ——
+  /// 服务端/配置文件里拿回来的大小写不该决定「找不找得到账号」。
+  ///
+  /// 同一 key 命中多个 profile（「退出又登回来」留下的历史行）时返回核心排序
+  /// 里的**第一个**。注意 [byUid] / [clearTombstones] **不用**这个「第一个
+  /// 赢」的取舍（那会让行恰好挂在第二个 id 上时查不到，见各自的说明）。
+  Future<String?> profileIdFor(String profileKey);
+
   /// 任意草稿变化时推**全量**快照列表（所有 profile）。
   ///
   /// 为什么是全量而不是 [DraftChange] 增量：
@@ -162,6 +250,12 @@ abstract class DraftStore {
   ///
   /// 为什么用 `profileKey` 而不是 `profileId` 当键：同步层手里的 uid 来自云端，
   /// 它只认识那个不透明的账号键；`profileId` 是本机 id，换设备就对不上了。
+  ///
+  /// 实现口径：**先按 uid 跨 profile 取行，再用行所属 profile 算出的 key 与
+  /// [profileKey] 比对**。不能「先把 profileKey 映射成某个 profileId、再按它
+  /// 查行」—— 同一个 key 在本机可能对应两条 profile 行（退出又登回来的历史
+  /// 残留），挑中的那个未必是拥有这行的那个；症状是「云草稿在这台设备上永远
+  /// 对不上」。命中多行时取 key 匹配的第一行。
   Future<DraftSnapshot?> byUid(String profileKey, String uid);
 
   /// 应用一份远端快照（拉取到的 upsert，或者 `deleted: true` 的服务端墓碑）。
@@ -171,6 +265,19 @@ abstract class DraftStore {
   /// 「改过」，然后无限生成冲突副本。走的是 DAO 的
   /// `applyRemoteDraft`（精确 UPDATE/INSERT 指定 rev），**不是** `saveDraft`。
   ///
+  /// **profile 必须能解析**（否则整个调用是空操作）：
+  /// 1. [DraftSnapshot.profileId] 非空且本机存在 → 用它算出的 key 与
+  ///    [DraftSnapshot.profileKey] 比对，不一致 → **no-op**（这份快照属于另一个
+  ///    账号/实例，不是这一行）；
+  /// 2. id 为空、或本机已经没有这个 profile（退登 / 删实例 / 别的设备上的旧
+  ///    id）→ 用 `profileKey` 反查 profileId；
+  /// 3. 还是找不到 → **no-op**。
+  ///
+  /// 为什么宁可 no-op 也不插行：草稿表的 `uid` 是**全局唯一索引**（`WHERE
+  /// uid != ''`），一条孤儿行会占住那个 uid —— 真正的 profile 后来再想落地同一
+  /// 份草稿只会撞索引失败，而且这条孤儿行永远不属于任何能同步的账号。用户删
+  /// 了实例，云端的草稿在本机就是无处可去。
+  ///
   /// 同一个事务里**清掉该 uid 的本地墓碑**：远端把这条又写回来了，说明「本机
   /// 删过」这件事已经过期，留着它会让同步层把这个 uid 再发一次删除、把刚拉
   /// 下来的草稿又抹掉。
@@ -178,12 +285,19 @@ abstract class DraftStore {
   /// `deleted: true` 是**服务端删除**：删本机行（连同「打开中」标记），并且
   /// **不写**本地墓碑 —— 那会把一次远端删除记成一次本机删除，下次推送又发
   /// 回去，两端互相删。要不要应用（比如本地脏、rev 更高）由调用方判定。
+  /// 这条分支**不做上面的 profile 解析**：它的语义只是「让本机不再有这条」，
+  /// 按 `(profileId, uid)` 匹配不到任何行就静默完成（profile 已经不在时正好
+  /// 什么都不用做）。
   Future<void> applyRemote(DraftSnapshot remote);
 
   /// 删掉这些墓碑（同步层把 `deleted=true` 推成功之后调用）。
   ///
   /// 不存在的 uid 静默跳过；[profileKey] 在本机没有对应 profile 时整个调用是
   /// 空操作（profile 都删了，墓碑也跟着 `_clearDataOf` 清了）。
+  ///
+  /// 同一个 key 命中**多个** profile 时逐个清（不是「第一个赢」）：墓碑挂在
+  /// 写下它的那个 profileId 下面，只清第一个的话，第二个 id 下的墓碑会成为
+  /// 一条永远清不掉的待推送删除 —— 每轮同步都把它再发一次。
   Future<void> clearTombstones(String profileKey, Iterable<String> uids);
 
   /// 还没推出去的删除（同步层启动时补发）。
@@ -191,5 +305,9 @@ abstract class DraftStore {
   /// 返回的快照 `deleted` 恒为 true，`rev` 是墓碑 rev（= 删除前 rev + 1）；
   /// `subject` / `body` / `recipients` / `attachmentPaths` 都是空 —— 行已经删了，
   /// 这些内容本来就不该再被读出来。
+  ///
+  /// **`updatedAt` 是删除时间**，不是草稿最后修改时间（行都没了，那个时间也跟
+  /// 着没了）。只该拿它判断「这次删除发生得早还是晚」，不要拿它和草稿的
+  /// `rev` / `updatedAt` 做先后比较。它同样来自 drift，比较/序列化前 `.toUtc()`。
   Future<List<DraftSnapshot>> listTombstones();
 }

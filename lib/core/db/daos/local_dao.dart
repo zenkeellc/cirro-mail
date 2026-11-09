@@ -312,6 +312,27 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
         .getSingleOrNull();
   }
 
+  /// 按 `uid` **跨 profile** 查草稿行（同步层的 `byUid` 用）。
+  ///
+  /// 与 [findDraftByUid] 的差别只有一条，但它是**必须**的：这里**不按
+  /// profile 过滤**。同步层手里的 uid 来自云端，它只认识不透明的 `profileKey`；
+  /// 而一个 key 在本机可能对应两条 profile 行（「退出登录又登回来」留下的历史
+  /// 残留，两条 id 指向同一个云端账号）。先把 key 映射成「第一个」profileId
+  /// 再去按它查行，会漏掉「行恰好挂在第二个 id 上」的情况 —— 症状是云草稿在
+  /// 这台设备上永远对不上。所以这里按 uid 精确取行，由调用方用**每行自己的**
+  /// profile 算 key 再判定。
+  ///
+  /// 返回列表而不是单行：现行唯一索引（`drafts(uid) WHERE uid != ''`）保证最
+  /// 多一行，但这里不把「uid 跨 profile 唯一」写成调用方可以依赖的不变式 ——
+  /// 索引将来若放宽成 `(profileId, uid)`，这里仍然正确。
+  ///
+  /// 空 `uid` 返回空列表（与 [findDraftByUid] 同一口径：空串是「迁移还没回填」
+  /// 的脏行，不是任何一份草稿的身份）。
+  Future<List<DbDraft>> draftsByUid(String uid) async {
+    if (uid.isEmpty) return const <DbDraft>[];
+    return (select(drafts)..where((t) => t.uid.equals(uid))).get();
+  }
+
   /// 全部草稿，**跨实例**，按最近修改倒序。
   ///
   /// 供同步层首轮全量推送用（`listAll()`）：这里不按 `profileId` 过滤，

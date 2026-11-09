@@ -313,6 +313,80 @@ void main() {
     expect(await store.listTombstones(), isEmpty);
   });
 
+  group('多 profile', () {
+    const p2 = Profile(
+      id: 'p2',
+      baseUrl: 'https://other.example.com/api',
+      email: 'other@example.com',
+      sort: 1,
+    );
+
+    test('两个 profile 的草稿都在 listAll / watchAll 里', () async {
+      await db.profileDao.upsertProfile(p2);
+      await save(subject: 'p1 的草稿');
+      await save(
+        profileId: 'p2',
+        accountEmail: 'other@example.com',
+        subject: 'p2 的草稿',
+      );
+
+      final emissions = <List<DraftSnapshot>>[];
+      final sub = store.watchAll().listen(emissions.add);
+      await pumpEventQueue();
+
+      final all = await store.listAll();
+      expect(all, hasLength(2));
+      expect(all.map((s) => s.profileId).toSet(), <String>{'p1', 'p2'});
+      expect(
+        emissions.last.map((s) => s.profileId).toSet(),
+        <String>{'p1', 'p2'},
+        reason: 'watchAll 推的是**所有** profile 的全量，不是当前实例',
+      );
+
+      // 每个 profile 各自算各自的 key，不会串。
+      final keyOf = <String, String>{
+        for (final s in all) s.profileId: s.profileKey,
+      };
+      expect(
+        keyOf['p1'],
+        _expectedKey('https://mail.example.com', 'Me@Example.com'),
+      );
+      expect(
+        keyOf['p2'],
+        _expectedKey('https://other.example.com', 'other@example.com'),
+      );
+
+      await sub.cancel();
+    });
+
+    /// profile 行没了、草稿行还留着 = 「清到一半被杀」的残行（正常路径
+    /// `_clearDataOf` 会连草稿一起清）。这种行的 profileKey 算不出来，推上去
+    /// 服务端也无处归档，所以读路径必须跳过它们，而不是拿空 key 去同步。
+    test('profile 行被删掉之后，它的草稿行被跳过', () async {
+      await db.profileDao.upsertProfile(p2);
+      await save(
+        profileId: 'p2',
+        accountEmail: 'other@example.com',
+        subject: '孤儿行',
+      );
+      // 只删 profile 行、不级联清 drafts。
+      await (db.delete(db.profiles)..where((t) => t.id.equals('p2'))).go();
+
+      expect(await store.listAll(), isEmpty);
+      expect(await store.profiles(), hasLength(1));
+
+      // watchAll 推的新全量里也只剩活 profile 的草稿。
+      final emissions = <List<DraftSnapshot>>[];
+      final sub = store.watchAll().listen(emissions.add);
+      await save(subject: 'p1 的活草稿');
+      await pumpEventQueue();
+      expect(emissions.last, hasLength(1));
+      expect(emissions.last.single.subject, 'p1 的活草稿');
+
+      await sub.cancel();
+    });
+  });
+
   group('profileKey', () {
     test('host 与 email 归一化：大小写、首尾空白都吃掉，算法可手算', () {
       final base =
@@ -365,6 +439,251 @@ void main() {
         all.single.profileKey,
         _expectedKey('https://mail.example.com', 'me@example.com'),
       );
+    });
+  });
+
+  group('profiles() / profileIdFor()', () {
+    const p2 = Profile(
+      id: 'p2',
+      baseUrl: 'https://other.example.com/api',
+      email: 'other@example.com',
+      sort: 1,
+    );
+
+    /// 这个出口存在的理由：`listAll()` 只给**有草稿的** profile，本机零草稿的
+    /// 账号在里面根本不存在 —— 同步层必须能枚举「所有已登录账号」才能为它们
+    /// 各拉一次云端草稿。
+    test('profiles() 列出所有已登录账号（含本机零草稿的那个）', () async {
+      await db.profileDao.upsertProfile(p2);
+      await save(); // 只有 p1 有草稿
+
+      final refs = await store.profiles();
+      expect(
+        refs.map((r) => r.profileId).toList(),
+        <String>['p1', 'p2'],
+        reason: '顺序沿用核心的实例排序（sort 升序）',
+      );
+
+      final first = refs.first;
+      expect(
+        first.profileKey,
+        _expectedKey('https://mail.example.com', 'Me@Example.com'),
+      );
+      expect(first.accountEmail, 'Me@Example.com', reason: '登录邮箱原样返回');
+      expect(
+        first.instanceHost,
+        'https://mail.example.com',
+        reason: 'Profile.host 去掉了结尾 /api',
+      );
+      expect(
+        refs[1].profileKey,
+        _expectedKey('https://other.example.com', 'other@example.com'),
+      );
+
+      // 对照：p2 在 listAll 里没有（本地零草稿），只能靠 profiles() 发现。
+      expect(
+        (await store.listAll()).map((s) => s.profileId).toList(),
+        <String>['p1'],
+      );
+    });
+
+    test('profileIdFor：入参归一化；未知 key / 空串返回 null', () async {
+      final key = _expectedKey('https://mail.example.com', 'Me@Example.com');
+      expect(await store.profileIdFor(key), 'p1');
+      // 服务端 JSON / 配置文件里的大小写与空白不该决定「找不找得到账号」。
+      expect(await store.profileIdFor('  ${key.toUpperCase()}  '), 'p1');
+      expect(await store.profileIdFor('not-a-profile-key'), isNull);
+      expect(await store.profileIdFor(''), isNull);
+      expect(await store.profileIdFor('   '), isNull);
+    });
+
+    test('byUid 同样归一化入参（大写/带空白也命中）', () async {
+      final id = await save();
+      final uid = (await db.localDao.findDraft(id))!.uid;
+      final key = _expectedKey('https://mail.example.com', 'Me@Example.com');
+      final hit = await store.byUid(' ${key.toUpperCase()} ', uid);
+      expect(hit, isNotNull);
+      expect(hit!.uid, uid);
+    });
+  });
+
+  group('applyRemote 的 profile 解析', () {
+    /// 一份「长得像云端拉下来」的快照。默认落在 p1。
+    DraftSnapshot remote({
+      String profileId = 'p1',
+      String? profileKey,
+      String uid = 'uid-remote-1',
+      int rev = 4,
+      bool deleted = false,
+      String subject = '远端草稿',
+    }) =>
+        DraftSnapshot(
+          profileId: profileId,
+          accountEmail: 'me@example.com',
+          profileKey: profileKey ??
+              _expectedKey('https://mail.example.com', 'Me@Example.com'),
+          uid: uid,
+          rev: rev,
+          deleted: deleted,
+          subject: subject,
+          recipients: const <String>['b@example.com'],
+          body: '[{"insert":"远端\\n"}]',
+          attachmentPaths: const <String>[],
+          updatedAt: DateTime.utc(2026, 11, 9),
+        );
+
+    /// **不能插孤儿行**：草稿表的 `uid` 是全局唯一索引（`WHERE uid != ''`），
+    /// 一条 profileKey 解析不出来的行会永久占住那个 uid —— 真正的 profile 后来
+    /// 再想落地同一份草稿就只会撞索引失败。
+    test('profileKey 匹配不到任何 profile → no-op，且不占 uid', () async {
+      final ghostKey =
+          _expectedKey('https://ghost.example.com', 'ghost@example.com');
+      await store.applyRemote(
+        remote(profileId: '', profileKey: ghostKey, uid: 'uid-orphan'),
+      );
+
+      expect(await store.listAll(), isEmpty);
+      expect(await store.byUid(ghostKey, 'uid-orphan'), isNull);
+
+      // uid 没被占：同一 uid 用正确 profile 再落一次能插进去（若第一次插了
+      // 孤儿行，这里会撞 `drafts_uid_unique`）。
+      await store.applyRemote(remote(uid: 'uid-orphan'));
+      final all = await store.listAll();
+      expect(all, hasLength(1));
+      expect(all.single.profileId, 'p1');
+      expect(all.single.uid, 'uid-orphan');
+    });
+
+    /// profileId 在本机存在，但快照的 key 是**另一个账号**的：调用方拿错了
+    /// 快照。绝不能按 id 落库（会把 A 的草稿写进 B），也不该按 key 落到第三个
+    /// 账号 —— 这就是「校验不一致 → no-op」。
+    test('profileId 存在但 profileKey 不一致 → no-op', () async {
+      final otherKey =
+          _expectedKey('https://other.example.com', 'other@example.com');
+      await store.applyRemote(
+        remote(profileId: 'p1', profileKey: otherKey, uid: 'uid-mismatch'),
+      );
+
+      expect(await store.listAll(), isEmpty);
+      expect(
+        await store.byUid(
+          _expectedKey('https://mail.example.com', 'Me@Example.com'),
+          'uid-mismatch',
+        ),
+        isNull,
+      );
+    });
+
+    /// 「profile 存在但传错 profileId」：id 指到 p2、key 却是 p1 的 —— 这是
+    /// 调用方搞错了，不是「p2 换了邮箱」。不写任何一边。
+    test('profile 存在但传错 profileId → 不写（也不回落到 key 落地）', () async {
+      await db.profileDao.upsertProfile(
+        const Profile(
+          id: 'p2',
+          baseUrl: 'https://other.example.com/api',
+          email: 'other@example.com',
+          sort: 1,
+        ),
+      );
+      await store.applyRemote(remote(profileId: 'p2', uid: 'uid-wrong-id'));
+      expect(await store.listAll(), isEmpty);
+    });
+
+    /// 反过来：id 为空、或本机已经没有这个 id（退登/删实例/别的设备的旧 id）
+    /// 时，key 是唯一还能认回账号的证据 —— 按 key 落到 p1。
+    test('profileId 为空或本机不存在时按 profileKey 反查落地', () async {
+      await store.applyRemote(remote(profileId: '', uid: 'uid-by-key-1'));
+      await store.applyRemote(
+        remote(profileId: 'stale-from-other-device', uid: 'uid-by-key-2'),
+      );
+
+      final all = await store.listAll();
+      expect(all, hasLength(2));
+      expect(all.map((s) => s.profileId).toSet(), <String>{'p1'});
+      expect(
+        all.map((s) => s.uid).toSet(),
+        <String>{'uid-by-key-1', 'uid-by-key-2'},
+      );
+    });
+
+    /// applyRemote 是一次普通的本地写入，所以 watchAll 会推一次新全量 ——
+    /// 同步层必须自己防回环（核心分不出「这是不是我自己写的」）。这里只断言
+    /// 「推了」，不判回环。
+    test('applyRemote 之后 watchAll 推一次新全量', () async {
+      final emissions = <List<DraftSnapshot>>[];
+      final sub = store.watchAll().listen(emissions.add);
+      await pumpEventQueue();
+      final before = emissions.length;
+
+      await store.applyRemote(remote(uid: 'uid-emit', rev: 6));
+      await pumpEventQueue();
+
+      expect(emissions.length, greaterThan(before));
+      expect(emissions.last, hasLength(1));
+      expect(emissions.last.single.uid, 'uid-emit');
+      expect(emissions.last.single.rev, 6);
+
+      await sub.cancel();
+    });
+  });
+
+  group('快照不可变 / 隐私', () {
+    /// 同步层经常把快照塞进队列延后处理：如果这里留着核心传进来的可变 list，
+    /// 一条迟到的 `add` 就能改掉「已经发出去的那份快照」。
+    test('recipients / attachmentPaths 是副本，且不可修改', () {
+      final recipients = <String>['a@example.com'];
+      final paths = <String>['/tmp/a.pdf'];
+      final snap = DraftSnapshot(
+        profileId: 'p1',
+        accountEmail: 'me@example.com',
+        profileKey: _expectedKey('https://mail.example.com', 'Me@Example.com'),
+        uid: 'uid-immutable',
+        rev: 3,
+        deleted: false,
+        subject: '主题',
+        recipients: recipients,
+        body: '',
+        attachmentPaths: paths,
+        updatedAt: DateTime.utc(2026, 11, 9),
+      );
+
+      recipients.add('b@example.com');
+      paths.add('/tmp/b.pdf');
+
+      expect(snap.recipients, <String>['a@example.com']);
+      expect(snap.attachmentPaths, <String>['/tmp/a.pdf']);
+      expect(() => snap.recipients.add('c@example.com'), throwsUnsupportedError);
+      expect(() => snap.attachmentPaths.add('/tmp/c.pdf'), throwsUnsupportedError);
+    });
+
+    /// spec §7：快照会被同步层整条丢进 debug 日志，而它装的是用户的信内容。
+    /// 日志里只留定位信息（uid / rev / profileKey 前缀）。
+    test('toString 不含 subject / 正文 / 收件人 / 附件路径', () {
+      final key = _expectedKey('https://mail.example.com', 'Me@Example.com');
+      final snap = DraftSnapshot(
+        profileId: 'p1',
+        accountEmail: 'me@example.com',
+        profileKey: key,
+        uid: 'uid-log',
+        rev: 9,
+        deleted: false,
+        subject: '并购意向书',
+        recipients: const <String>['secret@example.com'],
+        body: '[{"insert":"机密正文"}]',
+        attachmentPaths: const <String>['/Users/me/机密.pdf'],
+        updatedAt: DateTime.utc(2026, 11, 9),
+      );
+
+      final text = snap.toString();
+      expect(text, isNot(contains('并购意向书')));
+      expect(text, isNot(contains('机密正文')));
+      expect(text, isNot(contains('secret@example.com')));
+      expect(text, isNot(contains('/Users/me')));
+      // 定位信息还在，够查问题。
+      expect(text, contains('uid-log'));
+      expect(text, contains('rev=9'));
+      expect(text, contains(key.substring(0, 8)));
+      expect(text, isNot(contains(key)), reason: '整个 profileKey 不进日志');
     });
   });
 }
