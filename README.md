@@ -75,9 +75,11 @@ the Google Services plugin and prints a notice. You get no push, but everything 
 Version numbers come from git, not from manual edits: the name is the latest tag without its
 `v` prefix, and the **build number is `git rev-list --count HEAD`**, so it grows on every
 commit. Builds you ship should go through `dart tool/build.dart <flutter build args>`, which
-injects both via `--dart-define`; a plain `flutter run` / `flutter build` still works and
-falls back to the `0.1.0+1` in `pubspec.yaml`. The About page and the desktop window title
-show the current version (`0.1.0+131`).
+injects both via `--dart-define`; a plain `flutter run` / `flutter build` still works, but
+falls back to whatever `pubspec.yaml` says — which is why each release writes the version
+back into it (`dart tool/bump.dart`, run by `.release/scripts/release-all.sh`) rather than
+leaving the hand-written `0.1.0+1` baseline there forever. The About page and the desktop
+window title show the current version (`0.1.0+131`).
 
 At launch (at most once a day) the app fetches a static version manifest from the website;
 when a newer build exists, the About page offers a download entry. The only request is that

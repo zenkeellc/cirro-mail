@@ -42,7 +42,7 @@ flutter build linux              # 需在 Linux 上
 
 ## 版本号与更新检查
 
-版本号不用手工改：版本名取最近的 git tag（去掉 `v`），**build 号 = git 提交数**（`git rev-list --count HEAD`，每提交一次自动 +1），构建时用 `--dart-define` 注入。要发出去的包走 `dart tool/build.dart <flutter build 参数>`；直接 `flutter run` / 裸 `flutter build` 也能用，只是没有注入值，退回 `pubspec.yaml` 里的 `0.1.0+1`。关于页与桌面窗口标题显示当前版本（`0.1.0+131`）。
+版本号不用手工改：版本名取最近的 git tag（去掉 `v`），**build 号 = git 提交数**（`git rev-list --count HEAD`，每提交一次自动 +1），构建时用 `--dart-define` 注入。要发出去的包走 `dart tool/build.dart <flutter build 参数>`；直接 `flutter run` / 裸 `flutter build` 也能用，只是没有注入值，退回 `pubspec.yaml` 里的版本 —— 所以每次发版都会把版本写回去（`dart tool/bump.dart`，由 `.release/scripts/release-all.sh` 在打 tag 前调用），不再让手写的 `0.1.0+1` 基线永远留在仓库里。关于页与桌面窗口标题显示当前版本（`0.1.0+131`）。
 
 App 启动时会拉一次官网的静态版本清单（默认一天最多一次），有新版本就在关于页给出下载入口。只请求 `cirro.zenkee.com` 上的一个静态 JSON，不带账号、邮件或设备信息；可以用 `--dart-define=APP_UPDATE_MANIFEST=`（空串）彻底关掉，或在关于页关掉自动检查。清单字段、发版时怎么改清单（`mail-site/scripts/app-version.mjs`）、平台下载回退规则，见 [`docs/app-update.md`](docs/app-update.md)。
 

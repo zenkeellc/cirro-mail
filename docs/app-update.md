@@ -36,6 +36,30 @@ App 怎么知道「自己是什么版本」、怎么知道「有没有新版」�
 
 这些值在编译期用 `--dart-define` 注入。**没注入时**（直接 `flutter run`、或没走包装脚本的 `flutter build`）App 退回 `PackageInfo`，也就是 `pubspec.yaml` 里那个 `0.1.0+1` —— 能跑、能显示，但 build 号不会随提交走。所以**要发出去的包一律走第三节的包装脚本**。
 
+### 发布时把版本写回 pubspec（`tool/bump.dart`）
+
+上面那套是**构建期**注入，只活在这一次构建里。仓库里的 `pubspec.yaml` 如果一直停在手写基线 `0.1.0+1`，那么任何不走 `tool/build.dart` 的 `flutter run` / `flutter build`（开发时、照 README 自己打包的人）看到的就都是 0.1.0 —— 关于页、窗口标题、平台包的版本字段全是它。
+
+所以发版脚本在**打 tag 之前**把版本写回仓库：
+
+```bash
+dart tool/bump.dart --version=0.1.10 --build=104 --channel=public   # 真写
+dart tool/bump.dart --dry-run --format=paths                       # 只算，只打印
+dart tool/bump.dart --check                                        # 只校验（发版检查清单用）
+```
+
+写这几类文件（`--format=paths` 输出改动清单，发版脚本拿它 `git add`）：
+
+| 文件 | 写成什么 | 谁写 |
+|---|---|---|
+| 根 `pubspec.yaml` | `<版本名>+<build 号>` | **只在公开渠道写**。商业检出的根版本随公开 `main` 合并过来（发版门禁本来就要求先合并公开 `main`）—— 在 pro 里写同一行，下一轮合并必然撞车 |
+| 内部包 `packages/<名字>/pubspec.yaml` | 版本名 | 按渠道：公开渠道写检出里的**全部**内部包；商业渠道只用 `--package=` 点名它自己的商业包 —— 两个检出逐字节相同的共享包只在公开检出写，在这边改会被 `check_public_sync.sh` 当未登记差异拒绝出包 |
+| 上面这些包在锁文件里的 `version:` | 同步 | 同上 —— 不改的话下一次 `pub get` 立刻把工作区弄脏 |
+
+「一个文件只有一个作者」不是洁癖：两个检出的同步就是 `git merge`，同一行两边都改，每次发版都要解一次冲突。pro 检出的根 `pubspec.yaml` 靠合并公开 `main` 拿到同一版（发版门禁本来就要求公开 `main` 已合并进 pro）。
+
+`.release/scripts/release-all.sh` 会在打 tag 前自动做这一步，并提交一次 `chore(release): 版本 → 0.1.10+104（public）`，tag 落在这个提交上；`--skip-version-sync` 可以关掉。注意写进 pubspec 的 build 号是**提交之后**的提交数（提交会让提交数 +1），也就是构建真正注入的那个数。
+
 界面上版本串的格式是 `0.1.0+131`（版本名 + build 号）：关于页与桌面窗口标题都用它（窗口标题多了应用名，见 `window_title.dart` 的 `Cirro Mail v0.1.0+131`）。build 号为 0（不知道）时只显示版本名。
 
 ## 二、`tool/version.dart`：只算版本，不构建
@@ -231,6 +255,7 @@ https://cirro.zenkee.com/app-version.json
 
 - [ ] tag 已推、GitHub Release 已发，资产可下载
 - [ ] `dart tool/version.dart --format=summary` 的版本名/build 号与要发的包一致
+- [ ] 版本已写回仓库：`git log -1` 能看到 `chore(release): 版本 → …`（发版脚本自动做），或手动跑过 `dart tool/bump.dart --check`
 - [ ] `node scripts/app-version.mjs --check` 通过
 - [ ] 新清单比旧的大（先比 `version`、再比 `buildNumber`），`releaseUrl` 与平台直链能打开
 - [ ] 清单提交并部署后，`curl -s https://cirro.zenkee.com/app-version.json | python3 -m json.tool` 能看到新版本
