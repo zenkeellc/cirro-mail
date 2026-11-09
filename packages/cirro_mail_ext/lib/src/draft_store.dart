@@ -197,6 +197,8 @@ class DraftChange {
 /// - [applyRemote] 解析不出 profile（id 与 key 都对不上本机）时**整个调用
 ///   no-op**，绝不插孤儿行 —— 草稿表的 `uid` 是全局唯一索引，孤儿行会把那个
 ///   uid 永久占住；
+/// - [byLocalId] 按**本机 id** 取行；`uid` 为空、`profileId` 对不上、行不存在
+///   一律返回 null（写信页据此安静地不显示任何东西）；
 /// - 不存在的 uid **不是错误**：[byUid] 返回 null，[clearTombstones] 静默跳过。
 ///
 /// ## 与 `MailStore` 的分工
@@ -257,6 +259,21 @@ abstract class DraftStore {
   /// 残留），挑中的那个未必是拥有这行的那个；症状是「云草稿在这台设备上永远
   /// 对不上」。命中多行时取 key 匹配的第一行。
   Future<DraftSnapshot?> byUid(String profileKey, String uid);
+
+  /// 按**本机草稿行 id** 找一条活草稿；[profileId] 与行上不一致时返回 null。
+  ///
+  /// 存在的理由只有一条：写信页手里只有本机草稿行的 `id`（地址里的
+  /// `/compose?draft=12`），它要在**页面生命周期内**问扩展一句「这条草稿有
+  /// 没有要提示用户的东西」（见 `AppExtension.draftWarning`）。同步层不用它
+  /// —— 那边认的是 [DraftSnapshot.uid]，跨设备才说得通。
+  ///
+  /// 口径与 [listAll] 一致：
+  /// - `uid` 为空的脏行按「找不到」处理（跨设备身份还没回填，云端认不出，
+  ///   拿它说什么都不可靠）；
+  /// - `profileId` 对不上（调用方拿错实例）也返回 null —— 绝不把另一台实例的
+  ///   草稿内容交出去；
+  /// - [draftId] 不是正数、或本机没有这一行 → null（不是错误）。
+  Future<DraftSnapshot?> byLocalId(String profileId, int draftId);
 
   /// 应用一份远端快照（拉取到的 upsert，或者 `deleted: true` 的服务端墓碑）。
   ///

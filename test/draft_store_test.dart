@@ -387,6 +387,62 @@ void main() {
     });
   });
 
+  group('byLocalId（写信页警示用）', () {
+    /// 写信页手里只有本机草稿行 id，没有 uid —— 这个出口就是为它开的。
+    test('命中：返回那一行的快照（uid / profileKey / rev / 附件都齐）', () async {
+      final id = await save(subject: '带附件的草稿');
+      final snap = await store.byLocalId('p1', id);
+      expect(snap, isNotNull);
+      expect(snap!.profileId, 'p1');
+      expect(snap.subject, '带附件的草稿');
+      expect(snap.uid, isNotEmpty);
+      expect(snap.rev, 1);
+      expect(snap.profileKey,
+          _expectedKey('https://mail.example.com', 'Me@Example.com'));
+      expect(snap.attachmentPaths, <String>['/tmp/one.pdf']);
+      expect(snap.recipients, <String>['a@example.com']);
+      expect(snap.deleted, isFalse);
+    });
+
+    /// uid 为空的脏行（迁移还没回填）不算「这条草稿」：扩展拿它做任何跨设备
+    /// 判断都不可靠，与 `listAll` 的口径保持一致。
+    test('uid 为空的行当「找不到」', () async {
+      final dirtyId = await db.into(db.drafts).insert(
+            DraftsCompanion.insert(
+              profileId: 'p1',
+              subject: const Value('脏行'),
+              updatedAt: DateTime.now().toUtc(),
+            ),
+          );
+      expect(await db.localDao.findDraft(dirtyId), isNotNull);
+      expect(await store.byLocalId('p1', dirtyId), isNull);
+    });
+
+    test('行不存在 / 非正数 id → null（不是错误）', () async {
+      final id = await save();
+      expect(await store.byLocalId('p1', id + 1000), isNull);
+      expect(await store.byLocalId('p1', 0), isNull);
+      expect(await store.byLocalId('p1', -1), isNull);
+      expect(await store.byLocalId('', id), isNull);
+    });
+
+    /// profile 对不上 = 调用方拿错了实例。绝不能把另一台实例的草稿内容交出去
+    /// （与 `byUid` 的 profileKey 校验同一条纪律）。
+    test('profile 不匹配 → null', () async {
+      await db.profileDao.upsertProfile(
+        const Profile(
+          id: 'p2',
+          baseUrl: 'https://other.example.com/api',
+          email: 'other@example.com',
+          sort: 1,
+        ),
+      );
+      final id = await save(); // 这条属于 p1
+      expect(await store.byLocalId('p1', id), isNotNull);
+      expect(await store.byLocalId('p2', id), isNull);
+    });
+  });
+
   group('profileKey', () {
     test('host 与 email 归一化：大小写、首尾空白都吃掉，算法可手算', () {
       final base =

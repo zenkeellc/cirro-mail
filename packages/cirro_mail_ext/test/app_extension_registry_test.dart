@@ -29,6 +29,8 @@ class _FakeExt extends AppExtension {
     this.onDraft,
     this.draftCalls,
     this.draftFail = false,
+    this.warning,
+    this.warningFail = false,
   });
 
   @override
@@ -90,10 +92,25 @@ class _FakeExt extends AppExtension {
   /// `onDraftChanged` 抛不抛 —— 同样验注册表吞异常。
   final bool draftFail;
 
+  /// 写信页警示（`AppExtension.draftWarning`）返回什么；null = 基类默认（不报）。
+  final String? Function(String profileId, int draftId)? warning;
+
+  /// `draftWarning` 抛不抛 —— 验注册表「一条坏实现不挡下一个」的纪律。
+  final bool warningFail;
+
   @override
   ({String licenseId, String licenseDeviceId})? get pushLicenseBinding {
     if (bindingFail) throw StateError('$id 读订阅身份失败');
     return binding;
+  }
+
+  @override
+  Future<String?> draftWarning({
+    required String profileId,
+    required int draftId,
+  }) async {
+    if (warningFail) throw StateError('$id 读写信页警示失败');
+    return warning?.call(profileId, draftId);
   }
 
   @override
@@ -219,6 +236,9 @@ class _FakeDraftStore implements DraftStore {
 
   @override
   Future<DraftSnapshot?> byUid(String profileKey, String uid) async => null;
+
+  @override
+  Future<DraftSnapshot?> byLocalId(String profileId, int draftId) async => null;
 
   @override
   Future<void> applyRemote(DraftSnapshot remote) async {}
@@ -579,6 +599,71 @@ void main() {
       expect(closed, hasLength(1), reason: '前一个抛错不能挡掉后一个');
       expect(closed.single.profileId, 'p1');
       expect(closed.single.draftUid, 'uid-1', reason: '参数要原样传下去');
+    });
+  });
+
+  group('写信页警示', () {
+    /// 公开版（空注册表）恒为 null —— 写信页那一趟因此什么都不画。
+    test('空注册表：null', () async {
+      expect(
+        await AppExtensionRegistry.instance
+            .draftWarningFor(profileId: 'p1', draftId: 7),
+        isNull,
+      );
+    });
+
+    /// 都返回 null / 空白串 = 不显示；空白串不能把后面真有问题的那一条挡掉。
+    test('全为 null / 空白串 → null；空白按「不认领」继续问下一个', () async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('none'),
+        _FakeExt('blank', warning: (_, _) => '   '),
+        _FakeExt('real', warning: (_, _) => '这条草稿有附件没下完'),
+      ]);
+      expect(
+        await AppExtensionRegistry.instance
+            .draftWarningFor(profileId: 'p1', draftId: 7),
+        '这条草稿有附件没下完',
+      );
+
+      AppExtensionRegistry.instance.reset();
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('blank', warning: (_, _) => ''),
+      ]);
+      expect(
+        await AppExtensionRegistry.instance
+            .draftWarningFor(profileId: 'p1', draftId: 7),
+        isNull,
+      );
+    });
+
+    test('按注册顺序取第一个非空，参数原样传下去', () async {
+      final calls = <({String profileId, int draftId})>[];
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a', warning: (profileId, draftId) {
+          calls.add((profileId: profileId, draftId: draftId));
+          return 'A 的警示';
+        }),
+        _FakeExt('b', warning: (_, _) => 'B 的警示'),
+      ]);
+      final text = await AppExtensionRegistry.instance
+          .draftWarningFor(profileId: 'p2', draftId: 42);
+      expect(text, 'A 的警示');
+      expect(calls.single.profileId, 'p2');
+      expect(calls.single.draftId, 42);
+    });
+
+    /// 这句跑在写信页的构建帧里：一条坏实现既不能把页面打红，也不能挡住
+    /// 后面那个真有问题要报的扩展。
+    test('第一个扩展抛错：第二个仍被问到', () async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('boom', warningFail: true),
+        _FakeExt('ok', warning: (_, _) => '还是我'),
+      ]);
+      expect(
+        await AppExtensionRegistry.instance
+            .draftWarningFor(profileId: 'p1', draftId: 1),
+        '还是我',
+      );
     });
   });
 

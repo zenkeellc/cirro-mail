@@ -48,6 +48,7 @@ import 'theme_pack.dart';
 /// | [externalUriStream] / [routeForExternalUri] | `external_link_host.dart`（App 根，`MaterialApp.router` 的 `builder` 里） |
 /// | [onBootstrap] | `main.dart`，`runApp` 之前，**不 await** |
 /// | [onComposeClosed] | `compose_screen.dart#_leave`（退出写信页、最后一次保存之后） |
+/// | [draftWarning] | `compose_screen.dart#_buildScaffold`（正文上方的草稿警示条） |
 abstract class AppExtension {
   const AppExtension();
 
@@ -512,4 +513,41 @@ abstract class AppExtension {
     required String profileId,
     String? draftUid,
   }) async {}
+
+  /// 写信页的附加警示（草稿有附件未下载完整等）。返回 null/空串 = 不显示。
+  ///
+  /// 核心在写信页**构建时**调用；实现必须快、不得抛（核心会尽量兜底但不
+  /// 保证）。
+  ///
+  /// ## 落点与形状
+  ///
+  /// 核心把它画成正文上方一条**可关闭的**警示条（`colorScheme.errorContainer`
+  /// 那一套），文案原样显示，不解析、不拼接。用户关掉之后**这一页生命周期内**
+  /// 不再出现；重进页面、或者下一次保存带来的状态变化会重新问一次
+  /// （见 `compose_screen.dart` 里那段刷新说明 —— 不追求实时）。
+  ///
+  /// 空注册表（公开版）、或者所有扩展都返回 null 时，这一页**逐像素不变**：
+  /// 警示条是零高度，不占布局。
+  ///
+  /// ## 参数
+  ///
+  /// - [profileId]：这一页实际发信的那台实例（`ComposeState.sendProfileId`，
+  ///   选了发件人就跟发件人走）。要读草稿内容就用
+  ///   `AppExtensionRegistry.instance.draftStore?.byLocalId(profileId, draftId)`；
+  /// - [draftId]：本机草稿行 id（`Drafts.id`），**不是**跨设备的
+  ///   [DraftSnapshot.uid]。这一页还没有草稿行时核心根本不会调这里。
+  ///
+  /// ## 为什么是 async
+  ///
+  /// 判定往往要读库（附件清单、下载状态都在扩展自己的表里）。契约只要求
+  /// 「快」：一次本地查询的量级，不要在这里做网络往返 —— 它跑在写信页的
+  /// 构建帧里。
+  ///
+  /// 多个扩展都给出非空文本时，注册表按注册顺序取**第一个**；单个扩展抛错
+  /// 只留一行日志，不影响后面的扩展，也不影响写信页。
+  Future<String?> draftWarning({
+    required String profileId,
+    required int draftId,
+  }) async =>
+      null;
 }

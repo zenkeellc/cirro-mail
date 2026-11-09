@@ -154,6 +154,35 @@ class AppExtensionRegistry {
     }
   }
 
+  // ---- 写信页警示 ----
+
+  /// 写信页要显示的草稿警示（见 [AppExtension.draftWarning]），按注册顺序取
+  /// **第一个非空**。
+  ///
+  /// 口径与 [pushLicenseBinding] / [appDisplayName] 一致：一条警示条只该讲一件
+  /// 事，两个扩展同时报会挤成一段没人读完的横幅。空白串按「不认领」处理
+  /// （继续问下一个），返回的是去掉首尾空白之后的那一份。
+  ///
+  /// **单个扩展抛错只留一行日志**：这句跑在写信页的构建帧里，一条坏实现既
+  /// 不该把页面打红，也不该挡住后面真有问题要报的扩展。空注册表（公开版）
+  /// 恒为 null，写信页因此逐像素不变。
+  Future<String?> draftWarningFor({
+    required String profileId,
+    required int draftId,
+  }) async {
+    for (final ext in _extensions) {
+      try {
+        final text =
+            await ext.draftWarning(profileId: profileId, draftId: draftId);
+        final trimmed = text?.trim();
+        if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+      } catch (e) {
+        debugPrint('扩展 ${ext.id} 的写信页警示读取失败：$e');
+      }
+    }
+    return null;
+  }
+
   // ---- 云草稿推送（license 绑定 / 跨设备事件） ----
 
   /// 本机订阅的设备身份（见 [AppExtension.pushLicenseBinding]），按注册顺序

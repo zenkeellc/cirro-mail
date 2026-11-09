@@ -119,6 +119,24 @@ class CoreDraftStore implements DraftStore {
   }
 
   @override
+  Future<DraftSnapshot?> byLocalId(String profileId, int draftId) async {
+    // 正数才是「库里的行」；0 / 负数在写信页表示「这一页还没有草稿行」。
+    if (profileId.isEmpty || draftId <= 0) return null;
+    final row = await _db.localDao.findDraft(draftId);
+    // profile 对不上 = 调用方拿错了实例。与 [byUid] 同一条纪律：宁可查不到，
+    // 也不把另一台实例的草稿内容交出去。
+    if (row == null || row.profileId != profileId) return null;
+    // uid 为空是「迁移还没回填」的脏行（与 [listAll] 同一口径）：跨设备身份都
+    // 还没有，扩展拿它做任何判断都不可靠。
+    if (row.uid.isEmpty) return null;
+    // 行还在、profile 却被删掉了（`_clearDataOf` 清到一半的残行）：key 算不
+    // 出来，快照给不完整，当找不到。
+    final profile = await _db.profileDao.findProfile(row.profileId);
+    if (profile == null) return null;
+    return _snapshotOf(row, profile);
+  }
+
+  @override
   Future<void> applyRemote(DraftSnapshot remote) async {
     if (remote.deleted) {
       // 服务端说这条没了：删本机行，**不**写本地墓碑（否则会把一次远端删除

@@ -311,6 +311,25 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   /// 首次装载的基线拍过了没有（见 [_maybeMarkBaseline]）。
   bool _baselineMarked = false;
 
+  /// 正文上方那条草稿警示的 future（扩展给的，见
+  /// [AppExtension.draftWarning]）。
+  ///
+  /// **必须缓存**：`build` 每帧都跑，而 `draftWarningFor` 是一次异步查库
+  /// （扩展那边要读草稿行与附件状态）。每帧造一个新 future 会让
+  /// [FutureBuilder] 每帧重新订阅、扩展被每帧问一次 —— 契约里那句「实现必须
+  /// 快」是给**一次调用**留的预算，不是给每一帧的。
+  Future<String?>? _draftWarningFuture;
+
+  /// [_draftWarningFuture] 对应的是哪一组值。变了才重新问一次扩展。
+  ({int draftId, String profileId, bool dirty})? _draftWarningKey;
+
+  /// 用户已经把**哪条草稿**的警示关掉了。
+  ///
+  /// 语义是「这一页生命周期内别再弹」：重进页面（新 state）、或者换一条草稿
+  /// （id 变了）会重新出现。按 id 记而不是一个 bool，是因为同一页可能在首帧
+  /// 之后才拿到 id（新页第一次保存）。
+  int? _draftWarningDismissedFor;
+
   @override
   void initState() {
     super.initState();
@@ -498,6 +517,44 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     );
   }
 
+  /// 这一页要问扩展的那条草稿警示（见 [AppExtension.draftWarning]）。
+  ///
+  /// 返回 null = 这一页根本不问（还没有草稿行、或者账号还没定下来）。
+  ///
+  /// ## 什么时候会刷新
+  ///
+  /// future 只在 [_draftWarningKey]（`draftId` + 发信账号 + `dirty`）变化时
+  /// 重新问一次。**不追求实时**：
+  ///
+  /// - 页面上还没有草稿行（`draftId == null`）→ 不画，也不问；
+  /// - 第一次保存把 id 写进 `state.draftId`、或用户第一次改动把 `dirty` 翻成
+  ///   true → 换 key → 重新问一次（这就是「保存成功后的 state 变化」在这里的
+  ///   全部可见信号：`ComposeDraftSaver` 是直接写库的，不改 state）；
+  /// - 之后不再轮询。扩展那份状态在页面开着的时候变了（比如附件刚下完），
+  ///   要么等用户下次保存触发一次 state 变化，要么重进页面 —— 一条常驻的
+  ///   `watch` 会把这条接缝变成「每个扩展都要在写信页起一条订阅」，不值得。
+  Future<String?>? _draftWarning(ComposeState state) {
+    final draftId = state.draftId;
+    if (draftId == null || draftId <= 0) {
+      _draftWarningKey = null;
+      _draftWarningFuture = null;
+      return null;
+    }
+    // 账号还没定下来时先不问：`profileId` 是扩展读草稿的唯一入口，空串问出去
+    // 只会让每个实现自己再猜一次。它出现之后（首帧之后的 state 变化）会重新问。
+    final profileId = state.sendProfileId;
+    if (profileId.isEmpty) return null;
+    final key = (draftId: draftId, profileId: profileId, dirty: state.dirty);
+    if (_draftWarningKey != key) {
+      _draftWarningKey = key;
+      _draftWarningFuture = AppExtensionRegistry.instance.draftWarningFor(
+        profileId: profileId,
+        draftId: draftId,
+      );
+    }
+    return _draftWarningFuture;
+  }
+
   Widget _buildScaffold(
     BuildContext context,
     AppLocalizations l10n,
@@ -526,6 +583,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       aiUsable,
       compact: compact,
     );
+    // 正文上方那条草稿警示的 future（见 [_draftWarning]）。null = 这一页不问，
+    // 下面整条不画 —— 空注册表 / 没有草稿行时布局逐像素不变。
+    final warning = _draftWarning(state);
     return Scaffold(
       // 宽/中屏与「邮件预览」同一套顶栏（`PaneHeader`，60 高）：撰写页现在
       // 只占内容区、左侧一级导航一直在，再撑一个 56 的 Material AppBar 会与
@@ -647,6 +707,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             ),
           ),
           const Divider(height: 1),
+          // 草稿警示（扩展给的，见 [AppExtension.draftWarning]）：铺在正文上方、
+          // 工具栏之前 —— 它讲的是**这一条草稿**的问题（附件没下完之类），不是
+          // 某个格式按钮的状态。关掉之后这一页不再出现（见 [_draftWarning]）。
+          if (warning != null && _draftWarningDismissedFor != state.draftId)
+            _DraftWarningBar(
+              key: const ValueKey('compose-draft-warning'),
+              future: warning,
+              dismissTooltip: l10n.close_,
+              onDismiss: () => setState(
+                () => _draftWarningDismissedFor = state.draftId,
+              ),
+            ),
           // ① 常驻编辑工具栏：正文上方**一直在**的那一条。
           //
           // 原来格式按钮只在选中文字时浮出（那份 `EditorToolbar` 仍在、也仍然
@@ -2087,6 +2159,84 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   /// 而面板要的是一到手就能显示的 `AiRun` —— `ComposeAi` 里那个私有的
   /// `_adopt` 就是干这个的（Task D17），所以这里走它的公开包装。
   AiRun _adopt(Future<AiStart> pending) => ComposeAi.pendingRun(pending);
+}
+
+/// 写信页正文上方的**草稿警示条**（见 [AppExtension.draftWarning]）。
+///
+/// 用 [FutureBuilder] 而不是「在 state 里存文本」：文本是异步来的，而这一页
+/// 的 state 属于控制器 —— 一条纯展示的提示不该进控制器的状态机。future 由
+/// 页面缓存（`_ComposeScreenState._draftWarning`），所以重建不会重复问扩展。
+///
+/// 空串 / null / 抛错**什么都不画**，而且是零高度（[SizedBox.shrink]）：公开版
+/// 与「这条草稿没有问题」的页面上，它与不存在时完全一样。
+class _DraftWarningBar extends StatelessWidget {
+  const _DraftWarningBar({
+    super.key,
+    required this.future,
+    required this.dismissTooltip,
+    required this.onDismiss,
+  });
+
+  final Future<String?> future;
+  final String dismissTooltip;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String?>(
+      future: future,
+      builder: (context, snapshot) {
+        // 还在路上、返回 null / 空白串、或者扩展抛了错 → 不画。错误态刻意与
+        // 「没有警示」同一形态：一条提示读不出来不该变成一条红字错误。
+        final text = (snapshot.data ?? '').trim();
+        if (text.isEmpty) return const SizedBox.shrink();
+        final scheme = Theme.of(context).colorScheme;
+        return Material(
+          color: scheme.errorContainer,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.warning_amber_rounded,
+                    size: 18,
+                    color: scheme.onErrorContainer,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onErrorContainer,
+                        ),
+                  ),
+                ),
+                IconButton(
+                  // 与顶栏那颗关闭按钮**必须**区分开：测试与无障碍都按这个 key
+                  // 找「关掉这条警示」，不是「关掉这一页」。
+                  key: const ValueKey('compose-draft-warning-dismiss'),
+                  tooltip: dismissTooltip,
+                  icon: Icon(
+                    Icons.close,
+                    size: 18,
+                    color: scheme.onErrorContainer,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: onDismiss,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// 发送前本地校验攒下来的问题，**一次全列出来**。
