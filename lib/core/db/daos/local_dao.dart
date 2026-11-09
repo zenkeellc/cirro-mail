@@ -542,6 +542,111 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
         );
       });
 
+  // ------------------------------------------------------ 云端同步写回
+
+  /// 应用一份**远端**草稿：按 `(profileId, uid)` 精确落库，**不改 rev**。
+  ///
+  /// 与 [saveDraft] / [updateDraftFields] 的差别只有一条，但它决定了同步层
+  /// 能不能收敛：那两个方法把 `rev` 当成「本地内容版本」+1，而这里写进去的
+  /// `rev` 来自远端（服务端 CAS 的依据）。混用的话，每拉一次就凭空多出一个
+  /// 本地版本 —— 冲突判定会把「其实没改过」判成「改过」，然后无限生成冲突
+  /// 副本。所以这里**必须**走独立的写路径，不能复用 `saveDraft`。
+  ///
+  /// 行为：行存在 → 整行覆盖（主题/正文/收件人/附件/发件邮箱/更新时间都按
+  /// 远端的来）；不存在 → 插入（`uid`/`rev` 用远端的）。同一事务里**清掉该
+  /// uid 的墓碑**：远端把这条又写回来了，说明「本机删过」这件事已经过期，
+  /// 留着它会让同步层再把删除推一次、把刚拉下来的草稿又抹掉。
+  ///
+  /// 冲突判定不在这一层：本地脏且 rev 更高时，调用方根本不该调到这里
+  /// （见父仓 spec §6.5）。这里只负责「按你说的落库」。
+  ///
+  /// 空 `uid` 直接返回：那是「迁移还没回填」的脏行身份，写进来也进不了任何
+  /// 同步视图（与 [findDraftByUid] 的口径一致）。
+  Future<void> applyRemoteDraft({
+    required String profileId,
+    required String uid,
+    required int rev,
+    required String accountEmail,
+    required String recipientsJson,
+    required String subject,
+    required String content,
+    required List<String> attachmentPaths,
+    required DateTime updatedAt,
+  }) {
+    if (uid.isEmpty) return Future<void>.value();
+    final companion = DraftsCompanion(
+      profileId: Value(profileId),
+      uid: Value(uid),
+      rev: Value(rev),
+      accountEmail: Value(accountEmail),
+      recipientsJson: Value(recipientsJson),
+      subject: Value(subject),
+      content: Value(content),
+      attachmentPathsJson: Value(encodeAttachmentPaths(attachmentPaths)),
+      updatedAt: Value(updatedAt.toUtc()),
+    );
+    return transaction(() async {
+      final existing = await (select(drafts)
+            ..where((t) => t.profileId.equals(profileId) & t.uid.equals(uid)))
+          .getSingleOrNull();
+      if (existing != null) {
+        await (update(drafts)..where((t) => t.id.equals(existing.id)))
+            .write(companion);
+      } else {
+        await into(drafts).insert(companion);
+      }
+      await (delete(draftTombstones)
+            ..where((t) => t.profileId.equals(profileId) & t.uid.equals(uid)))
+          .go();
+    });
+  }
+
+  /// 应用**服务端删除**：删本机行（连同「打开中」标记），并且**不写墓碑**。
+  ///
+  /// 为什么不写墓碑：墓碑的含义是「本机删了、要推到云端」。把远端删除记成
+  /// 本机墓碑，下次推送就会把这条删除再发回去 —— 两台设备各删一次、互相
+  /// 触发，永远删不完。同理，同一事务里把已有墓碑也清掉：云端已经确认删了，
+  /// 这个账号键下不再有「欠一次删除」的账。
+  ///
+  /// 行不存在是幂等的空操作（远端墓碑可能被重复拉到）。
+  Future<void> deleteRemoteDraft(String profileId, String uid) =>
+      transaction(() async {
+        if (uid.isEmpty) return;
+        final row = await (select(drafts)
+              ..where(
+                  (t) => t.profileId.equals(profileId) & t.uid.equals(uid)))
+            .getSingleOrNull();
+        if (row != null) {
+          await (delete(composePages)
+                ..where((t) => t.draftId.equals(row.id)))
+              .go();
+          await (delete(drafts)..where((t) => t.id.equals(row.id))).go();
+        }
+        await (delete(draftTombstones)
+              ..where((t) => t.profileId.equals(profileId) & t.uid.equals(uid)))
+            .go();
+      });
+
+  /// 全部墓碑，按删除时间升序（同步层补发时先删的先发）。
+  Future<List<DbDraftTombstone>> listDraftTombstones() =>
+      (select(draftTombstones)
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.deletedAt),
+            ]))
+          .get();
+
+  /// 删掉这些墓碑（云端已确认收到 `deleted=true`）。
+  ///
+  /// 空集合直接返回：`IN ()` 在 SQLite 里是语法错误，而「一个都没推成功」
+  /// 是正常状态，不该让调用方先判空。
+  Future<void> deleteTombstones(String profileId, Iterable<String> uids) async {
+    final list = uids.toList(growable: false);
+    if (list.isEmpty) return;
+    await (delete(draftTombstones)
+          ..where((t) => t.profileId.equals(profileId) & t.uid.isIn(list)))
+        .go();
+  }
+
   // --------------------------------------------------------- 收件人历史
 
   /// 记一次收件人使用。已存在则次数 +1 并刷新时间（自动补全按热度+最近排）。

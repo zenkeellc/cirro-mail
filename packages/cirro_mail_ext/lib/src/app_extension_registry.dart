@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import 'ai_transport.dart';
 import 'app_extension.dart';
+import 'draft_store.dart';
 import 'mail_store.dart';
 import 'notification_policy.dart';
 import 'push_managed.dart';
@@ -46,6 +47,8 @@ class AppExtensionRegistry {
     _extensions.clear();
     _mailStore = null;
     _mailStoreReady = Completer<MailStore>();
+    _draftStore = null;
+    _draftStoreReady = Completer<DraftStore>();
   }
 
   // ---- 本地邮件读取 ----
@@ -84,6 +87,46 @@ class AppExtensionRegistry {
     if (_mailStore != null) return;
     _mailStore = store;
     if (!_mailStoreReady.isCompleted) _mailStoreReady.complete(store);
+  }
+
+  // ---- 本地草稿读取 / 写回 ----
+
+  DraftStore? _draftStore;
+
+  /// 核心挂上来的草稿读写口。没有（公开版、或者核心还没挂）时是 null ——
+  /// 消费方要能安静降级，别抛。
+  ///
+  /// 与 [mailStore] **同一时机**挂（`main.dart` 的 `BootstrapGate`，库建好之后），
+  /// 理由也相同：早不了（那会儿库还不存在）、晚不得（挂晚了同步层就错过了
+  /// 启动时的第一轮对账）。
+  DraftStore? get draftStore => _draftStore;
+
+  Completer<DraftStore> _draftStoreReady = Completer<DraftStore>();
+
+  /// 「草稿 store 挂上来了」这个时刻。给 [AppExtension.onBootstrap] 里就要用它
+  /// 的扩展（商业版的云草稿同步引擎）晒太阳。
+  ///
+  /// ## 与 `mailStoreReady` 同一套时序理由
+  ///
+  /// 扩展的启动钩子跑在核心建好本地库之前，那时 [draftStore] 必然是 null，
+  /// 靠轮询猜「差不多好了吧」是最难查的一类 bug。
+  ///
+  /// **注意它可能永远不完成**：公开版没人挂 store；库打不开时核心也不会挂。
+  /// 所以只该在「确实需要它」的地方 await，**不要**拿它当启动同步点 ——
+  /// 一个永远挂起的 await 会把整个 `onBootstrap` 停在那里，而它后面可能还有
+  /// 别的事要做。商业版的做法是：`await` 之前先判 [draftStore] 在不在，或者给
+  /// await 包一层超时（云草稿本来就是尽力而为、可静默降级的能力）。
+  Future<DraftStore> get draftStoreReady => _draftStoreReady.future;
+
+  /// 由核心在本地库建好之后调用一次。
+  ///
+  /// **第二次是空操作**：`BootstrapGate` 的重试会重建整棵 `ProviderScope`，
+  /// 同一个进程里可能走第二次。两个 store 意味着同步层对两个（其中一个可能
+  /// 已经关掉的）库句柄推同一批草稿 —— 与 [attachMailStore] 的取舍逐字一致。
+  void attachDraftStore(DraftStore store) {
+    if (_draftStore != null) return;
+    _draftStore = store;
+    if (!_draftStoreReady.isCompleted) _draftStoreReady.complete(store);
   }
 
   // ---- 路由 / UI ----

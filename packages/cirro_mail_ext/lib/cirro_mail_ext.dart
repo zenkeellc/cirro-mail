@@ -30,6 +30,7 @@ export 'src/ai_transport.dart'
         AiTransportException;
 export 'src/app_extension.dart' show AppExtension;
 export 'src/app_extension_registry.dart' show AppExtensionRegistry;
+export 'src/draft_store.dart' show DraftChange, DraftChangeKind, DraftSnapshot, DraftStore;
 export 'src/mail_store.dart'
     show LocalMail, MailDeleted, MailStore, MailStoreEvent, MailStoreReset, MailUpserted;
 export 'src/notification_policy.dart' show NotificationCandidate;

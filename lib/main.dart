@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'bootstrap.dart';
 import 'core/db/core_mail_store.dart';
+import 'core/db/draft_store_impl.dart';
 import 'core/extensions.dart';
 import 'core/theme/app_theme.dart';
 import 'features/notifications/background_sync_task.dart';
@@ -119,6 +120,16 @@ class _BootstrapGateState extends State<BootstrapGate> {
         // 这一句**在 `main.dart` 里，所以两个版本逐字节相同** —— `data.db` 是
         // 核心自己的库，公开版挂上去也没人读（注册表里没有扩展）。
         AppExtensionRegistry.instance.attachMailStore(CoreMailStore(data.db));
+
+        // 草稿的读取/写回口与 `mailStore` **同一时机**挂（同一份 `data.db`，
+        // 早不了也晚不得，理由见上）。公开版挂上去也没人读 —— 注册表里没有
+        // 扩展，这个对象不会被任何代码碰到。
+        //
+        // 重试那条路同样不重挂：`attachDraftStore` 第二次是空操作，扩展手上
+        // 会留着**上一个**（可能已经关掉的）库句柄。与 `mailStore` 的取舍逐字
+        // 一致：两个 store 意味着同步层对着两个库文件推同一批草稿，比「云草稿
+        // 不生效」难查得多。
+        AppExtensionRegistry.instance.attachDraftStore(CoreDraftStore(data.db));
 
         // `key` 用 data 的身份：重试后是一份新的 BootstrapData，
         // 换 key 会让整个 ProviderScope（以及底下所有 provider）从头建，

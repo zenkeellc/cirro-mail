@@ -119,6 +119,11 @@ dependencies:
   # ---- 模型 / 工具 ----
   intl: any
   uuid: ^4.6.0
+  # 草稿的 `profileKey`（sha256，见 `core/db/draft_store_impl.dart`）。lock 里
+  # 本来就有 3.0.7（`crypto` 是 uuid / flutter_quill 那条链的传递依赖），
+  # 这里显式声明是因为直接 import 了它 —— 只靠传递依赖哪天会断，而且
+  # `depend_on_referenced_packages` 会先报出来。
+  crypto: ^3.0.7
   package_info_plus: ^10.2.2
   cupertino_icons: ^1.0.8
 
