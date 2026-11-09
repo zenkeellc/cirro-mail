@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cirro_mail_ext/cirro_mail_ext.dart' show AppExtensionRegistry;
 import 'package:desktop_drop/desktop_drop.dart' show DropDoneDetails;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -1275,9 +1276,49 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       // 「离开即存草稿」。
       await _c.saveDraftOnExit();
     }
+    if (!mounted) return;
+    await _notifyComposeClosed();
     if (!context.mounted) return;
     _leavingFromButton = true;
     _goBack(context);
+  }
+
+  /// 退出写信页后告诉扩展「这一页关了」（[AppExtensionRegistry.notifyComposeClosed]）。
+  ///
+  /// **只从 [_leave] 调**：`X`、`Esc`、系统返回手势都汇到那一个出口，而
+  /// `dispose` 不调 —— 页面销毁时 provider 与库都可能已经没了，在那里读
+  /// `state` / 数据库是「在 dispose 之后碰引用」的坑；`_leave` 是唯一的保存
+  /// 路径，也就在唯一一处通知。
+  ///
+  /// 时序：调用点已经 `await` 过最后一次落盘，所以这里读到的 `draftId` 就是
+  /// 这条草稿的最终状态。空信（`draftId` 为 null/0、或者草稿行已被
+  /// `closeComposePage` 删掉）给 `draftUid: null`，扩展可以据此不做事。
+  ///
+  /// 真正通知扩展那一步是 `unawaited` 的：扩展契约是「只标脏 / 入队」，
+  /// 不能让一次钩子把页面退场拖住（单个扩展抛错也不会影响退出，注册表自己
+  /// 兜住）。
+  Future<void> _notifyComposeClosed() async {
+    final state = _state;
+    final draftId = state.draftId;
+    String? draftUid;
+    if (draftId != null && draftId > 0) {
+      try {
+        final uid =
+            (await ref.read(databaseProvider).localDao.findDraft(draftId))?.uid;
+        // 迁移回填之前的行 `uid` 是空串 —— 那也算「没有稳定身份」，按空信
+        // 的口径给 null，别把空串当成一条真草稿发给扩展。
+        if (uid != null && uid.isNotEmpty) draftUid = uid;
+      } catch (e) {
+        // 读不到 uid 不该让页面退不出去：按空信处理，只留一行日志。
+        debugPrint('读取草稿 $draftId 的 uid 失败：$e');
+      }
+    }
+    unawaited(
+      AppExtensionRegistry.instance.notifyComposeClosed(
+        profileId: state.sendProfileId,
+        draftUid: draftUid,
+      ),
+    );
   }
 
   Future<void> _discard(BuildContext context) async {

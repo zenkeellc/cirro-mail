@@ -45,6 +45,7 @@ import 'theme_pack.dart';
 /// | [allowsNotification] | `NotificationGate.select` / `countNotifiable` |
 /// | [externalUriStream] / [routeForExternalUri] | `external_link_host.dart`（App 根，`MaterialApp.router` 的 `builder` 里） |
 /// | [onBootstrap] | `main.dart`，`runApp` 之前，**不 await** |
+/// | [onComposeClosed] | `compose_screen.dart#_leave`（退出写信页、最后一次保存之后） |
 abstract class AppExtension {
   const AppExtension();
 
@@ -419,4 +420,29 @@ abstract class AppExtension {
   /// 启动时调一次。核心**不 await**：扩展的初始化不该拖慢首帧；真需要等待的
   /// 扩展自己在内部排队。
   Future<void> onBootstrap() async {}
+
+  /// 写信页关闭（最后一次保存完成之后）调用。`draftUid` 为 null = 空信未落库。
+  ///
+  /// 核心**只在一处**调它：`compose_screen.dart` 的 `_leave` —— `X` 按钮、
+  /// `Esc`、系统返回手势都会走那一个出口，且在那之前草稿已经落盘（或已被
+  /// 判成空信删掉）。所以这里的时序保证是「页面正在关、库里的草稿行已经是
+  /// 最终状态」，**不要**再自己去读一遍草稿内容，更不要 await 它把页面关掉
+  /// 的过程拖长。
+  ///
+  /// ## 实现必须快（只标脏 / 入队）
+  ///
+  /// 核心用 `unawaited` 发起它，页面不会等 —— 但它毕竟跑在 UI 正在退场的
+  /// 那一帧里。在这里做网络请求或长时间扫库，会跟退场动画抢同一段主线程。
+  /// 正确姿势是「记下来 / 丢进队列，后台自己再慢慢同步」。
+  ///
+  /// `draftUid` 来自退出时那条草稿行（`Drafts.uid`，v6 起的跨设备稳定身份）。
+  /// 空信（什么都没写、草稿行已被删掉、或者这一页根本没有草稿行）时为
+  /// `null` —— 扩展可以据此什么都不做。
+  ///
+  /// 单个扩展抛错不影响其它扩展，也不会影响页面退出（注册表逐个 await 并
+  /// 吞掉异常，只留一行日志）。
+  Future<void> onComposeClosed({
+    required String profileId,
+    String? draftUid,
+  }) async {}
 }

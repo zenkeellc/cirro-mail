@@ -129,6 +129,30 @@ class AppExtensionRegistry {
     if (!_draftStoreReady.isCompleted) _draftStoreReady.complete(store);
   }
 
+  // ---- 写信页退出 ----
+
+  /// 写信页关闭时逐个通知扩展（见 [AppExtension.onComposeClosed]）。
+  ///
+  /// **逐个 await**（而不是像 [bootstrapAll] 那样发射后不管）：实现方的契约
+  /// 是「只标脏 / 入队」，一次 await 不会拖住页面退出；串行还保证多个扩展
+  /// 看到事件的顺序与注册顺序一致，同一封信不会在两条同步链上互相抢。
+  ///
+  /// **单个扩展抛错不拖累其它扩展**：异常在这里吞掉、只留一行日志。页面
+  /// 正在退场，一条坏钩子既不该让后面的扩展收不到事件，也不该把异常漏到
+  /// 调用方（核心是 `unawaited` 调它，漏出去就是一条未捕获的 zone 错误）。
+  Future<void> notifyComposeClosed({
+    required String profileId,
+    String? draftUid,
+  }) async {
+    for (final ext in _extensions) {
+      try {
+        await ext.onComposeClosed(profileId: profileId, draftUid: draftUid);
+      } catch (e) {
+        debugPrint('扩展 ${ext.id} 的 onComposeClosed 失败：$e');
+      }
+    }
+  }
+
   // ---- 路由 / UI ----
 
   /// 所有扩展的路由，按注册顺序拼接。
