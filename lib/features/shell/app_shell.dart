@@ -258,6 +258,16 @@ class AppShell extends ConsumerWidget {
             for (final entry in HomeEntries.topActions) itemOf(entry),
           ],
         ),
+        // 「邮件撰写」分类：下级是**正在编辑**的页面（不是全部草稿 ——
+        // 那是草稿箱页的事）。与草稿箱同一张表，见 `ComposePages` 的注释。
+        //
+        // **放在邮件组之前**（而不是草稿箱下面）：这一组是「此刻手上开着哪几页」，
+        // 属于**进行中的工作**，新开一页时用户得一眼看见它。放在最底下时，
+        // 4 台实例的邮箱子树一展开就把这一组挤到滚动区外面去了（800×632 的
+        // 默认窗口实测：子项与空态提示都在折叠线以下）。
+        NavSidebarGroup(
+          items: <Widget>[SidebarComposeGroup(uri: uri)],
+        ),
         // 邮件组：一封信的各条去向。邮箱下级菜单**紧跟在收件箱那一项后面**
         // （同一组里），不能另起一组：另起一组会被组间的留白劈开，看起来像
         // 两组不相干的东西。
@@ -277,11 +287,6 @@ class AppShell extends ConsumerWidget {
                 ),
             ],
           ],
-        ),
-        // 「邮件撰写」分类：下级是**正在编辑**的页面（不是全部草稿 ——
-        // 那是草稿箱页的事）。与草稿箱同一张表，见 `ComposePages` 的注释。
-        NavSidebarGroup(
-          items: <Widget>[SidebarComposeGroup(uri: uri)],
         ),
       ],
       // 设置常驻在底部，不跟着列表滚（见 `NavSidebar.footer`）。
