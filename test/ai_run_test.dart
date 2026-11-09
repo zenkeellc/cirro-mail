@@ -9,6 +9,9 @@ import 'package:mail_app/features/ai/ai_service.dart';
 
 /// 假传输：按脚本喂增量、按需抛错、能被取消。
 class ScriptedTransport implements AiTransport {
+  @override
+  String? get sourceLabel => null;
+
   ScriptedTransport(this.chunks, {this.error, this.hang = false});
 
   final List<String> chunks;

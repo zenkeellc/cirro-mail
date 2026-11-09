@@ -17,6 +17,9 @@ import 'package:mail_app/features/compose/ai/ai_draft_sheet.dart';
 /// 受控的假生成：`finish()` 放行（理由见 D12 的验收要点 —— 不能用带定时器的
 /// 轮询，否则 `pumpAndSettle` 永远等不到静止）。
 class ManualTransport implements AiTransport {
+  @override
+  String? get sourceLabel => null;
+
   ManualTransport([this.reply = '草稿正文']);
 
   final String reply;
@@ -326,6 +329,9 @@ void main() {
   });
 }
 
+
+  @override
+  String? get sourceLabel => null;
 class _FailingTransport implements AiTransport {
   @override
   Future<void> send({

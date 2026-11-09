@@ -23,6 +23,9 @@ import 'package:mail_app/features/compose/ai/ai_rewrite_sheet.dart';
 /// 用一个 Completer 让测试显式放行，挂起的 Future 不带定时器，pumpAndSettle
 /// 就能正常收敛。
 class ManualTransport implements AiTransport {
+  @override
+  String? get sourceLabel => null;
+
   final List<String> chunks = <String>[];
   final Completer<void> _gate = Completer<void>();
   bool cancelled = false;
@@ -391,6 +394,9 @@ void main() {
   });
 }
 
+
+  @override
+  String? get sourceLabel => null;
 class _FailingTransport implements AiTransport {
   @override
   Future<void> send({

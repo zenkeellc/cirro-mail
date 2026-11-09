@@ -131,6 +131,35 @@ class AppExtensionRegistry {
         for (final ext in _extensions) ...ext.aiUsageExtras(context),
       ];
 
+  /// 扩展提供的「设置 → AI」顶部通道卡（见 [AppExtension.aiChannelCard]），
+  /// 按注册顺序取**第一个**非 null。
+  ///
+  /// 取第一个而不是全部拼起来：一张卡只有一个身份，拼两张只会让用户同时看到
+  /// 两种「当前通道」。空注册表（公开版）恒为 null，这一页逐像素不变。
+  Widget? aiChannelCard(BuildContext context) {
+    for (final ext in _extensions) {
+      final card = ext.aiChannelCard(context);
+      if (card != null) return card;
+    }
+    return null;
+  }
+
+  /// 所有扩展往 AI 失败 / 未配置提示下方加的动作块，按注册顺序拼接。
+  ///
+  /// 位置由调用方（`ai_stream_view.dart`）落实在提示文案之下，注册表只负责
+  /// 按顺序拼平。空注册表时恒为空列表。
+  List<Widget> aiNoticeExtras(BuildContext context) => <Widget>[
+        for (final ext in _extensions) ...ext.aiNoticeExtras(context),
+      ];
+
+  /// 是否有扩展要求「AI 入口常驻」（见 [AppExtension.aiEntryAlwaysVisible]）。
+  ///
+  /// 任何一个扩展说要就返回 true：入口常驻是**放宽**限制，多个扩展之间不会
+  /// 互相打架；所有扩展都不表态（公开版）时恒为 false，入口可见性与今天逐字
+  /// 相同。
+  bool get aiEntryAlwaysVisible =>
+      _extensions.any((ext) => ext.aiEntryAlwaysVisible);
+
   /// 所有扩展往「设置 → 安全」页加的块，按注册顺序拼接。
   ///
   /// 铺在「安全」正文的**末尾**（内置的外联资源白名单之后）—— 位置由调用方

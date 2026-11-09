@@ -29,6 +29,9 @@ class _FakeAiTransport implements AiTransport {
   String get channelLabel => label;
 
   @override
+  String? get sourceLabel => null;
+
+  @override
   Future<AiChannelState> state() async =>
       const AiChannelState(usable: true, detail: '示例通道可用');
 

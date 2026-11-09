@@ -11,6 +11,9 @@ import 'package:mail_app/features/ai/preflight.dart';
 import 'package:mail_app/features/compose/ai/ai_preflight_sheet.dart';
 
 class ManualTransport implements AiTransport {
+  @override
+  String? get sourceLabel => null;
+
   ManualTransport(this.reply);
 
   final String reply;
@@ -230,6 +233,9 @@ void main() {
   });
 }
 
+
+  @override
+  String? get sourceLabel => null;
 class _FailingTransport implements AiTransport {
   @override
   Future<void> send({

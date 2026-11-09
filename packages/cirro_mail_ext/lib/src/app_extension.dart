@@ -32,6 +32,9 @@ import 'theme_pack.dart';
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
 /// | [themes] | `app.dart`（`MaterialApp` 的 theme / darkTheme + 背板）、`appearance_section.dart`（主题画廊） |
 /// | [aiUsageExtras] | `ai_section.dart`（「设置 → AI」页「用量」分组末尾） |
+/// | [aiChannelCard] | `ai_section.dart`（「设置 → AI」页顶部，隐私声明之后） |
+/// | [aiNoticeExtras] | `ai_stream_view.dart`（AI 失败 / 未配置提示的下方） |
+/// | [aiEntryAlwaysVisible] | `compose_screen.dart` / `suggest_flow.dart`（AI 入口可见性） |
 /// | [securityExtras] | `security_section.dart`（「设置 → 安全」页的正文末尾） |
 /// | [aiTransport] | `ai_providers.dart`（AI 能力改走托管通道）/ `ai_section.dart`（设置页「通道」行） |
 /// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
@@ -188,6 +191,36 @@ abstract class AppExtension {
   /// 套出两层滚动。返回空列表即「什么都不加」—— 公开版（空注册表）的 AI
   /// 设置页因此逐字不变。
   List<Widget> aiUsageExtras(BuildContext context) => const <Widget>[];
+
+  /// 插入「设置 → AI」页顶部的**通道卡**（隐私声明之后、通道/服务商分组之前）。
+  ///
+  /// 存在的理由只有一条：`aiTransport == null` 时核心分不清「公开版没有这种
+  /// 东西」与「商业版没开通 / 已到期 / 用户选了自带 Key」—— 在核心眼里后四
+  /// 种情形长得一模一样（都是 BYOK 表单）。商业实现方于是用这张卡自己讲
+  /// 通道的故事：身份（哪种通道）+ 状态（胶囊 + 一句话）+ 动作（去订阅 /
+  /// 改用自带 Key / 重新登录）。
+  ///
+  /// 返回 `null`（公开版的默认）= 不插入，这一页逐像素不变。
+  ///
+  /// 与 [aboutExtras] 的约定相同：**不要返回自带滚动容器的 widget**。
+  Widget? aiChannelCard(BuildContext context) => null;
+
+  /// 追加进 AI **失败 / 未配置提示下方**的动作块。
+  ///
+  /// 核心的 AI 面板在出错时只显示一句 `message`（可能是实现方给的，也可能是
+  /// BYOK 的「去设置里填 Key」）。商业实现方在这里补「去订阅 / 续订 / 重新
+  /// 登录」这类按钮 —— 错误旁边要有一条能往下走的路，而不是让用户自己找设置。
+  ///
+  /// 返回空列表即「什么都不加」（公开版），失败提示的外观逐字不变。
+  List<Widget> aiNoticeExtras(BuildContext context) => const <Widget>[];
+
+  /// AI 入口是否**常驻**：即使当前既没有托管通道、也没配好 BYOK，也要画出来。
+  ///
+  /// 公开版（默认 `false`）沿用「没配好就不画入口」的既有口径；商业版返回
+  /// `true` —— 它的规矩是「入口不藏，点下去说明原因并给自救路径」（与免打扰 /
+  /// 全文搜索 / 外联代理一致）：用户得能点到一个 AI 按钮，才知道「为什么
+  /// 不能用、去哪儿开」。
+  bool get aiEntryAlwaysVisible => false;
 
   /// 追加进「设置 → 安全」页的附加块。
   ///

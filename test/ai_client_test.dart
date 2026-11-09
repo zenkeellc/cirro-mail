@@ -9,6 +9,9 @@ import 'package:mail_app/features/ai/ai_provider.dart';
 
 /// 假传输：按预设的 chunk 序列喂回来。
 class FakeTransport implements AiTransport {
+  @override
+  String? get sourceLabel => null;
+
   FakeTransport(this.chunks, {this.error});
 
   final List<String> chunks;
@@ -52,7 +55,10 @@ class FakeTransport implements AiTransport {
 }
 
 /// 记录每一次非流式请求，按预设返回一段响应体（或抛预设的错）。
-class RecordingTransport implements AiTransport {
+c
+  @override
+  String? get sourceLabel => null;
+lass RecordingTransport implements AiTransport {
   RecordingTransport(this.response, {this.error});
 
   final String response;
@@ -101,7 +107,10 @@ const req = AiRequest(system: 'S', prompt: 'P');
 String openaiChunk(String text) =>
     'data: {"choices":[{"delta":{"content":"$text"}}]}\n\n';
 
-/// 会一直挂着直到被取消的假传输 —— 用来测取消，不用 `Future.delayed` 抢时序。
+/// 会
+  @override
+  String? get sourceLabel => null;
+一直挂着直到被取消的假传输 —— 用来测取消，不用 `Future.delayed` 抢时序。
 class BlockingTransport implements AiTransport {
   BlockingTransport(this.initial);
 

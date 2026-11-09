@@ -40,6 +40,9 @@ const String fakeKey = 'sk-test-0123456789';
 
 /// BYOK 那条路的假传输：记下最后一次请求，回一段固定的 OpenAI 形状流。
 class _ByokTransport implements AiTransport {
+  @override
+  String? get sourceLabel => null;
+
   String? lastUrl;
   Map<String, dynamic>? lastBody;
 
@@ -68,7 +71,10 @@ class _ByokTransport implements AiTransport {
 }
 
 /// 假的托管通道：记录收到的 `AiCall`，吐固定增量，可配置各种失败。
-class _FakeAiTransport implements ext.AiTransport {
+cla
+  @override
+  String? get sourceLabel => null;
+ss _FakeAiTransport implements ext.AiTransport {
   _FakeAiTransport({
     this.channelState = const ext.AiChannelState(usable: true, detail: '余额 100'),
     this.stateError,

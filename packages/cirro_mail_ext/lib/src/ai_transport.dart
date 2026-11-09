@@ -48,6 +48,30 @@ class AiCall {
   final Map<String, Object?> input;
 }
 
+/// 通道状态的语气。核心据它选语义色与图标，**不参与**任何可用性判断。
+///
+/// 为什么要有它：核心只拿得到 [AiChannelState.usable] 这个布尔，而「额度快
+/// 用完」与「订阅已到期」都是 `usable == false` —— 前者该是琥珀、后者该是红。
+/// 语气由实现方给（它才知道是哪种不可用），核心只做映射；文字与图标始终同时
+/// 出现，颜色不是唯一的信息载体。
+enum AiChannelTone { neutral, positive, warning, critical }
+
+/// 通道卡上的一个动作：一句文案 + 点下去做什么。
+///
+/// 抽成对象而不是「核心自己按状态 switch」的理由：动作的文案与落点都是商业
+/// 实现方的（去订阅 / 续订 / 重新登录），公开仓库既不该写这些字，也不该知道
+/// 「该导航到哪一页」。核心只负责画一颗按钮、调 [onTap]、把返回的那句话原样
+/// 弹出来 —— 只有实现方知道刚才发生了什么、该说哪一句。
+class AiChannelAction {
+  const AiChannelAction({required this.label, required this.onTap});
+
+  /// 按钮上的字（实现方给，用用户当前的语言）。
+  final String label;
+
+  /// 点下去做什么。返回**要原样弹给用户的一句话**（null = 不弹）。
+  final Future<String?> Function() onTap;
+}
+
 /// 通道眼下的可用性与一句给人看的话。
 ///
 /// [usable] 是**这一次**能不能调用的判断（没激活、到期、余额不足、离线……
@@ -60,13 +84,30 @@ class AiCall {
 /// 核心**不缓存**它：每次要判断就调一次 [AiTransport.state]，实现方自己决定
 /// 缓存与刷新策略。
 class AiChannelState {
-  const AiChannelState({required this.usable, required this.detail});
+  const AiChannelState({
+    required this.usable,
+    required this.detail,
+    this.tone = AiChannelTone.neutral,
+    this.action,
+  });
 
   /// 这一次能不能调用。
   final bool usable;
 
   /// 一句给人看的话（失败时就是失败原因）。空串表示「没有要补充的」。
   final String detail;
+
+  /// 状态语气：只用来选语义色，不参与「能不能用」的判断。
+  ///
+  /// 缺省 [AiChannelTone.neutral] —— 老实现方不改代码也编得过，外观与今天
+  /// 一致（核心此前只有「可用 / 不可用」两档颜色）。
+  final AiChannelTone tone;
+
+  /// 这张卡上的动作；null = 当前状态没有动作可给。
+  ///
+  /// 挂在 state 上而不是 transport 上：可用性变了动作也该跟着变
+  /// （到期 → 续订，可用 → 改用自带 Key）。
+  final AiChannelAction? action;
 }
 
 /// 托管通道的一次失败。
@@ -109,6 +150,16 @@ abstract class AiTransport {
   /// 显示出来。可以是产品名，也可以是这一档的名字 —— 是实现方的营销口径，
   /// 不是核心的。
   String get channelLabel;
+
+  /// AI 输出处的**来源署名**（例如「订阅通道」）。null = 不署名。
+  ///
+  /// 必须是**同步 getter**：面板抬头在 `build` 里要立刻拿到它，不能等
+  /// [state]（那是网络/读盘）。公开版（没有实现方）恒为 null，于是所有
+  /// 面板逐像素不变 —— 这条接缝在空注册表下等于不存在。
+  ///
+  /// 只在**托管通道**生效：BYOK 是用户自己的端点，「署名」在那里等于给公开
+  /// 版加商业概念，越界了。
+  String? get sourceLabel => null;
 
   /// 眼下的可用性与一句给人看的话。核心在每次调用前问它一次。
   ///
