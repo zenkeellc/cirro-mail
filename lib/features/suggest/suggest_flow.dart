@@ -1,26 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/breakpoints.dart';
 import '../../data/models/mail_ref.dart';
 import '../../data/models/mail_row.dart';
 import '../../providers/ai_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/mail_providers.dart';
 // `AiSettings` 出现在 [SuggestFlow.visible] 的参数表里；
-// `AiStart` 出现在 [SuggestPanelOpener] 的签名里（`launch` 的返回类型）。
-// 少了这两行，那两处编译不过。
+// `AiStart` 出现在 [SuggestDeps] 的签名里（`launch` 的返回类型）。
 import '../ai/ai_service.dart';
 import '../ai/ai_settings.dart';
 import 'mail_action_runner.dart';
+import 'suggest_dock_request.dart';
 import 'suggest_panel.dart';
 import 'suggestion.dart';
 
-/// 弹面板这一步的形状，与 [showSuggestPanel] 逐字一致。
+/// 弹整页建议这一步的形状，与 [showSuggestPage] 逐字一致。
 ///
 /// 做成可注入的**只为用例**：`test/suggest_flow_test.dart` 要钉的是 `open`
-/// 自己那三步的顺序（先补 → 重读 → 执行），不是面板的四个态 —— 面板在
+/// 自己那几步的顺序（先补 → 重读 → 执行），不是面板的四个态 —— 面板在
 /// `suggest_panel_test.dart` 里已经逐条钉过了。生产路径上永远是默认那一个。
-typedef SuggestPanelOpener = Future<SuggestionChoice?> Function(
+typedef SuggestPageOpener = Future<SuggestionChoice?> Function(
   BuildContext context, {
   required MailRow row,
   required bool starEnabled,
@@ -37,6 +38,17 @@ typedef SuggestExecutor = Future<void> Function(
   required MailRow row,
   required SuggestionChoice choice,
   VoidCallback? onDeleted,
+});
+
+/// 组装一次建议要用的三个东西：补正文、起请求、星标能力。
+///
+/// **面板与详情页停靠面板共用这一份**：两个形态各写一遍的话，「补不到正文
+/// 就明说、不阻断」与「星标 unknown 按可用算」迟早分叉，而分叉只会出现在
+/// 最不常走的那条路径上（内嵌详情页）。
+typedef SuggestDeps = ({
+  bool starEnabled,
+  Future<MailRow?> Function() refresh,
+  Future<AiStart> Function(String input, List<String> actionIds) launch,
 });
 
 /// 两个入口（列表行菜单 / 详情页顶栏）共用的那一步（spec §8.4）。
@@ -70,34 +82,18 @@ abstract final class SuggestFlow {
     return settings.mailSuggestEnabled;
   }
 
-  /// [onDeleted] 是**视图相关的收尾**（内嵌详情页要把选中清掉），一路透传给
-  /// 执行器 —— 与 `MailActionRunner.execute` 的同名参数是同一件事。
-  ///
-  /// 必须透传：从**列表行菜单**点开面板、模型建议「删除」、用户点了它，
-  /// 走的是这一条路。不透传的话，那一封被删掉之后详情页（如果开着）还停在
-  /// 一个已经不存在的邮件上 —— 而同一个删除从菜单直接点是好使的，于是这变成
-  /// 「同一个动作两个入口行为不一样」，正是这个文件存在的理由要防的东西。
-  static Future<void> open(
-    BuildContext context,
-    WidgetRef ref, {
-    required MailRow row,
-    VoidCallback? onDeleted,
-    @visibleForTesting SuggestPanelOpener? opener,
-    @visibleForTesting SuggestExecutor? executor,
-  }) async {
+  /// 组装 [SuggestDeps]（补正文 / 起请求 / 星标能力）。纯读，不导航。
+  static SuggestDeps deps(WidgetRef ref, MailRow row) {
     final db = ref.read(databaseProvider);
     final mailRef = MailRef(profileId: row.profileId, emailId: row.emailId);
     // 星标能力：与详情页那颗星同一个口径 —— `unknown`（还没探到）按可用算，
     // 宁可多显示一项，也不要在一个正常的实例上把它藏起来。
     final starEnabled =
         ref.read(capabilitiesProvider(row.profileId)).value?.starEnabled ?? true;
-
-    final choice = await (opener ?? showSuggestPanel)(
-      context,
-      row: row,
+    return (
       starEnabled: starEnabled,
-      // 第 2 步：补正文。`ensureFull` 的异常吞掉（实例可能不支持 full、
-      // 网络可能挂）—— **不阻断**，拿摘要继续（spec §8.4 第 3 段）。
+      // 补正文：`ensureFull` 的异常吞掉（实例可能不支持 full、网络可能挂）
+      // —— **不阻断**，拿摘要继续（spec §8.4 第 3 段）。
       //
       // 回来的是**重新读过的那一行**（`MailDao.find`），不是手里这个对象：
       // 补完正文的是**库**。
@@ -109,23 +105,68 @@ abstract final class SuggestFlow {
         }
         return db.mailDao.find(row.profileId, row.emailId);
       },
-      // 第 4 步：起会话。池子由会话按当前状态算（`suggestActionPool`），
-      // 面板与这里都不再算第二遍。
+      // 池子由会话按当前状态算（`suggestActionPool`），面板与这里都不再算第二遍。
       launch: (input, actionIds) =>
           ref.read(aiServiceProvider).suggest(input: input, actionIds: actionIds),
     );
-    if (choice == null || !context.mounted) return;
+  }
 
-    // 第 5 步之前**再读一次**：这才是执行器要拿的那一行。文档里那次重读
-    // 发生在面板**弹出之前**，而面板开着的那几秒里补正文可能才刚写完库。
-    final fresh = await db.mailDao.find(row.profileId, row.emailId) ?? row;
-    if (!context.mounted) return;
-    await (executor ?? MailActionRunner.execute)(
-      context,
-      ref,
-      row: fresh,
-      choice: choice,
-      onDeleted: onDeleted,
-    );
+  /// 打开建议。**形态按宽度分**（2026-11-09 需求）：
+  ///
+  /// - `< 600`（手机）：push 一整页（`showSuggestPage`），拿回用户点的项；
+  /// - `>= 600`（平板 / 桌面）：请求详情页把面板**停靠在正文下方**
+  ///   （[suggestDockRequestProvider]）。此时执行由详情页自己收口 ——
+  ///   只有它手里有那个 `onDeleted`（内嵌详情页删完要清选中）。
+  ///
+  /// [onDeleted] 是**视图相关的收尾**（内嵌详情页要把选中清掉），窄屏一路
+  /// 透传给执行器 —— 与 `MailActionRunner.execute` 的同名参数是同一件事。
+  ///
+  /// 必须透传：从**列表行菜单**点开面板、模型建议「删除」、用户点了它，
+  /// 走的是这一条路。不透传的话，那一封被删掉之后详情页（如果开着）还停在
+  /// 一个已经不存在的邮件上 —— 而同一个删除从菜单直接点是好使的，于是这变成
+  /// 「同一个动作两个入口行为不一样」，正是这个文件存在的理由要防的东西。
+  static Future<void> open(
+    BuildContext context,
+    WidgetRef ref, {
+    required MailRow row,
+    VoidCallback? onDeleted,
+    @visibleForTesting SuggestPageOpener? opener,
+    @visibleForTesting SuggestExecutor? executor,
+  }) async {
+    final deps = SuggestFlow.deps(ref, row);
+
+    // 手机：整页。执行仍留在调用方 —— 页面只负责「选」，`onDeleted` 才找得到
+    // 正确的宿主（内嵌详情页 / 列表）。
+    if (Breakpoints.isCompact(MediaQuery.sizeOf(context).width)) {
+      final choice = await (opener ?? showSuggestPage)(
+        context,
+        row: row,
+        starEnabled: deps.starEnabled,
+        refresh: deps.refresh,
+        launch: deps.launch,
+      );
+      if (choice == null || !context.mounted) return;
+
+      // 第 5 步之前**再读一次**：这才是执行器要拿的那一行。文档里那次重读
+      // 发生在面板**弹出之前**，而面板开着的那几秒里补正文可能才刚写完库。
+      final db = ref.read(databaseProvider);
+      final fresh = await db.mailDao.find(row.profileId, row.emailId) ?? row;
+      if (!context.mounted) return;
+      await (executor ?? MailActionRunner.execute)(
+        context,
+        ref,
+        row: fresh,
+        choice: choice,
+        onDeleted: onDeleted,
+      );
+      return;
+    }
+
+    // 宽屏：面板是详情页正文下方的一块，不在这个函数的上下文里 —— 只能
+    // 发一次请求。详情页若还没挂载（列表行菜单先选中再开），它会用
+    // `fireImmediately` 在挂载时认领。
+    ref
+        .read(suggestDockRequestProvider.notifier)
+        .request(MailRef(profileId: row.profileId, emailId: row.emailId));
   }
 }

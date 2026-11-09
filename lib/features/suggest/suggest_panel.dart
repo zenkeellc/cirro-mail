@@ -1,7 +1,4 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'
-    show LogicalKeyboardKey, KeyDownEvent, KeyRepeatEvent;
 
 import '../../data/models/mail_row.dart';
 import '../../l10n/app_localizations.dart';
@@ -11,43 +8,80 @@ import 'mail_action.dart';
 import 'suggest_session.dart';
 import 'suggestion.dart';
 
-/// 弹出建议面板，返回用户点的那一项（或 null = 用户关掉了）。
+/// 两列布局的门槛：**面板自身宽度** >= 720 才分两列（spec §2.1）。
 ///
-/// **面板只选不做**（spec §4.6）：它不认识 `EmailRepository`、不认识路由，
-/// 产出就是一个 [SuggestionChoice]。执行由调用方（`MailActionRunner`）做。
+/// 用的是面板的宽度而不是窗口宽度：宽屏的阅读区可以被用户拖得很窄，那时候
+/// 两列会把左栏（摘要）挤成一条竖线。判据与 `Breakpoints` 同一条规矩 ——
+/// 只看宽度，不看平台。
+const double _twoColumnMinWidth = 720;
+
+/// 右列（建议操作）的固定宽度（spec §2.1）。
+const double _actionsColumnWidth = 320;
+
+/// AI 建议的**整页形态**：`Navigator.push` 一个全屏页，返回用户点的那一项
+/// （或 null = 用户返回/关掉了）。
 ///
-/// 调用方拿到的那一份 `MailRow` **必须是补全正文之后重新读过的那一行** ——
-/// 面板内部还会再走一遍 `ensureFull`（会话自己判 `hasFullBody`），而
-/// `session.row` 才是补全之后的那一份。执行时用调用方重读的那一行 ——
-/// 见 `SuggestFlow.open` 的第 2 步，那条路保证调用方手里已经是全文。
-Future<SuggestionChoice?> showSuggestPanel(
+/// 窄屏（`Breakpoints.compact`）的入口走这一条，宽屏走详情页里停靠的
+/// [SuggestView]（见 `mail_detail_screen.dart`）。**页面先 pop、调用方再执行**
+/// （spec §2.2）：这样回复/转发的写邮件页压在上层，删除的 `onDeleted` 收尾也
+/// 仍由原调用方负责。
+///
+/// 内容与停靠面板**同一份**（[SuggestView] `isPage: true` 时单列 + 区块标题），
+/// 不另写一套 —— 两套内容必然在「失败态画什么」这类细节上分叉。
+Future<SuggestionChoice?> showSuggestPage(
   BuildContext context, {
   required MailRow row,
   required bool starEnabled,
   required Future<MailRow?> Function() refresh,
   required Future<AiStart> Function(String input, List<String> actionIds) launch,
-}) =>
-    showModalBottomSheet<SuggestionChoice>(
-      context: context,
-      // 与 `send_queue_sheet` / `attachment_sheet` 同一套（spec §4.1 第 1 段）。
-      isScrollControlled: true,
-      builder: (_) => SuggestPanel(
-        row: row,
-        starEnabled: starEnabled,
-        refresh: refresh,
-        launch: launch,
+}) {
+  return Navigator.of(context).push<SuggestionChoice>(
+    MaterialPageRoute<SuggestionChoice>(
+      builder: (pageContext) => Scaffold(
+        appBar: AppBar(
+          title: Text(AppLocalizations.of(pageContext).aiSuggestPanelTitle),
+        ),
+        body: SuggestView(
+          row: row,
+          starEnabled: starEnabled,
+          refresh: refresh,
+          launch: launch,
+          // AppBar 已经写了标题，正文里不再重复一遍。
+          showTitle: false,
+          isPage: true,
+          // **先 pop 再执行**（spec §2.2）：pop 的返回值就是调用方拿到的
+          // `SuggestionChoice`，执行仍由 `SuggestFlow.open` 负责。
+          onPick: (choice) => Navigator.of(pageContext).pop(choice),
+        ),
       ),
-    );
+    ),
+  );
+}
 
-/// 建议面板。**从点下去到出结果始终是同一个面板**（spec §4.1）—— 换框会让
-/// 「分析完」看起来像又点了一次，而且取消按钮的位置会跳。
-class SuggestPanel extends StatefulWidget {
-  const SuggestPanel({
+/// AI 建议的**共享视图**：整页形态与停靠面板用的是同一套内容与状态机。
+///
+/// 它**只选不做**（spec §4.6）：不认识 `EmailRepository`、不认识路由，产出
+/// 就是一个通过 [onPick] 交出去的 [SuggestionChoice]。
+///
+/// 布局由 [isPage] 与自身宽度决定（spec §2）：
+/// - 停靠面板且宽度 >= 720 → 两列：左摘要/要点（弹性），右动作列表（固定
+///   320 宽），两列各自滚动；
+/// - 其余（停靠面板窄了、或整页）→ 单列，整块可滚动。
+///
+/// 状态机整个交给 [SuggestSession]（补正文 → 分析 → 解析），本类只监听
+/// `stage` 决定画哪一块。**从点下去到出结果始终是同一个视图** —— 换框会让
+/// 「分析完成」看起来像又点了一次。
+class SuggestView extends StatefulWidget {
+  const SuggestView({
     super.key,
     required this.row,
     required this.starEnabled,
     required this.refresh,
     required this.launch,
+    required this.onPick,
+    this.showTitle = true,
+    this.onClose,
+    this.isPage = false,
   });
 
   final MailRow row;
@@ -55,11 +89,26 @@ class SuggestPanel extends StatefulWidget {
   final Future<MailRow?> Function() refresh;
   final Future<AiStart> Function(String input, List<String> actionIds) launch;
 
+  /// 用户点了某一项建议。停靠面板里由详情页收起面板并交给执行器；整页里
+  /// 由 [showSuggestPage] 先 pop 掉这一页。
+  final ValueChanged<SuggestionChoice> onPick;
+
+  /// 抬头那一行要不要写标题。整页形态由 `AppBar` 写，所以传 false。
+  final bool showTitle;
+
+  /// 关闭按钮（停靠面板的 ×）。null = 不画 —— 整页形态用返回箭头，
+  /// 关闭面板不改变选中的邮件（spec §2.1），所以这个回调只管「收起」。
+  final VoidCallback? onClose;
+
+  /// 是不是整页形态。只影响布局与区块标题：整页永远单列，但显示
+  /// 「摘要 / 建议操作」两个区块标题（spec §1.2、§2.2）。
+  final bool isPage;
+
   @override
-  State<SuggestPanel> createState() => _SuggestPanelState();
+  State<SuggestView> createState() => _SuggestViewState();
 }
 
-class _SuggestPanelState extends State<SuggestPanel> {
+class _SuggestViewState extends State<SuggestView> {
   late final SuggestSession _session = SuggestSession(
     row: widget.row,
     starEnabled: widget.starEnabled,
@@ -67,156 +116,114 @@ class _SuggestPanelState extends State<SuggestPanel> {
     launch: widget.launch,
   );
 
-  /// 面板根的焦点节点。回车只在这个节点**持有焦点**时才执行第一项 ——
-  /// 焦点到了面板里的按钮上（Tab 之后）时不吃键，见 [_onKeyEvent]。
-  late final FocusNode _topFocus = FocusNode();
-
-  /// 面板正在关的动画里再 pop 一次会把底下的路由一起带走（比如详情页）。
-  /// 长按回车（`KeyRepeatEvent`）会重复触发 —— 这个标志就是为它准备的，
-  /// 两条 pop 的路（回车与点卡片）都从 [_pop] 走，才真的都盖得住。
-  bool _closing = false;
-
-  /// 桌面平台。与 `window_channel.dart` 那处 `_isDesktop` **逐字同口径**
-  /// （`defaultTargetPlatform` 是 macOS / Windows / Linux）。
-  ///
-  /// 仓库里另外两处**略有出入、别拿它们对照**：`attachment_launcher.dart`
-  /// 用 `!kIsWeb && (Platform.isMacOS || …)`（走 `dart:io`），
-  /// `sync_providers.dart` 则显式先 `if (kIsWeb) return false`。
-  ///
-  /// 这一处故意**不抽公共函数**：那几处各自内联，抽一次要动好几个文件，而它
-  /// 只是一句平台判断。真要抽的时候一起抽。
-  bool get _isDesktop =>
-      defaultTargetPlatform == TargetPlatform.macOS ||
-      defaultTargetPlatform == TargetPlatform.windows ||
-      defaultTargetPlatform == TargetPlatform.linux;
+  /// 一次视图只交出一项。整页形态里重复交出去会**连着 pop 两次**（第一次
+  /// 是自己的页，第二次会把宿主页一起带走）；停靠面板里则是把同一个动作
+  /// 执行两遍。点下第一项之后其余的点击一律忽略。
+  bool _picked = false;
 
   @override
   void initState() {
     super.initState();
-    // 面板一构造就走流程（点这颗按钮的人就是要这个）。
+    // 视图一挂上就走流程（点这颗按钮的人就是要这个）。
     _session.start();
-  }
-
-  /// 面板根的按键处理。**不是 `CallbackShortcuts`**（spec §2.1 原写的是它，
-  /// 这里按 code review 改掉了）：`CallbackShortcuts` 对匹配到的键**一律返回
-  /// `handled`**，事件在浮到 `WidgetsApp` 的默认快捷键之前就被吃掉 ——
-  /// 焦点落在面板自己的按钮（「重新分析」/「重试」）上时按回车，会去执行第一项，
-  /// 而不是按下那颗按钮。挂 `Focus.onKeyEvent` 才能**自己决定吃不吃**：
-  /// 焦点还在面板根上时才 `handled`，到了按钮上就 `ignored`，让它继续上浮去
-  /// 激活那颗按钮。
-  ///
-  /// `enter` 与 `numpadEnter` **都要认**（实测：小键盘回车是另一个键码，
-  /// 只判 `enter` 时它一个字都不触发）。
-  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
-    final key = event.logicalKey;
-    if (key != LogicalKeyboardKey.enter &&
-        key != LogicalKeyboardKey.numpadEnter) {
-      return KeyEventResult.ignored;
-    }
-    // 焦点已经不在面板根上（Tab 到了某颗按钮）：不吃这个键，让它上浮。
-    // 这一条就是「回车不抢自己按钮的键」的落点。
-    if (FocusManager.instance.primaryFocus != _topFocus) {
-      return KeyEventResult.ignored;
-    }
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
-    }
-    _runTopPick();
-    return KeyEventResult.handled;
-  }
-
-  /// 两条 pop 的路（回车与点卡片）都从这儿走：`_closing` 这道不变量才真的
-  /// 盖住两种触发方式，而不是只挡住键盘那一条。
-  void _pop(SuggestionChoice choice) {
-    if (_closing) return;
-    _closing = true;
-    Navigator.of(context).pop(choice);
-  }
-
-  /// 回车 = 执行**第一项**，与鼠标点第一张卡是**同一句话**（spec §2.2）。
-  ///
-  /// 于是删除照旧弹确认框（`MailActionRunner._delete` 里那道 `_confirm`）、
-  /// 回复照旧打开写邮件页 —— 回车省掉的是「把鼠标移过去」，不是那次确认。
-  ///
-  /// 面板里没有可执行的东西时**什么都不做**：不能 pop 一个 `null` 出去把面板
-  /// 白关掉（用户按一下回车，面板没了，什么也没发生）。
-  void _runTopPick() {
-    if (_closing) return;
-    if (_session.stage.value != SuggestStage.done) return;
-    final parsed = _session.parsed;
-    if (parsed is! SuggestionParsed) return;
-    // 与 `_choices` 读的是**同一份数据**，不另算一遍「哪一项是推荐」——
-    // 「回车与点第一张卡是同一句话」在代码里就落在这里。
-    final choices = parsed.suggestion.choices;
-    if (choices.isEmpty) return;
-    _pop(choices.first);
   }
 
   @override
   void dispose() {
-    _topFocus.dispose();
     _session.dispose();
     super.dispose();
   }
 
+  void _pick(SuggestionChoice choice) {
+    if (_picked) return;
+    _picked = true;
+    widget.onPick(choice);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    return SafeArea(
-      child: ConstrainedBox(
-        // 最高 70% 屏高（与 `send_queue_sheet.dart` 同一套数字与理由）：
-        // 候选变成卡片之后一屏放不下五张，撑爆会让面板被裁掉一截。
-        // 这层限高滚动有自己的断言（`takeException()`）。
-        //
-        // **三种态一起包**：失败态要显示模型原文（`_rawText` 那个限高 160 的
-        // 框），再叠上抬头一样会顶爆。
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.7,
-        ),
-        child: SingleChildScrollView(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 门槛看**面板自己的宽度**（spec §2.1），不看窗口宽度。
+        final twoColumns =
+            !widget.isPage && constraints.maxWidth >= _twoColumnMinWidth;
+        return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Focus(
-              focusNode: _topFocus,
-              autofocus: true,
-              // 回车执行第一项。挂在 `Focus.onKeyEvent` 而不是
-              // `CallbackShortcuts`：后者对匹配的键一律 `handled`，会把焦点在
-              // 「重新分析 / 重试」上的回车也吞掉 —— 见 `_onKeyEvent` 的注释。
-              onKeyEvent: _onKeyEvent,
-              child: ValueListenableBuilder<SuggestStage>(
-                valueListenable: _session.stage,
-                builder: (context, stage, _) => Column(
-                  mainAxisSize: MainAxisSize.min,
+            // 视图唯一的状态监听点：面板据此决定画哪一块（spec §2.4）。
+            child: ValueListenableBuilder<SuggestStage>(
+              valueListenable: _session.stage,
+              builder: (context, stage, _) {
+                final topRow = _topRow(context, l10n, stage);
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Text(l10n.aiSuggestPanelTitle,
-                            style: theme.textTheme.titleMedium),
-                        const Spacer(),
-                        // 「重新分析」在**结果态**常驻（spec §4.5）；失败态里
-                        // 那个「重试」是同一个动作、另一个位置。
-                        if (stage == SuggestStage.done)
-                          TextButton.icon(
-                            key: const ValueKey('ai-suggest-again'),
-                            onPressed: _session.restart,
-                            icon: const Icon(Icons.refresh, size: 16),
-                            label: Text(l10n.aiSuggestReanalyze),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                    if (topRow != null) ...<Widget>[
+                      topRow,
+                      const SizedBox(height: 8),
+                    ],
                     ..._header(context, l10n),
                     const SizedBox(height: 8),
-                    ..._body(context, l10n, stage),
+                    // 两种形态都是「抬头固定、内容区自己滚」：停靠面板高度被
+                    // 父级夹在 240–420 之间（详情页定的），整页则是整屏，
+                    // 靠 Expanded 把剩余高度交给滚动区。
+                    Expanded(
+                      child: twoColumns
+                          ? _twoColumns(context, l10n, stage)
+                          : _singleColumn(context, l10n, stage),
+                    ),
                   ],
-                ),
-              ),
+                );
+              },
             ),
           ),
-        ),
-      ),
+        );
+      },
+    );
+  }
+
+  /// 抬头那一行：标题（停靠面板有、整页没有）、弹性空隙、「重新分析」（结果
+  /// 态常驻，spec §4.5）、关闭（停靠面板的 ×）。三样都没有时整行不画。
+  Widget? _topRow(
+    BuildContext context,
+    AppLocalizations l10n,
+    SuggestStage stage,
+  ) {
+    final showAgain = stage == SuggestStage.done;
+    final showClose = widget.onClose != null;
+    if (!widget.showTitle && !showAgain && !showClose) return null;
+    final theme = Theme.of(context);
+    return Row(
+      children: <Widget>[
+        // 有标题时让它吃掉剩余宽度（长标题先省略号），没标题时用一个
+        // `Spacer` 把右边那几颗按钮顶到行尾。
+        if (widget.showTitle)
+          Expanded(
+            child: Text(
+              l10n.aiSuggestPanelTitle,
+              style: theme.textTheme.titleMedium,
+              overflow: TextOverflow.ellipsis,
+            ),
+          )
+        else
+          const Spacer(),
+        // 失败态里那个「重试」是同一个动作、另一个位置（结果区里）。
+        if (showAgain)
+          TextButton.icon(
+            key: const ValueKey('ai-suggest-again'),
+            onPressed: _session.restart,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: Text(l10n.aiSuggestReanalyze),
+          ),
+        if (showClose)
+          IconButton(
+            key: const ValueKey('ai-suggest-close'),
+            onPressed: widget.onClose,
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+          ),
+      ],
     );
   }
 
@@ -236,7 +243,9 @@ class _SuggestPanelState extends State<SuggestPanel> {
       if (input.attachmentCount > 0)
         l10n.aiSuggestAttachments(input.attachmentCount),
       if (input.quotedDropped) l10n.aiSuggestQuotedDropped(input.originalChars),
-      if (input.truncated) l10n.aiSuggestTruncated(input.bodyChars),
+      // 截断文案说的是**原文多少字**（不是喂进去多少字）：2026-11-09 起
+      // 长信取的是「开头 + 结尾」，只报「前 N 字」已经不成立了。
+      if (input.truncated) l10n.aiSuggestTruncated(input.originalChars),
     ];
     return <Widget>[
       Text(
@@ -255,7 +264,98 @@ class _SuggestPanelState extends State<SuggestPanel> {
     ];
   }
 
-  List<Widget> _body(
+  // ---------------------------------------------------------------- 两列
+
+  /// 停靠面板的宽形态（spec §2.1）：左列摘要/要点、右列动作卡片，各滚各的。
+  ///
+  /// 非 `done` 的那些态**全部落在左列**（转圈、流式内容、失败提示 + 重试），
+  /// 右列只在 `done` 时画动作卡片 —— 与 spec §2.4「左列承担摘要/流式/失败
+  /// 提示，右列只在 done 时画动作卡片」逐字一致。
+  Widget _twoColumns(
+    BuildContext context,
+    AppLocalizations l10n,
+    SuggestStage stage,
+  ) {
+    final List<Widget> left;
+    final List<Widget> right;
+    final parsed = _session.parsed;
+    if (stage == SuggestStage.done && parsed is SuggestionParsed) {
+      left = _summaryChildren(context, l10n, parsed.suggestion, withLabel: true);
+      right = _actionsChildren(context, l10n, parsed.suggestion, withLabel: true);
+    } else {
+      left = _statusChildren(context, l10n, stage);
+      right = const <Widget>[];
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(
+          child: _scrollPane(
+            padding: const EdgeInsets.only(right: 8),
+            children: left,
+          ),
+        ),
+        const VerticalDivider(width: 17),
+        SizedBox(
+          width: _actionsColumnWidth,
+          child: _scrollPane(
+            padding: const EdgeInsets.only(left: 4),
+            children: right,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------- 单列
+
+  /// 单列形态：停靠面板的窄形态，以及整页形态。
+  ///
+  /// 停靠面板窄了时保持旧观感（摘要段落 → 卡片，不加区块标题，spec §1.2
+  /// 「单列布局保持现状」）；整页形态加上两个区块标题（`isPage`）。
+  Widget _singleColumn(
+    BuildContext context,
+    AppLocalizations l10n,
+    SuggestStage stage,
+  ) {
+    final parsed = _session.parsed;
+    final List<Widget> children;
+    if (stage == SuggestStage.done && parsed is SuggestionParsed) {
+      final summary =
+          _summaryChildren(context, l10n, parsed.suggestion, withLabel: widget.isPage);
+      final actions =
+          _actionsChildren(context, l10n, parsed.suggestion, withLabel: widget.isPage);
+      children = <Widget>[
+        ...summary,
+        if (summary.isNotEmpty) const SizedBox(height: 8),
+        ...actions,
+      ];
+    } else {
+      children = _statusChildren(context, l10n, stage);
+    }
+    return _scrollPane(children: children);
+  }
+
+  /// 一块可滚的内容。外层一定是 `Expanded`（高度有界），所以这里给
+  /// `SingleChildScrollView` 不会出现「无界高度」的断言。
+  Widget _scrollPane({
+    required List<Widget> children,
+    EdgeInsetsGeometry? padding,
+  }) {
+    return SingleChildScrollView(
+      padding: padding,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------- 内容块
+
+  /// 非 `done` 态的内容：补正文 / 分析中 / 失败。与旧面板逐字一致。
+  List<Widget> _statusChildren(
     BuildContext context,
     AppLocalizations l10n,
     SuggestStage stage,
@@ -274,8 +374,12 @@ class _SuggestPanelState extends State<SuggestPanel> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               const SizedBox(width: 10),
-              Text(l10n.aiSuggestFetchingBody,
-                  style: theme.textTheme.bodySmall),
+              Expanded(
+                child: Text(
+                  l10n.aiSuggestFetchingBody,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
             ],
           ),
         ];
@@ -291,34 +395,43 @@ class _SuggestPanelState extends State<SuggestPanel> {
         ];
 
       case SuggestStage.done:
-        final parsed = _session.parsed;
-        if (parsed is! SuggestionParsed) return const <Widget>[];
-        return _choices(context, l10n, parsed.suggestion);
+        // `done` 由 `_twoColumns` / `_singleColumn` 单独装配（摘要与动作可能
+        // 分居两列），不会走到这里。
+        return const <Widget>[];
 
       case SuggestStage.failed:
-        return <Widget>[
-          // 两种失败长得不一样（spec §4.4）：
-          // - 请求失败 → `AiStreamView` 已经画了那句话（`run.message` 非空）；
-          // - 解析失败 → 面板显示**模型原文**，用户能自己读出来它想说什么。
-          if (_session.run.message.value.isEmpty)
-            _rawText(context, l10n)
-          else
-            AiStreamView(
-              run: _session.run,
-              placeholder: l10n.aiSuggestAnalyzing,
-            ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              key: const ValueKey('ai-suggest-retry'),
-              onPressed: _session.restart,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: Text(l10n.aiSuggestRetry),
-            ),
-          ),
-        ];
+        return _failureChildren(context, l10n);
     }
+  }
+
+  /// 失败态（spec §4.4）。两种失败长得不一样：
+  /// - 请求失败 → `AiStreamView` 已经画了那句话（`run.message` 非空）；
+  /// - 解析失败 → 显示**模型原文**，用户能自己读出来它想说什么。
+  ///
+  /// 两种都给「重试」（整个 `AiRun` 重跑，含 `ensureFull`）。
+  List<Widget> _failureChildren(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    return <Widget>[
+      if (_session.run.message.value.isEmpty)
+        _rawText(context, l10n)
+      else
+        AiStreamView(
+          run: _session.run,
+          placeholder: l10n.aiSuggestAnalyzing,
+        ),
+      const SizedBox(height: 8),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          key: const ValueKey('ai-suggest-retry'),
+          onPressed: _session.restart,
+          icon: const Icon(Icons.refresh, size: 16),
+          label: Text(l10n.aiSuggestRetry),
+        ),
+      ),
+    ];
   }
 
   /// 解析失败时的**模型原文**（spec §4.4）：`SelectableText`，限高滚动。
@@ -359,23 +472,91 @@ class _SuggestPanelState extends State<SuggestPanel> {
     );
   }
 
+  /// 摘要区：概述段 + 关键要点。**空的就不画**（旧模型/旧网关的 `points`
+  /// 为空列表时，这里与旧面板逐字相同）。
+  List<Widget> _summaryChildren(
+    BuildContext context,
+    AppLocalizations l10n,
+    Suggestion suggestion, {
+    required bool withLabel,
+  }) {
+    final theme = Theme.of(context);
+    final hasSummary = suggestion.summary.isNotEmpty;
+    final hasPoints = suggestion.points.isNotEmpty;
+    if (!hasSummary && !hasPoints) return const <Widget>[];
+    return <Widget>[
+      if (withLabel)
+        _sectionLabel(
+          context,
+          l10n.aiSuggestSummaryTitle,
+          const ValueKey('ai-suggest-summary-title'),
+        ),
+      if (hasSummary)
+        Text(
+          suggestion.summary,
+          key: const ValueKey('ai-suggest-summary'),
+          style: theme.textTheme.bodyMedium,
+        ),
+      if (hasPoints) ..._pointRows(context, suggestion.points),
+    ];
+  }
+
+  /// 要点：小圆点 + 一句。`points` 是「关键事实/请求/时间点」，
+  /// 不是正文的复述（spec §3.1）。
+  List<Widget> _pointRows(BuildContext context, List<String> points) {
+    final theme = Theme.of(context);
+    return <Widget>[
+      for (var i = 0; i < points.length; i++)
+        Padding(
+          // 第一条与概述之间留 8，其余 4：一眼能分出「这是一组」。
+          padding: EdgeInsets.only(top: i == 0 ? 8 : 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  points[i],
+                  key: ValueKey<String>('ai-suggest-point-$i'),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
   /// 动作列表（spec §4.1 那个「结果」框）。
   ///
   /// **`none` 单列时不打「最推荐」徽标**：那一条是兜底，把它标成最推荐是荒谬的。
   /// 判据写在这里而不是解析器里 —— 徽标是**界面的说法**，不该让解析器去决定
   /// 哪一项长得特别。
-  List<Widget> _choices(
+  List<Widget> _actionsChildren(
     BuildContext context,
     AppLocalizations l10n,
-    Suggestion suggestion,
-  ) {
-    final theme = Theme.of(context);
+    Suggestion suggestion, {
+    required bool withLabel,
+  }) {
     final lone = suggestion.choices.length == 1;
     return <Widget>[
-      if (suggestion.summary.isNotEmpty) ...<Widget>[
-        Text(suggestion.summary, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 8),
-      ],
+      if (withLabel)
+        _sectionLabel(
+          context,
+          l10n.aiSuggestActionsTitle,
+          const ValueKey('ai-suggest-actions-title'),
+        ),
       for (var i = 0; i < suggestion.choices.length; i++) ...<Widget>[
         // 卡片之间留 8：卡片自己只有内边距，贴在一起就分不出是两张。
         if (i > 0) const SizedBox(height: 8),
@@ -386,12 +567,30 @@ class _SuggestPanelState extends State<SuggestPanel> {
           top: i == 0 &&
               !(lone && suggestion.choices[i].action == MailAction.none),
           topLabel: l10n.aiSuggestTopPick,
-          // 手机上画一个回车符号是纯噪音（那儿没有人有回车键）。
-          showEnterHint: _isDesktop,
-          onTap: () => _pop(suggestion.choices[i]),
+          onTap: () => _pick(suggestion.choices[i]),
         ),
       ],
     ];
+  }
+
+  /// 区块标题（spec §1.2）。只在两列或整页时画；停靠面板的单列保持旧观感。
+  Widget _sectionLabel(
+    BuildContext context,
+    String text,
+    Key key,
+  ) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        key: key,
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 }
 
@@ -408,7 +607,6 @@ class _ChoiceTile extends StatelessWidget {
     required this.icon,
     required this.top,
     required this.topLabel,
-    required this.showEnterHint,
     required this.onTap,
   });
 
@@ -419,9 +617,6 @@ class _ChoiceTile extends StatelessWidget {
   /// 是不是「最推荐」那一张。用主色淡底 + 徽标把它挑出来。
   final bool top;
   final String topLabel;
-
-  /// 桌面平台才画回车提示（spec §2.3）。
-  final bool showEnterHint;
 
   final VoidCallback onTap;
 
@@ -482,10 +677,7 @@ class _ChoiceTile extends StatelessWidget {
                         ),
                         if (top) ...<Widget>[
                           const SizedBox(width: 6),
-                          _TopBadge(
-                            label: topLabel,
-                            showEnterHint: showEnterHint,
-                          ),
+                          _TopBadge(label: topLabel),
                         ],
                       ],
                     ),
@@ -507,16 +699,14 @@ class _ChoiceTile extends StatelessWidget {
   }
 }
 
-/// 「最推荐」徽标。桌面上在文字后面补一个回车符号（spec §2.3）。
+/// 「最推荐」徽标。
 ///
-/// 提示**挂在徽标里**，所以「`none` 单列时不打徽标」这条既有判据顺带管住了
-/// 它 —— 「无需处理」旁边不会冒出「最推荐 ⏎」。测试单独钉了一条（桌面上跑），
-/// 免得将来有人把提示挪出徽标时把这一条一起弄丢。
+/// 2026-11-09 起**不再带回车提示**（spec §2.1 末条）：停靠面板在阅读场景里
+/// 不抢焦点、不接管回车 —— 画一个回车符号反而是在暗示「按回车就行」。
 class _TopBadge extends StatelessWidget {
-  const _TopBadge({required this.label, required this.showEnterHint});
+  const _TopBadge({required this.label});
 
   final String label;
-  final bool showEnterHint;
 
   @override
   Widget build(BuildContext context) {
@@ -531,27 +721,12 @@ class _TopBadge extends StatelessWidget {
         color: scheme.primaryContainer,
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: scheme.onPrimaryContainer,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (showEnterHint) ...<Widget>[
-            const SizedBox(width: 3),
-            Icon(
-              Icons.keyboard_return,
-              // 键名挂在 `Icon` 上 —— 测试按它找。
-              key: const ValueKey('ai-suggest-enter-hint'),
-              size: 12,
-              color: scheme.onPrimaryContainer,
-            ),
-          ],
-        ],
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: scheme.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

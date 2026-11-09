@@ -18,6 +18,7 @@ import 'package:mail_app/features/ai/ai_settings.dart';
 import 'package:mail_app/features/mail_detail/mail_detail_screen.dart';
 import 'package:mail_app/features/mail_list/mail_panes.dart';
 import 'package:mail_app/features/notifications/notification_service.dart';
+import 'package:mail_app/features/suggest/suggest_panel.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
 import 'package:mail_app/providers/ai_providers.dart';
 import 'package:mail_app/providers/core_providers.dart';
@@ -145,6 +146,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 5));
   }
 
+  /// **绝不 `pumpAndSettle` 面板那几帧**：面板里跑着
+  /// `CircularProgressIndicator`（永不结束的动画），`pumpAndSettle` 会一直等到
+  /// `timed out` 而不是让某条断言失败 —— 与 `test/suggest_panel_test.dart`
+  /// 的第一段注释逐字同一个理由。两下 400ms 也足够让假的 AI 流把结果送进来。
+  Future<void> settle(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
   testWidgets('三个条件都满足：那颗图标在顶栏，且在**转发之后、星标之前**',
       (tester) async {
     await pumpDetail(tester, mail(), settings: _UsableAiSettings.new);
@@ -218,6 +229,60 @@ void main() {
     await disposeDetail(tester);
   });
 
+  // ------------------------------------------------ 2026-11-09 的形态分流
+  //
+  // 宽屏（>= 600）不再弹底部面板：建议是**正文下方**插入的一块
+  // （`_bodyWithSuggest`）；手机（< 600）则 push 一整页，选完再回详情。
+  // 两条路都不经过 `showModalBottomSheet`，这一组把形态钉住。
+
+  testWidgets('宽屏：点 ✦ 在正文下方插入停靠面板（不是弹窗）', (tester) async {
+    await pumpDetail(tester, mail(), settings: _UsableAiSettings.new);
+    await tester.tap(icon);
+    await settle(tester);
+
+    expect(find.byType(SuggestView), findsOneWidget);
+    final view = tester.widget<SuggestView>(find.byType(SuggestView));
+    expect(view.isPage, isFalse, reason: '宽屏是停靠面板，不是整页');
+    expect(view.onClose, isNotNull, reason: '停靠面板要有收起的 ×');
+    expect(find.byType(BottomSheet), findsNothing,
+        reason: '这个功能不再用底部弹窗（「toast 式的面板」）');
+
+    // 收起：面板消失，正文回到整屏。
+    await tester.tap(find.byKey(const ValueKey('ai-suggest-close')));
+    await tester.pump();
+    expect(find.byType(SuggestView), findsNothing);
+    await disposeDetail(tester);
+  });
+
+  testWidgets('手机（< 600）：点 ⋯ 里的「AI 建议」进入整页，返回后详情还在',
+      (tester) async {
+    tester.view.physicalSize = const Size(500, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await pumpDetail(tester, mail(), settings: _UsableAiSettings.new);
+
+    // 窄屏顶栏收成 ⋯：入口在菜单里，不在图标行。
+    expect(icon, findsNothing, reason: '前提：窄屏那颗图标确实收进了 ⋯');
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AI 建议').last);
+    await settle(tester);
+
+    expect(find.byType(SuggestView), findsOneWidget);
+    final view = tester.widget<SuggestView>(find.byType(SuggestView));
+    expect(view.isPage, isTrue, reason: '手机端是整页路由');
+    expect(view.onClose, isNull, reason: '整页用返回箭头，不画 ×');
+
+    // 用户没选任何一项就返回：页面关掉、详情还在、什么都不执行。
+    // 用 AppBar 上那颗 `BackButton`（`tester.pageBack` 在 Material 主题下找的
+    // 是 Cupertino 那颗，见它自己的实现）。
+    await tester.tap(find.byType(BackButton));
+    await settle(tester);
+    expect(find.byType(SuggestView), findsNothing);
+    expect(find.byType(MailDetailScreen), findsOneWidget);
+    await disposeDetail(tester);
+  });
+
   // ------------------------------------------------- 「AI 建议删除」之后的收尾
   //
   // 这一组守的是一个**只在两个入口之间才看得出来**的差别：
@@ -238,16 +303,6 @@ void main() {
         cancel: () {},
       ));
 
-  /// **绝不 `pumpAndSettle` 面板那几帧**：面板里跑着
-  /// `CircularProgressIndicator`（永不结束的动画），`pumpAndSettle` 会一直等到
-  /// `timed out` 而不是让某条断言失败 —— 与 `test/suggest_panel_test.dart`
-  /// 的第一段注释逐字同一个理由。两下 400ms 覆盖了底部弹窗那 250ms 的动画。
-  Future<void> settle(WidgetTester tester) async {
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump(const Duration(milliseconds: 400));
-  }
-
   /// 点开 AI 图标 → 等面板出结果 → 点「删除」→ 确认。
   Future<void> suggestDelete(WidgetTester tester) async {
     await tester.tap(icon);
@@ -259,7 +314,7 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('整页形态：从 AI 面板删掉之后**回到列表**，不是停在一个转圈上',
+  testWidgets('宽屏停靠面板：从 AI 面板删掉之后**回到列表**，不是停在一个转圈上',
       (tester) async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

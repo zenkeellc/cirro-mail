@@ -41,6 +41,7 @@ abstract final class MailRowMenu {
     Offset? at,
     VoidCallback? onDeleted,
     List<MailRow>? batch,
+    Future<void> Function(MailRow row)? onSuggest,
   }) async {
     // spec §8.3 那三个条件由 `SuggestFlow.visible` 一处判（D5）。
     //
@@ -85,7 +86,8 @@ abstract final class MailRowMenu {
       await _runBatch(context, ref, rows, picked);
       return;
     }
-    await _run(context, ref, row, picked, onDeleted: onDeleted);
+    await _run(context, ref, row, picked,
+        onDeleted: onDeleted, onSuggest: onSuggest);
   }
 
   // ------------------------------------------------------------ 两个形态
@@ -241,6 +243,7 @@ abstract final class MailRowMenu {
     MailRow row,
     _RowAction action, {
     VoidCallback? onDeleted,
+    Future<void> Function(MailRow row)? onSuggest,
   }) async {
     final choice = switch (action) {
       // `read` 是**目标**状态 —— 未读的那封点「标记已读」，给 `markRead`。
@@ -257,8 +260,14 @@ abstract final class MailRowMenu {
     };
 
     if (choice == null) {
-      // **`onDeleted` 要跟着走**：模型建议「删除」、用户点了它，收尾与从菜单
-      // 直接删是同一件事（内嵌详情页要把选中清掉）。
+      // 列表页有自己的一套「按宽度决定形态」的逻辑（宽屏要先把这封选中到
+      // 右栏）—— 它给了 [onSuggest] 就走它。**`onDeleted` 要跟着走**：
+      // 模型建议「删除」、用户点了它，收尾与从菜单直接删是同一件事（内嵌
+      // 详情页要把选中清掉）。
+      if (onSuggest != null) {
+        await onSuggest(row);
+        return;
+      }
       await SuggestFlow.open(context, ref, row: row, onDeleted: onDeleted);
       return;
     }

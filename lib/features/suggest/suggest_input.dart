@@ -19,12 +19,14 @@ class SuggestInput {
     required this.attachmentCount,
     required this.quotedDropped,
     required this.truncated,
+    required this.tailIncluded,
   });
 
   /// 完整一段（抬头 + 分隔线 + 正文），直接发给模型。
   final String text;
 
-  /// 正文**实际**给了多少字。
+  /// 正文**实际**给了多少字。截断时是「前 3/4 + 后 1/4」之和，也就是 [build]
+  /// 的 `maxChars`。
   final int bodyChars;
 
   /// 正文原本多少字（剥完引用、截断**之前**）。
@@ -38,11 +40,30 @@ class SuggestInput {
   /// 是不是撞了 [build] 的上限。
   final bool truncated;
 
+  /// 正文是不是按「前 3/4 + 后 1/4」**采样**过（spec §3.2）。
+  ///
+  /// 与 [truncated] 的区别只在「怎么截」：结尾那 1/4 也进了输入，所以模型
+  /// 看得到「请尽快确认」「截止日期」这类真正要行动的信息。UI 与抬头可以据此
+  /// 说明「已看开头与结尾」，而不是笼统的「只取了前 N 字」。
+  final bool tailIncluded;
+
   /// 有没有正文。false 时 `reply` / `forward` 要从动作池里去掉（§2.3 末行）
   /// —— 写不出回信，也写不出附言。
   bool get hasBody => bodyChars > 0;
 
+  /// 正文超上限时前后各取多少：**前 3/4、后 1/4**（spec §3.2 的 6000 + 2000
+  /// 就是这个比例）。
+  ///
+  /// 用比例而不是写死 6000 / 2000：`maxChars` 是可传的（测试与将来调档都会
+  /// 传别的值），写死之后「传 3000 却仍然只取前 6000」会直接越界。
+  static const int _headParts = 3;
+  static const int _tailParts = 1;
+
   /// 组装一段（spec §5）。**纯函数**。
+  ///
+  /// [maxChars] 是正文上限，默认 8000（网关协议的上限，见 spec §3.3）；正文
+  /// 超了就按「前 3/4 + 后 1/4」采样（spec §3.2），并在接头处写清楚「已截断、
+  /// 你看到的是开头与结尾」。
   ///
   /// 刻意不要 `ossBase`：这一路的输出是纯文本，附件只给名字与大小，没有任何
   /// 一处要把相对路径拼成绝对 URL。
@@ -55,7 +76,18 @@ class SuggestInput {
     final stripped = _stripQuoted(row, plain);
     final full = stripped.text;
     final truncated = full.length > maxChars;
-    final body = truncated ? full.substring(0, maxChars) : full;
+    // 截断时**取两头**（spec §3.2）：长信的结尾常放「请尽快确认」「截止日期」
+    // 这类真正要行动的信息，旧的「只取前 8000」正好把它截掉，模型于是只能
+    // 对着半封信猜。
+    final headChars = truncated
+        ? maxChars * _headParts ~/ (_headParts + _tailParts)
+        : full.length;
+    final tailChars = truncated ? maxChars - headChars : 0;
+    final omitted = full.length - headChars - tailChars;
+    final head = full.substring(0, headChars);
+    final tail = truncated && tailChars > 0
+        ? full.substring(full.length - tailChars)
+        : '';
 
     final header = <String>[
       '主题：${row.subject.trim()}',
@@ -74,18 +106,27 @@ class SuggestInput {
     if (truncated) {
       // **截断必须告诉模型，不能偷偷截**：不说的话模型会把「信里没提」当成
       // 「信里没有」—— 那正是它给出错误建议最常见的来源。
-      text.writeln('（来信正文过长，已截断：原文 ${full.length} 字，'
-          '你看到的是前 $maxChars 字）');
+      //
+      // 这句话**插在头与尾之间**，不是塞在抬头里：模型的阅读是线性的，只有
+      // 放在真正断开的地方，它才知道「下面这段不是接着上面写的」，以及中间
+      // 到底少了多少。
+      text.writeln(head);
+      text.writeln('\n……（来信正文过长，已截断：原文 ${full.length} 字，'
+          '你看到的是开头 $headChars 字与结尾 $tailChars 字'
+          '（合计 $maxChars 字），中间省略 $omitted 字）……\n');
+      text.write(tail);
+    } else {
+      text.write(full);
     }
-    text.write(body);
 
     return SuggestInput(
       text: text.toString(),
-      bodyChars: body.length,
+      bodyChars: head.length + tail.length,
       originalChars: full.length,
       attachmentCount: row.attList.length,
       quotedDropped: stripped.dropped,
       truncated: truncated,
+      tailIncluded: truncated && tailChars > 0,
     );
   }
 

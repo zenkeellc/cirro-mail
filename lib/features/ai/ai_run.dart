@@ -128,8 +128,9 @@ class AiRun {
   /// —— 界面上有一句没写完的话，却什么都不说。**只加一句提示、不动 `text`**：
   /// 半截结果留着，用户想用还是能用。
   ///
-  /// 文案**不指路去设置页**：输出上限是代码里定死的（`AiService._maxOutputTokens`），
-  /// 设置里没有这一项 —— 让用户去找一个不存在的东西，比不给建议更糟。
+  /// 文案**不指路去设置页**：输出上限是代码里定死的（`AiService` 的
+  /// `_maxOutputTokens` / `_suggestMaxTokens`），设置里没有这一项 —— 让用户
+  /// 去找一个不存在的东西，比不给建议更糟。
   void _applyTruncated(bool truncated) {
     if (!truncated || _stopped) return;
     if (text.value.trim().isEmpty) return;

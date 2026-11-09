@@ -27,7 +27,11 @@ import '../../providers/sync_providers.dart';
 import '../compose/compose_draft.dart';
 import '../compose/compose_launcher.dart';
 import '../mail_list/mail_panes.dart';
+import '../suggest/mail_action_runner.dart';
+import '../suggest/suggest_dock_request.dart';
 import '../suggest/suggest_flow.dart';
+import '../suggest/suggest_panel.dart';
+import '../suggest/suggestion.dart';
 import '../sync/sync_stage.dart';
 import '../attachment/attachment_kind.dart'
     show formatAttachmentSize, iconOf;
@@ -101,12 +105,35 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   /// 的焦点抢回来。
   String? _focusedMailKey;
 
+  /// 「AI 建议」停靠面板是不是开着（宽屏：插在正文下方；窄屏走整页路由，见
+  /// `SuggestFlow.open`）。
+  ///
+  /// 宽屏从列表行菜单点进来时，列表页没法直接摸到本页的 `State` —— 它发一次
+  /// [suggestDockRequestProvider] 请求，本页收到、认领并打开面板。
+  bool _suggestOpen = false;
+
+  /// 停靠请求的订阅（`initState` 里建，`dispose` 里关）。
+  late final ProviderSubscription<MailRef?> _suggestDockSub;
+
   MailRef get _ref =>
       MailRef(profileId: widget.profileId, emailId: widget.emailId);
 
   @override
   void initState() {
     super.initState();
+    // `fireImmediately`：列表页可能先发请求、本页后挂载（宽屏从行菜单点进来
+    // 时 `?sel=` 才把右栏建出来）—— 只靠「变化时通知」会漏掉这一种。
+    _suggestDockSub = ref.listenManual<MailRef?>(
+      suggestDockRequestProvider,
+      (_, next) {
+        if (next == null || next != _ref) return;
+        // 认领掉：同一个请求不能再被别的页面（比如随后重建的这一页）消费。
+        ref.read(suggestDockRequestProvider.notifier).consume(next);
+        if (!mounted || Breakpoints.compactOf(context)) return;
+        setState(() => _suggestOpen = true);
+      },
+      fireImmediately: true,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _openOnce());
   }
 
@@ -122,12 +149,15 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
         oldWidget.profileId != widget.profileId) {
       _opened = false;
       _syncing = false;
+      // 换了一封：上一封的停靠面板不能跟着留在新邮件下面。
+      _suggestOpen = false;
       WidgetsBinding.instance.addPostFrameCallback((_) => _openOnce());
     }
   }
 
   @override
   void dispose() {
+    _suggestDockSub.close();
     _readerFocus.dispose();
     super.dispose();
   }
@@ -321,7 +351,7 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
           // `Breakpoints.readerMaxWidth` 900）在宽屏上会把右栏变成一条居中的
           // 窄带，两边的留白比正文还宽 —— 而右栏本来就是用户自己拖出来的：
           // 嫌它宽，拖分隔条就是那个调节手段。
-          Expanded(child: _body(row, ossBase, attachments, ac)),
+          Expanded(child: _bodyWithSuggest(row, ossBase, attachments, ac)),
         ],
       );
     }
@@ -349,7 +379,90 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
       // 整页形态同样不封顶（需求二说的是「占满全部宽度」）。这条路径在
       // 宽屏上只可能出现在**拖窄到刚够单栏**的那一刻（>= 1024 时路由会把
       // 选中折进分栏），所以不封顶不会变成一条 1800px 宽的正文。
-      body: _body(row, ossBase, attachments, ac),
+      body: _bodyWithSuggest(row, ossBase, attachments, ac),
+    );
+  }
+
+  /// 正文 +（宽屏）**停靠在正文下方的 AI 建议面板**。
+  ///
+  /// 为什么是「正文下方插入」而不是弹窗：弹窗会盖住用户正在读的那一段，而
+  /// 建议要引用正文里的细节；停靠在下方时正文与建议同时可见。
+  ///
+  /// 高度取阅读区的 45%，夹在 240–420：再矮放不下两张动作卡，再高会把正文
+  /// 挤没。两列/一列由面板自己按**面板宽度**判（>= 720 两列），不按窗口宽
+  /// —— 宽屏的阅读区可能被用户拖得很窄。
+  ///
+  /// 窄屏不出现停靠面板（走 `SuggestFlow.open` 的整页路由）；这里的
+  /// [_suggestOpen] 只在宽屏被置真，窄屏就算残留也画不出来。
+  Widget _bodyWithSuggest(
+    MailRow row,
+    String ossBase,
+    List<MailAttachment> attachments,
+    Color ac,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showDock = _suggestOpen && !Breakpoints.compactOf(context);
+        return Column(
+          children: <Widget>[
+            Expanded(child: _body(row, ossBase, attachments, ac)),
+            if (showDock)
+              SizedBox(
+                height: (constraints.maxHeight * 0.45).clamp(240.0, 420.0),
+                child: _suggestDock(row),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 宽屏的停靠面板。回调与 `SuggestFlow.open` 组装的是同一份
+  /// （[SuggestFlow.deps]）—— 两个入口的补正文 / 起请求口径不会分叉。
+  Widget _suggestDock(MailRow row) {
+    final theme = Theme.of(context);
+    final deps = SuggestFlow.deps(ref, row);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        border: Border(top: BorderSide(color: theme.dividerColor)),
+      ),
+      child: SafeArea(
+        top: false,
+        // 换邮件就重挂：会话（连同正在跑的 `AiRun`）跟着换掉，不会把上一封
+        // 的半截分析留在新邮件下面。
+        child: SuggestView(
+          key: ValueKey<String>(
+            'ai-suggest-dock-${row.profileId}#${row.emailId}',
+          ),
+          row: row,
+          starEnabled: deps.starEnabled,
+          refresh: deps.refresh,
+          launch: deps.launch,
+          onPick: _onSuggestPick,
+          onClose: () => setState(() => _suggestOpen = false),
+        ),
+      ),
+    );
+  }
+
+  /// 停靠面板里点了一项。**执行仍走唯一的执行器**，`onDeleted` 也照旧带上
+  /// —— 从 AI 面板删掉一封之后，内嵌详情页要把选中清掉（否则屏幕上是一个
+  /// 永远转下去的圈，见 `_afterDelete` 上面那段注释）。
+  ///
+  /// 先收起面板再执行：回复 / 转发会 push 写邮件页，面板留在下面没有意义。
+  void _onSuggestPick(SuggestionChoice choice) {
+    final row = ref.read(mailDetailProvider(_ref)).value;
+    if (row == null) return;
+    setState(() => _suggestOpen = false);
+    unawaited(
+      MailActionRunner.execute(
+        context,
+        ref,
+        row: row,
+        choice: choice,
+        onDeleted: _afterDelete,
+      ),
     );
   }
 

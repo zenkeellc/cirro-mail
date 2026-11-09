@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/data/models/mail_row.dart';
-// `AiStream`（`FakeStream.stream` 的返回类型）在 `ai_client.dart`；
-// `AiStart` / `AiStarted` / `AiNotStarted`（面板 `launch` 形参的返回类型）
-// 在 `ai_service.dart` —— 少任何一个都编不过。
+// `AiStream` 在 `ai_client.dart`；`AiStart` / `AiStarted` / `AiNotStarted`
+// （视图 `launch` 形参的返回类型）在 `ai_service.dart` —— 少任何一个都编不过。
 import 'package:mail_app/features/ai/ai_client.dart';
 import 'package:mail_app/features/ai/ai_service.dart';
 import 'package:mail_app/features/suggest/mail_action.dart';
@@ -42,26 +41,69 @@ class FakeStream {
   }
 }
 
+/// 一次假的生成：[reply] 是这次要吐的整段回话；[gate] 给了就等它 ——
+/// 用来停在「分析中」那一态做断言（**调用方必须自己 complete 掉**，
+/// 否则这一次请求永远不结束）。
+class FakeReply {
+  FakeReply({required this.reply, this.emit = true, this.gate});
+
+  final String reply;
+  final bool emit;
+  final Completer<void>? gate;
+
+  final FakeStream _fake = FakeStream();
+
+  AiStream get stream {
+    scheduleMicrotask(() async {
+      if (gate != null) await gate!.future;
+      if (emit) _fake.emit(reply);
+      await _fake.close();
+    });
+    return _fake.stream;
+  }
+}
+
+/// 几次 pump，把微任务里跑完的状态切换落到画面上（**不用 `pumpAndSettle`**）。
 Future<void> settle(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
   await tester.pump(const Duration(milliseconds: 400));
 }
 
+MailRow sampleRow({
+  bool hasFullBody = true,
+  String content = '<p>会议时间定了吗？</p>',
+}) =>
+    MailRow(
+      emailId: 7,
+      profileId: 'p1',
+      name: '张三',
+      sendEmail: 'alice@example.com',
+      subject: '上线时间',
+      mailboxEmail: 'me@example.com',
+      content: content,
+      hasFullBody: hasFullBody,
+    );
+
 const String _goodJson = '{"summary":"对方在等确认","actions":['
     '{"action":"reply","reason":"在等你回"},'
     '{"action":"remind","reason":"周五之前回就行"}]}';
 
+const String _pointsJson = '{"summary":"对方在等确认",'
+    '"points":["周五前确认上线时间","附件是季度报告，需要审阅"],'
+    '"actions":['
+    '{"action":"reply","reason":"在等你回"},'
+    '{"action":"remind","reason":"周五之前回就行"}]}';
+
+/// 只有动作、没有概述与要点：摘要区整块不画（旧模型/旧网关的回话形状）。
+const String _actionsOnlyJson = '{"actions":'
+    '[{"action":"reply","reason":"在等你回"}]}';
+
 const String _noneOnlyJson = '{"summary":"纯通知","actions":'
     '[{"action":"none","reason":"不用管"}]}';
 
-/// 只建议「加星」：用来钉「图标按信件状态画」（`openPanel` 造的那一行默认
-/// 未加星，所以池子里是 `star`、画的该是空心星）。
-const String _starJson = '{"summary":"先存着","actions":'
-    '[{"action":"star","reason":"回头再看"}]}';
-
-/// 七项全给：`openPanel` 造的那一行（未读、没星、有正文）的池子正好七项。
-/// 用来把面板撑到屏幕装不下，钉限高滚动。
+/// 七项全给：`sampleRow` 造的那一行（未读、没星、有正文）的池子正好七项。
+/// 用来把内容撑到装不下，钉「整块可滚、不溢出」。
 const String _manyJson = '{"summary":"七件事","actions":['
     '{"action":"reply","reason":"在等你回"},'
     '{"action":"forward","reason":"转给同事"},'
@@ -71,20 +113,71 @@ const String _manyJson = '{"summary":"七件事","actions":['
     '{"action":"star","reason":"回头处理"},'
     '{"action":"none","reason":"不用管"}]}';
 
-/// 把面板挂到一个按钮上、点开，返回 pop 回来的那个东西的读取口。
+/// 假视图的读数口：点了哪一项、发了几次请求、`onClose` 触发几次。
+class Harness {
+  SuggestionChoice? picked;
+  int launches = 0;
+  int closes = 0;
+}
+
+/// 把 [SuggestView]（停靠面板形态）挂在一块有界区域里。
 ///
-/// [reply] 是这次假流要吐的整段回话；[emitReply] 为 false 时一个字都不吐
-/// （直接结束）；[gate] 给了就等它 —— 于是能在「分析中」那一态停下来做断言。
-///
-/// **调用方必须自己把 [gate] complete 掉**，否则这一次请求永远不结束。
-Future<SuggestionChoice? Function()> openPanel(
+/// 尺寸用 `tester.view.physicalSize` 设（dpr=1）—— 面板的「两列 / 单列」
+/// 判据读的是**面板自身宽度**，由 [LayoutBuilder] 从这块区域拿，
+/// 所以必须让它在想要的宽度上布局。
+Future<Harness> pumpDock(
   WidgetTester tester, {
   required String reply,
+  Size size = const Size(900, 700),
+  MailRow? row,
   bool hasFullBody = true,
   bool emitReply = true,
   Completer<void>? gate,
+  Future<MailRow?> Function()? refresh,
+  bool showTitle = true,
+  bool withClose = false,
+  Future<AiStart> Function(String input, List<String> actionIds)? launch,
 }) async {
-  SuggestionChoice? returned;
+  // 必须在 `pumpWidget` **之前**设尺寸。
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+  final harness = Harness();
+  await tester.pumpWidget(MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    locale: const Locale('zh'),
+    home: Scaffold(
+      body: SuggestView(
+        row: row ?? sampleRow(hasFullBody: hasFullBody),
+        starEnabled: true,
+        refresh: refresh ?? () async => null,
+        launch: launch ??
+            (input, actionIds) async {
+              harness.launches++;
+              return AiStarted(
+                FakeReply(reply: reply, emit: emitReply, gate: gate).stream,
+              );
+            },
+        onPick: (choice) => harness.picked = choice,
+        onClose: withClose ? () => harness.closes++ : null,
+        showTitle: showTitle,
+      ),
+    ),
+  ));
+  return harness;
+}
+
+/// 从列表上的一个按钮点开 [showSuggestPage]（整页形态），返回读数口。
+Future<Harness> pumpPage(
+  WidgetTester tester, {
+  required String reply,
+  Size size = const Size(600, 700),
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+  final harness = Harness();
   await tester.pumpWidget(MaterialApp(
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
@@ -94,23 +187,15 @@ Future<SuggestionChoice? Function()> openPanel(
         builder: (context) => ElevatedButton(
           key: const ValueKey('open'),
           onPressed: () async {
-            returned = await showSuggestPanel(
+            harness.picked = await showSuggestPage(
               context,
-              row: MailRow(
-                emailId: 7,
-                profileId: 'p1',
-                name: '张三',
-                sendEmail: 'alice@example.com',
-                subject: '上线时间',
-                mailboxEmail: 'me@example.com',
-                content: '<p>会议时间定了吗？</p>',
-                hasFullBody: hasFullBody,
-              ),
+              row: sampleRow(),
               starEnabled: true,
               refresh: () async => null,
-              launch: (input, actionIds) async => AiStarted(
-                FakeStreamSession(tester, reply, emitReply, gate).stream,
-              ),
+              launch: (input, actionIds) async {
+                harness.launches++;
+                return AiStarted(FakeReply(reply: reply).stream);
+              },
             );
           },
           child: const Text('开'),
@@ -120,363 +205,297 @@ Future<SuggestionChoice? Function()> openPanel(
   ));
   await tester.tap(find.byKey(const ValueKey('open')));
   await settle(tester);
-  return () => returned;
-}
-
-/// 一次假的流：构造时就推完 [reply]，然后 `close()`。
-///
-/// [gate] 给了就等它 —— 用来停在「分析中」那一态做断言。
-class FakeStreamSession {
-  FakeStreamSession(this.tester, this.reply, this.emitReply, this.gate);
-
-  final WidgetTester tester;
-  final String reply;
-  final bool emitReply;
-  final Completer<void>? gate;
-
-  final FakeStream _fake = FakeStream();
-
-  AiStream get stream {
-    scheduleMicrotask(() async {
-      if (gate != null) await gate!.future;
-      if (emitReply) _fake.emit(reply);
-      await _fake.close();
-    });
-    return _fake.stream;
-  }
+  return harness;
 }
 
 void main() {
-  testWidgets('分析中：画流式内容与停止按钮，抬头已经在', (tester) async {
-    // **必须给一个 gate 把流按住。** 没有它的话这一整个流程是
-    // 「`start()` → 假流 microtask 里推完 + close → `running` 翻 false →
-    // `_onRunningChanged` 切到结果态」，全在 `openPanel` 里那两下 `pump`
-    // 之间跑完 —— 断言见到的已经是结果态，`ai-stop` 永远 `findsNothing`，
-    // 而这条用例声称要测的「分析中」一帧都到不了。
-    final gate = Completer<void>();
-    await openPanel(tester, reply: '正在想…', gate: gate);
-    expect(find.byKey(const ValueKey('ai-suggest-header')), findsOneWidget);
-    expect(find.byKey(const ValueKey('ai-stop')), findsOneWidget);
-    // 抬头如实写了看到了什么
-    expect(find.textContaining('正文'), findsWidgets);
-    // 这一态**没有**可点的动作项
-    expect(find.byKey(const ValueKey('ai-suggest-choice-reply')), findsNothing);
-    // 放行，收尾（不然这一次请求一直挂着）。
-    gate.complete();
-    await settle(tester);
+  // ------------------------------------------------------------ 两列 / 单列
+
+  group('布局（停靠面板按自身宽度分两列/单列）', () {
+    testWidgets('宽度 900：两列 —— 摘要在左、建议操作在右，两列各自可滚',
+        (tester) async {
+      await pumpDock(tester, reply: _pointsJson);
+      await settle(tester);
+
+      // 面板标题只画一次（停靠面板自己有标题；整页形态才交给 AppBar）。
+      expect(find.text('AI 建议'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-summary')), findsOneWidget);
+      expect(find.text('对方在等确认'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-choice-remind')),
+          findsOneWidget);
+
+      // 两列：有分隔线，且摘要在左、动作在右。
+      expect(find.byType(VerticalDivider), findsOneWidget);
+      final summaryX = tester
+          .getTopLeft(find.byKey(const ValueKey('ai-suggest-summary')))
+          .dx;
+      final choiceX = tester
+          .getTopLeft(find.byKey(const ValueKey('ai-suggest-choice-reply')))
+          .dx;
+      expect(summaryX, lessThan(choiceX));
+
+      // 两个区块标题都画（spec §1.2：两列时显示）。
+      expect(find.byKey(const ValueKey('ai-suggest-summary-title')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-actions-title')),
+          findsOneWidget);
+
+      // 两列各自可滚：左右各一个滚动区。
+      expect(find.byType(SingleChildScrollView), findsNWidgets(2));
+    });
+
+    testWidgets('宽度 600：单列 —— 无区块标题，摘要在上、动作卡片在下',
+        (tester) async {
+      await pumpDock(tester, reply: _pointsJson, size: const Size(600, 700));
+      await settle(tester);
+
+      expect(find.byType(VerticalDivider), findsNothing);
+      // 停靠面板的单列保持旧观感：不硬加区块标题（spec §1.2）。
+      expect(find.byKey(const ValueKey('ai-suggest-summary-title')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('ai-suggest-actions-title')),
+          findsNothing);
+
+      final summaryY = tester
+          .getTopLeft(find.byKey(const ValueKey('ai-suggest-summary')))
+          .dy;
+      final choiceY = tester
+          .getTopLeft(find.byKey(const ValueKey('ai-suggest-choice-reply')))
+          .dy;
+      expect(summaryY, lessThan(choiceY));
+
+      // 单列只有一整块滚动区。
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+    });
+
+    testWidgets('要点按「圆点 + 一句」逐条渲染', (tester) async {
+      await pumpDock(tester, reply: _pointsJson);
+      await settle(tester);
+      expect(find.text('周五前确认上线时间'), findsOneWidget);
+      expect(find.text('附件是季度报告，需要审阅'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-point-0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-point-1')), findsOneWidget);
+    });
+
+    testWidgets('摘要与要点都为空时只画动作卡片', (tester) async {
+      await pumpDock(tester, reply: _actionsOnlyJson);
+      await settle(tester);
+      expect(find.byKey(const ValueKey('ai-suggest-summary')), findsNothing);
+      expect(find.byKey(const ValueKey('ai-suggest-summary-title')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-actions-title')),
+          findsOneWidget);
+    });
+
+    testWidgets('窄高停靠面板：七张卡不溢出（内容区自己滚）', (tester) async {
+      await pumpDock(tester, reply: _manyJson, size: const Size(600, 400));
+      await settle(tester);
+      expect(tester.takeException(), isNull,
+          reason: '没有滚动区时这里是 RenderFlex overflowed');
+      expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
+          findsOneWidget);
+    });
   });
 
-  testWidgets('结果态：summary + 两项，第一项带「最推荐」徽标', (tester) async {
-    await openPanel(tester, reply: _goodJson);
+  // ---------------------------------------------------------------- 四个态
+
+  group('四个状态', () {
+    testWidgets('fetching：一句静态的「正在补全正文…」，没有停止按钮',
+        (tester) async {
+      final gate = Completer<void>();
+      await pumpDock(
+        tester,
+        reply: '不该走到这里',
+        hasFullBody: false,
+        refresh: () => gate.future.then((_) => null),
+        launch: (input, ids) async => const AiNotStarted('不该走到这里'),
+      );
+      await tester.pump();
+      expect(find.text('正在补全正文…'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-stop')), findsNothing,
+          reason: '还没发起请求，没有东西可停');
+      gate.complete();
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('analyzing：画流式视图与停止按钮，抬头已经在', (tester) async {
+      // **必须给一个 gate 把流按住**，否则整条流程会在 settle 里跑完，
+      // 断言见到的已经是结果态。
+      final gate = Completer<void>();
+      await pumpDock(tester, reply: '正在想…', gate: gate);
+      await settle(tester);
+      expect(find.byKey(const ValueKey('ai-suggest-header')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-stop')), findsOneWidget);
+      expect(find.textContaining('正文'), findsWidgets);
+      expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
+          findsNothing);
+      gate.complete();
+      await settle(tester);
+    });
+
+    testWidgets('done：摘要 + 动作卡片 + 「最推荐」徽标挂在第一项上',
+        (tester) async {
+      await pumpDock(tester, reply: _goodJson);
+      await settle(tester);
+      expect(find.text('对方在等确认'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-choice-remind')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-top')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-suggest-choice-reply')),
+          matching: find.byKey(const ValueKey('ai-suggest-top')),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('failed（解析失败）：模型原文 + 重试，**没有任何可点动作**',
+        (tester) async {
+      await pumpDock(tester, reply: '我觉得这封信不用处理，你可以不管它。');
+      await settle(tester);
+      expect(find.byKey(const ValueKey('ai-suggest-raw')), findsOneWidget);
+      expect(find.textContaining('我觉得这封信不用处理'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-retry')), findsOneWidget);
+      for (final action in MailAction.values) {
+        expect(
+          find.byKey(ValueKey<String>('ai-suggest-choice-${action.id}')),
+          findsNothing,
+          reason: '${action.id} 不该出现',
+        );
+      }
+    });
+
+    testWidgets('failed（请求失败）：画 AiStreamView 那句话 + 重试',
+        (tester) async {
+      await pumpDock(
+        tester,
+        reply: '',
+        launch: (input, ids) async =>
+            const AiNotStarted('还没有配置 AI —— 去「设置 → AI」里填上'),
+      );
+      await settle(tester);
+      expect(find.textContaining('还没有配置 AI'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-retry')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-choice-none')),
+          findsNothing);
+    });
+  });
+
+  // ------------------------------------------------------------ 交互与状态
+
+  testWidgets('重新分析：真的再发一次请求，并换掉整个会话', (tester) async {
+    final harness = await pumpDock(tester, reply: _goodJson);
     await settle(tester);
-    expect(find.text('对方在等确认'), findsOneWidget);
-    expect(find.byKey(const ValueKey('ai-suggest-choice-reply')), findsOneWidget);
-    expect(find.byKey(const ValueKey('ai-suggest-choice-remind')), findsOneWidget);
-    // 徽标只有一个，挂在第一项上
-    expect(find.byKey(const ValueKey('ai-suggest-top')), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('ai-suggest-choice-reply')),
-        matching: find.byKey(const ValueKey('ai-suggest-top')),
-      ),
-      findsOneWidget,
-    );
+    expect(harness.launches, 1);
+    await tester.tap(find.byKey(const ValueKey('ai-suggest-again')));
+    await settle(tester);
+    expect(harness.launches, 2, reason: '重新分析会真的再发一次请求');
+    expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
+        findsOneWidget);
+  });
+
+  testWidgets('停靠面板的 × 只收起自己：交给 onClose，不挑任何一项',
+      (tester) async {
+    final harness = await pumpDock(tester, reply: _goodJson, withClose: true);
+    await settle(tester);
+    expect(find.byKey(const ValueKey('ai-suggest-close')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('ai-suggest-close')));
+    expect(harness.closes, 1);
+    expect(harness.picked, isNull);
+  });
+
+  testWidgets('点一项：把 SuggestionChoice 交给 onPick（视图只选不做）',
+      (tester) async {
+    final harness = await pumpDock(tester, reply: _goodJson);
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('ai-suggest-choice-reply')));
+    await settle(tester);
+    expect(harness.picked, isNotNull);
+    expect(harness.picked!.action, MailAction.reply);
+    expect(harness.picked!.reason, '在等你回');
+    expect(harness.picked!.replyDraft, isNull,
+        reason: '模型没给 draft，不凭空造一份');
   });
 
   testWidgets('`none` 单列时不打「最推荐」徽标', (tester) async {
-    await openPanel(tester, reply: _noneOnlyJson);
+    await pumpDock(tester, reply: _noneOnlyJson);
     await settle(tester);
-    expect(find.byKey(const ValueKey('ai-suggest-choice-none')), findsOneWidget);
+    expect(find.byKey(const ValueKey('ai-suggest-choice-none')),
+        findsOneWidget);
     expect(find.byKey(const ValueKey('ai-suggest-top')), findsNothing,
         reason: '「无需处理」标成最推荐是荒谬的');
   });
 
-  testWidgets('点一项：pop 回一个 SuggestionChoice（面板只选不做）', (tester) async {
-    final result = await openPanel(tester, reply: _goodJson);
+  testWidgets('长正文：抬头用**原文长度**说「取开头和结尾」', (tester) async {
+    await pumpDock(
+      tester,
+      reply: _goodJson,
+      row: sampleRow(content: '<p>${'x' * 9000}</p>'),
+    );
     await settle(tester);
-    await tester.tap(find.byKey(const ValueKey('ai-suggest-choice-reply')));
-    await settle(tester);
-    final choice = result();
-    expect(choice, isNotNull);
-    expect(choice!.action, MailAction.reply);
-    expect(choice.reason, '在等你回');
-    expect(choice.replyDraft, isNull, reason: '模型没给 draft，不凭空造一份');
+    expect(find.textContaining('已取开头和结尾'), findsOneWidget);
+    expect(find.textContaining('9000'), findsOneWidget,
+        reason: '{chars} 是原文长度，不是喂进去的长度');
+    expect(find.textContaining('只取前'), findsNothing);
   });
 
-  testWidgets('解析失败：显示模型原文，**没有任何可点动作**', (tester) async {
-    await openPanel(tester, reply: '我觉得这封信不用处理，你可以不管它。');
-    await settle(tester);
-    expect(find.textContaining('我觉得这封信不用处理'), findsOneWidget);
-    expect(find.byKey(const ValueKey('ai-suggest-retry')), findsOneWidget);
-    // 一个动作项都没有
-    for (final action in MailAction.values) {
-      expect(
-        find.byKey(ValueKey<String>('ai-suggest-choice-${action.id}')),
-        findsNothing,
-        reason: '${action.id} 不该出现',
-      );
-    }
-  });
+  // -------------------------------------------------------------- 回车（已删）
 
-  testWidgets('请求失败：画的是 AiStreamView 那句话，也没有可点动作', (tester) async {
-    // launch 直接给 AiNotStarted —— 走的是 `run.message` 那一条。
-    SuggestionChoice? returned;
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      locale: const Locale('zh'),
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => ElevatedButton(
-            key: const ValueKey('open'),
-            onPressed: () async {
-              returned = await showSuggestPanel(
-                context,
-                row: MailRow(
-                  emailId: 7,
-                  profileId: 'p1',
-                  subject: '上线时间',
-                  content: '<p>x</p>',
-                ),
-                starEnabled: true,
-                refresh: () async => null,
-                launch: (input, ids) async =>
-                    const AiNotStarted('还没有配置 AI —— 去「设置 → AI」里填上'),
-              );
-            },
-            child: const Text('开'),
-          ),
-        ),
-      ),
-    ));
-    await tester.tap(find.byKey(const ValueKey('open')));
+  testWidgets('桌面端按回车什么都不发生，也不再画回车提示', (tester) async {
+    final harness = await pumpDock(tester, reply: _goodJson);
     await settle(tester);
-    expect(find.textContaining('还没有配置 AI'), findsOneWidget);
-    expect(find.byKey(const ValueKey('ai-suggest-choice-none')), findsNothing);
-    expect(returned, isNull);
-  });
-
-  testWidgets('补正文那一态：一句静态的「正在补全正文…」', (tester) async {
-    final gate = Completer<void>();
-    SuggestionChoice? returned;
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      locale: const Locale('zh'),
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => ElevatedButton(
-            key: const ValueKey('open'),
-            onPressed: () async {
-              returned = await showSuggestPanel(
-                context,
-                row: MailRow(
-                  emailId: 7,
-                  profileId: 'p1',
-                  subject: '上线时间',
-                  content: '<p>x</p>',
-                  // 摘要行 —— 于是会话会先走补正文那一态
-                  hasFullBody: false,
-                ),
-                starEnabled: true,
-                refresh: () => gate.future.then((_) => null),
-                launch: (input, ids) async =>
-                    const AiNotStarted('不该走到这里'),
-              );
-            },
-            child: const Text('开'),
-          ),
-        ),
-      ),
-    ));
-    await tester.tap(find.byKey(const ValueKey('open')));
-    await settle(tester);
-    expect(find.text('正在补全正文…'), findsOneWidget);
-    expect(find.byKey(const ValueKey('ai-stop')), findsNothing,
-        reason: '还没发起请求，没有东西可停');
-    gate.complete();
-    await settle(tester);
-    expect(returned, isNull);
-  });
-
-  testWidgets('重新分析：调第二次，并且换掉整个 session', (tester) async {
-    var launches = 0;
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      locale: const Locale('zh'),
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => ElevatedButton(
-            key: const ValueKey('open'),
-            onPressed: () => showSuggestPanel(
-              context,
-              row: MailRow(
-                emailId: 7,
-                profileId: 'p1',
-                subject: '上线时间',
-                content: '<p>x</p>',
-                hasFullBody: true,
-              ),
-              starEnabled: true,
-              refresh: () async => null,
-              launch: (input, ids) async {
-                launches++;
-                // **必须吐一份能解析的回话**（计划里原来的写法是
-                // `AiStarted(FakeStream().stream)` —— 那条流一个字都不吐、
-                // 也不 close，面板永远停在 `analyzing`）。而 `ai-suggest-again`
-                // 只在 `done` 那一态画（spec §4.5）：`analyzing` 里给的是
-                // `AiStreamView` 的停止按钮。用一条不结束的流的话，这条用例
-                // 连按钮都找不到（`Found 0 widgets with key ai-suggest-again`），
-                // 而它声称要测的是「重新分析真的再发一次请求」。
-                return AiStarted(
-                    FakeStreamSession(tester, _goodJson, true, null).stream);
-              },
-            ),
-            child: const Text('开'),
-          ),
-        ),
-      ),
-    ));
-    await tester.tap(find.byKey(const ValueKey('open')));
-    await settle(tester);
-    expect(launches, 1);
-    await tester.tap(find.byKey(const ValueKey('ai-suggest-again')));
-    await settle(tester);
-    expect(launches, 2, reason: '重新分析会真的再发一次请求');
-  });
-
-  // ---------------------------------------------------------- 卡片行与图标
-
-  testWidgets('每条候选都画了图标', (tester) async {
-    await openPanel(tester, reply: _goodJson);
-    await settle(tester);
-    expect(find.byIcon(Icons.reply), findsOneWidget);
-    expect(find.byIcon(Icons.alarm), findsOneWidget);
-  });
-
-  testWidgets('图标按信件状态画：未加星的信上「加星标」是空心星', (tester) async {
-    await openPanel(tester, reply: _starJson);
-    await settle(tester);
-    expect(find.byKey(const ValueKey('ai-suggest-choice-star')), findsOneWidget);
-    expect(find.byIcon(Icons.star_border), findsOneWidget);
-    expect(find.byIcon(Icons.star), findsNothing,
-        reason: '这封信还没加星，画实心星就和旁边的文字对不上了');
-  });
-
-  // ---------------------------------------------------------- 回车
-
-  testWidgets('回车执行第一项，与点它逐字相同', (tester) async {
-    final result = await openPanel(tester, reply: _goodJson);
-    await settle(tester);
+    // 停靠面板在阅读场景里**不抢焦点、不接管回车**（spec §2.1 末条）。
+    expect(find.byKey(const ValueKey('ai-suggest-enter-hint')), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await settle(tester);
-    final choice = result();
-    expect(choice, isNotNull, reason: '回车要把面板 pop 掉');
-    expect(choice!.action, MailAction.reply);
-    expect(choice.reason, '在等你回', reason: '与鼠标点第一张卡拿到的是同一份');
-  });
-
-  testWidgets('分析中按回车：什么都不做，面板不许被白关掉', (tester) async {
-    // 与「分析中」那条同一个 gate 手法：把流按住，面板停在 `analyzing`。
-    final gate = Completer<void>();
-    final result = await openPanel(tester, reply: '正在想…', gate: gate);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await settle(tester);
-    expect(find.byKey(const ValueKey('ai-stop')), findsOneWidget,
-        reason: '还没有可执行的动作，回车不该把面板关掉');
-    expect(result(), isNull);
-    gate.complete();
-    await settle(tester);
-  });
-
-  testWidgets('Tab 到「重新分析」后按回车：重新分析，不执行第一项', (tester) async {
-    // 这条钉的是「面板根的回车处理**不许抢自己按钮的键**」。原来的
-    // `CallbackShortcuts` 对匹配的键一律返回 handled，事件在浮到
-    // `WidgetsApp` 默认快捷键之前就被吃掉了 —— 焦点在「重新分析」上按回车
-    // 会去执行第一项，那颗按钮永远按不动。
-    var launches = 0;
-    SuggestionChoice? returned;
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      locale: const Locale('zh'),
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => ElevatedButton(
-            key: const ValueKey('open'),
-            onPressed: () async {
-              returned = await showSuggestPanel(
-                context,
-                row: MailRow(
-                  emailId: 7,
-                  profileId: 'p1',
-                  subject: '上线时间',
-                  content: '<p>x</p>',
-                  hasFullBody: true,
-                ),
-                starEnabled: true,
-                refresh: () async => null,
-                launch: (input, ids) async {
-                  launches++;
-                  return AiStarted(
-                      FakeStreamSession(tester, _goodJson, true, null).stream);
-                },
-              );
-            },
-            child: const Text('开'),
-          ),
-        ),
-      ),
-    ));
-    await tester.tap(find.byKey(const ValueKey('open')));
-    await settle(tester);
-    expect(launches, 1);
-    // 面板根 `autofocus`，Tab 一次正好落到抬头那一行里唯一的按钮
-    // （「重新分析」是 `Column` 第一个子 `Row` 里唯一可聚焦的东西）。
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await settle(tester);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await settle(tester);
-    expect(launches, 2, reason: '回车要按下「重新分析」，而不是被面板根抢去执行第一项');
-    expect(returned, isNull, reason: '面板不能因为这一下回车被关掉');
-    expect(find.byKey(const ValueKey('ai-suggest-choice-reply')), findsOneWidget);
-  });
-
-  // ---------------------------------------------------------- 回车提示
-
-  testWidgets('桌面平台：最推荐那一项带回车提示', (tester) async {
-    await openPanel(tester, reply: _goodJson);
-    await settle(tester);
-    expect(find.byKey(const ValueKey('ai-suggest-enter-hint')), findsOneWidget);
+    expect(harness.picked, isNull, reason: '回车不再执行第一项');
+    expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
+        findsOneWidget, reason: '面板不许被这一下回车白关掉');
   }, variant: TargetPlatformVariant.desktop());
 
-  testWidgets('移动端：不画回车提示', (tester) async {
-    await openPanel(tester, reply: _goodJson);
-    await settle(tester);
-    expect(find.byKey(const ValueKey('ai-suggest-enter-hint')), findsNothing);
-  }, variant: TargetPlatformVariant.mobile());
+  // ---------------------------------------------------------------- 整页路由
 
-  testWidgets('`none` 单列时不画回车提示（提示挂在徽标里，而徽标不画）',
-      (tester) async {
-    // 这条**必须**跑在桌面上才有效：默认平台（android）下提示本来就不画，
-    // 拿它当护栏等于什么都没钉。
-    await openPanel(tester, reply: _noneOnlyJson);
-    await settle(tester);
-    expect(find.byKey(const ValueKey('ai-suggest-enter-hint')), findsNothing);
-  }, variant: TargetPlatformVariant.desktop());
+  group('整页路由 showSuggestPage', () {
+    testWidgets('AppBar 标题 + 单列 + 两个区块标题（宽度 900 也单列）',
+        (tester) async {
+      await pumpPage(tester, reply: _pointsJson, size: const Size(900, 700));
+      await settle(tester);
 
-  // ---------------------------------------------------------- 尺寸
+      expect(find.byType(SuggestView), findsOneWidget);
+      // 标题由 AppBar 写；`showTitle: false` 保证正文里不再重复。
+      expect(find.text('AI 建议'), findsOneWidget);
+      // `isPage` 恒为单列，哪怕宽度超过两列门槛。
+      expect(find.byType(VerticalDivider), findsNothing);
+      // 整页形态显示两个区块标题（spec §2.2）。
+      expect(find.byKey(const ValueKey('ai-suggest-summary-title')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-actions-title')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-suggest-choice-reply')),
+          findsOneWidget);
+    });
 
-  testWidgets('窄高屏幕：七张卡不溢出（限高滚动真的接上了）', (tester) async {
-    // 必须在 `openPanel`（它会 `pumpWidget`）**之前**设尺寸。
-    tester.view.physicalSize = const Size(420, 400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-    await openPanel(tester, reply: _manyJson);
-    await settle(tester);
-    expect(tester.takeException(), isNull,
-        reason: '没有限高滚动时这里是 RenderFlex overflowed；溢出让这一帧'
-            '带上一枚异常，`takeException()` 就是在为它显式收账');
+    testWidgets('点一项：先把整页 pop 掉，再把 SuggestionChoice 交回调用方',
+        (tester) async {
+      final harness =
+          await pumpPage(tester, reply: _goodJson, size: const Size(600, 700));
+      await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('ai-suggest-choice-reply')));
+      await settle(tester);
+
+      expect(find.byType(SuggestView), findsNothing, reason: '整页要 pop 掉');
+      expect(harness.picked, isNotNull);
+      expect(harness.picked!.action, MailAction.reply);
+      expect(harness.picked!.reason, '在等你回');
+      expect(harness.picked!.replyDraft, isNull);
+    });
   });
 }

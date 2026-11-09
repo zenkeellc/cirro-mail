@@ -122,7 +122,10 @@ class AiService {
   static const String channelUnavailableMessage =
       'AI 通道暂不可用，可在「设置 → AI」里改用自带 Key';
 
-  /// 四项能力的**输出上限**（请求体里的 `max_tokens`）。
+  /// 其余几项能力的**输出上限**（请求体里的 `max_tokens`）。
+  ///
+  /// `suggest`（⑥）**不用它**，见 [_suggestMaxTokens] —— 那是唯一一条输出里
+  /// 要装下「概述 + 要点 + 动作列表 + 一整封回信」的路。
   ///
   /// 为什么统一给到 1 万，而不是「按任务给一个刚好的数」：
   ///
@@ -138,6 +141,19 @@ class AiService {
   /// 那是首选的那道锁，这个数只是**兜底**：不是所有端点都认那个字段，认不了的
   /// 照旧会思考，此时宽预算就是唯一的退路。
   static const int _maxOutputTokens = 10000;
+
+  /// `suggest`（⑥）自己的输出上限，spec §3.3 单独给的那一档。
+  ///
+  /// **为什么它不跟另外几项共用 [_maxOutputTokens]**：这一路的输出是一个
+  /// JSON，里面同时装着「概述 + 若干条要点 + 动作列表 + 一整封回信」。长信的
+  /// `replyDraft` 本身就能到一两千 token，再叠上要点、reason、以及端点不认
+  /// `thinking: {type: "disabled"}` 时被思考吃掉的预算，1 万那道线就开始不够；
+  /// 被 `finish_reason: "length"` 砍断时解析器拿到的是一段残 JSON —— 最好的
+  /// 降级也只是「这次没有建议」。
+  ///
+  /// 其余几项的输出长度由 prompt 自己限死（一两句话、一行标题、每行一条），
+  /// 不需要跟着抬。探针那次更窄，见 [_probeMaxTokens]。
+  static const int _suggestMaxTokens = 16384;
 
   /// 「测试连接」那一次**探针**请求的输出上限。
   ///
@@ -284,12 +300,15 @@ class AiService {
   /// [actionIds] 是**已按当前状态过滤过**的池子（`suggestActionPool`），
   /// 解析器后面会用同一份当白名单 —— 传进来的必须是同一个列表，否则会
   /// 出现「prompt 里说了、解析器不认」的漂移。
+  ///
+  /// 输出上限单独给 [_suggestMaxTokens]（理由见那里），其余几项仍走
+  /// [_maxOutputTokens]。
   Future<AiStart> suggest({
     required String input,
     required List<String> actionIds,
   }) =>
       _start(
-        maxTokens: _maxOutputTokens,
+        maxTokens: _suggestMaxTokens,
         build: (settings) =>
             AiPrompts.suggest(input: input, actionIds: actionIds),
         managed: () => AiTask.suggest(input: input, actionIds: actionIds),

@@ -28,6 +28,9 @@ void main() {
     // 再断言两个键都在，是一条**自相矛盾**的用例。
     final prompt = promptOf(const <String>['reply', 'forward']);
     expect(prompt, contains('"summary"'));
+    // `points` 是 spec §3.1 新增的那一项（关键要点数组），解析器认得它，
+    // prompt 里少了它模型就只会给一句概述。
+    expect(prompt, contains('"points"'));
     expect(prompt, contains('"actions"'));
     expect(prompt, contains('"action"'));
     expect(prompt, contains('"reason"'));
@@ -90,5 +93,64 @@ void main() {
         reason: '$id 在 _suggestActionLines 里缺一行（回退成了没有语义的裸 id）',
       );
     }
+  });
+
+  // spec §3.1 / §3.2：摘要从「一句话说明要你做什么」升级成「概述 + 关键
+  // 要点」，而且颗粒度按**喂进 prompt 的输入长度**分三档。分档是 prompt 的
+  // 行为，不是 UI 的事 —— 这里不钉住的话，「长信和短信给一样的摘要」这个
+  // 原始抱怨会悄悄回潮。
+  group('摘要按输入长度分三档（spec §3.2）', () {
+    String promptOfLength(int chars) => AiPrompts.suggest(
+          input: '甲' * chars,
+          actionIds: const <String>['none'],
+        );
+
+    test('`summary` 与 `points` 的语义写清楚了（概述不是复述，没要点给空数组）', () {
+      final prompt = promptOfLength(100);
+      expect(prompt, contains('`summary` 是**概述**'));
+      expect(prompt, contains('`points` 是关键要点数组'));
+      expect(prompt, contains('空数组'));
+    });
+
+    test('短信（<600 字）：1–2 句摘要 + 0–2 条要点', () {
+      final prompt = promptOfLength(100);
+      expect(prompt, contains('这封信很短'));
+      expect(prompt, contains('1–2 句'));
+      expect(prompt, contains('0–2 条'));
+      // 三档互斥：短信 prompt 里不该出现中/长档的指标。
+      expect(prompt, isNot(contains('2–3 句')));
+      expect(prompt, isNot(contains('2–4 句')));
+      expect(prompt, isNot(contains('2–5 条')));
+    });
+
+    test('中等（600–2000 字）：2–3 句摘要 + 1–3 条要点', () {
+      final prompt = promptOfLength(1200);
+      expect(prompt, contains('这封信长度中等'));
+      expect(prompt, contains('2–3 句'));
+      expect(prompt, contains('1–3 条'));
+      expect(prompt, isNot(contains('1–2 句')));
+      expect(prompt, isNot(contains('0–2 条')));
+      expect(prompt, isNot(contains('2–4 句')));
+      expect(prompt, isNot(contains('2–5 条')));
+    });
+
+    test('长信（>2000 字）：2–4 句概述 + 2–5 条要点，覆盖要求/事实/期限/附件', () {
+      final prompt = promptOfLength(5000);
+      expect(prompt, contains('这封信很长'));
+      expect(prompt, contains('2–4 句'));
+      expect(prompt, contains('2–5 条'));
+      // 长信要点要覆盖的四类里最容易漏的两类：期限与附件用途。
+      expect(prompt, contains('期限'));
+      expect(prompt, contains('附件要你做什么'));
+      expect(prompt, isNot(contains('1–2 句')));
+      expect(prompt, isNot(contains('2–3 句')));
+    });
+
+    test('边界归哪一档：599 短、600/2000 中等、2001 长', () {
+      expect(promptOfLength(599), contains('这封信很短'));
+      expect(promptOfLength(600), contains('这封信长度中等'));
+      expect(promptOfLength(2000), contains('这封信长度中等'));
+      expect(promptOfLength(2001), contains('这封信很长'));
+    });
   });
 }

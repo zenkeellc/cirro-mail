@@ -18,6 +18,7 @@ import '../../providers/sync_providers.dart';
 import '../../router.dart';
 import '../outbox/send_queue_bar.dart';
 import '../suggest/mail_row_menu.dart';
+import '../suggest/suggest_flow.dart';
 import 'mail_row_tile.dart';
 import 'mail_selection.dart';
 import 'mail_selection_pane.dart';
@@ -435,7 +436,7 @@ class _MailListViewState extends ConsumerState<MailListView> {
   void _onLongPress(int index, MailRow row, List<MailRef> refs) {
     if (!_selectable) {
       // 不可多选的列表（已发送…）保持原样：长按弹行菜单。
-      unawaited(MailRowMenu.show(context, ref, row));
+      unawaited(MailRowMenu.show(context, ref, row, onSuggest: _suggestFromMenu));
       return;
     }
     _dragFrom = index;
@@ -506,6 +507,7 @@ class _MailListViewState extends ConsumerState<MailListView> {
       row,
       at: at,
       batch: batch,
+      onSuggest: _suggestFromMenu,
     ));
   }
 
@@ -563,6 +565,16 @@ class _MailListViewState extends ConsumerState<MailListView> {
   /// 防重入：同一帧里 `Builder` 可能被调多次。
   bool _measuring = false;
 
+
+  /// 行菜单里的「AI 建议」。
+  ///
+  /// 宽屏（>= 600）的 AI 建议面板是**详情页正文下方**的一块：列表页先把这封
+  /// 选中到右栏（[_open] 在宽屏会折成 `?sel=`），再让 `SuggestFlow.open` 发
+  /// 一次停靠请求。窄屏不选、也不请求 —— 那条路会 push 一整页。
+  Future<void> _suggestFromMenu(MailRow row) async {
+    if (!Breakpoints.compactOf(context)) _open(row);
+    await SuggestFlow.open(context, ref, row: row);
+  }
 
   void _open(MailRow row) {
     final handler = widget.onOpen;

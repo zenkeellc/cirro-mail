@@ -1172,6 +1172,14 @@
   "@aiSuggestPanelTitle": {
     "description": "suggestion panel title"
   },
+  "aiSuggestSummaryTitle": "Summary",
+  "@aiSuggestSummaryTitle": {
+    "description": "suggestion panel: section title above the summary paragraph"
+  },
+  "aiSuggestActionsTitle": "Suggested actions",
+  "@aiSuggestActionsTitle": {
+    "description": "suggestion panel: section title above the action cards"
+  },
   "aiSuggestReading": "Read: subject, sender, body ({chars} chars)",
   "@aiSuggestReading": {
     "description": "suggestion panel header line 1",
@@ -1199,9 +1207,9 @@
       }
     }
   },
-  "aiSuggestTruncated": "Body too long — using the first {chars} chars",
+  "aiSuggestTruncated": "Body too long — using the beginning and end ({chars} chars original)",
   "@aiSuggestTruncated": {
-    "description": "suggestion panel header: body hit the length cap",
+    "description": "suggestion panel header: body hit the length cap; chars is the ORIGINAL length (head+tail sampling)",
     "placeholders": {
       "chars": {
         "type": "int"

@@ -721,6 +721,10 @@ void main() {
       // 没有这条断言的话，`temperature: 0.3` 被删掉（退回 `_start` 的默认
       // 0.7）时一条用例都不会红 —— 而那正是这条链路唯一的非功能性约束。
       expect(transport.lastBody!['temperature'], 0.3);
+      // **输出上限 16384**（spec §3.3）：这一路要装下「概述 + 要点 + 动作
+      // 列表 + 一整封回信」，长信的 `replyDraft` 就能吃掉一两千 token，1 万
+      // 那道线开始不够；被砍断时解析器只剩一段残 JSON。
+      expect(transport.lastBody!['max_tokens'], 16384);
     });
 
     test('既有五条路的 system 一个字没变（_start 的默认值仍在）', () async {
@@ -729,6 +733,9 @@ void main() {
       await service.replySuggestions(incoming: '来信正文');
       final messages = (transport.lastBody!['messages'] as List).cast<Map>();
       expect(messages.first['content'], '你是一个邮件写作助手，直接输出结果本身，不要任何寒暄与说明。');
+      // `suggest` 单独抬到 16384 之后，其余各项仍然是一万 —— 这条钉住
+      // 「只有 suggest 例外」这个边界。
+      expect(transport.lastBody!['max_tokens'], 10000);
     });
 
     test('suggest 也吃每日上限（与新能力一致）', () async {

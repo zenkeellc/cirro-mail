@@ -1884,6 +1884,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSuggestPanelTitle => 'AI suggestions';
 
   @override
+  String get aiSuggestSummaryTitle => 'Summary';
+
+  @override
+  String get aiSuggestActionsTitle => 'Suggested actions';
+
+  @override
   String aiSuggestReading(int chars) {
     return 'Read: subject, sender, body ($chars chars)';
   }
@@ -1900,7 +1906,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String aiSuggestTruncated(int chars) {
-    return 'Body too long — using the first $chars chars';
+    return 'Body too long — using the beginning and end ($chars chars original)';
   }
 
   @override

@@ -179,6 +179,10 @@ abstract final class AiPrompts {
   /// 收裸字符串而不是 `MailAction`：`ai/` 这一层**不许 import `suggest/`**
   /// （文件头那句「`ai/` 与内容无关」）。动作的**语义**（每一行后面那句
   /// 解释）仍然在这里维护 —— 它是 prompt 的一部分，不是 `suggest/` 的常量。
+  ///
+  /// **摘要在 spec §3.2 里按输入长度分三档**（短信 1–2 句 / 中等 2–3 句 /
+  /// 长信 2–4 句概述 + 2–5 条要点），分档在这里按 `input.length` 算，**不新增
+  /// 协议字段** —— BYOK 与托管网关各自从同一段输入算同一档，两边必须一致。
   static String suggest({
     required String input,
     required List<String> actionIds,
@@ -193,6 +197,7 @@ abstract final class AiPrompts {
     // 「不用处理就把 none 放进去」，是叫它输出一个列表里根本没有的动作 ——
     // 解析器会当没看见，那一句就成了纯噪音。
     final wantsNone = actionIds.contains('none');
+    final lengthHint = _suggestLengthHint(input.length);
     return '你是邮件助理。下面是一封**别人发来的**邮件，请判断用户接下来'
         '值得做什么。\n'
         '\n'
@@ -201,10 +206,14 @@ abstract final class AiPrompts {
         '\n'
         '输出要求（**必须**）：\n'
         '- 只输出一个 JSON 对象，不要任何其他文字、不要代码块围栏；\n'
-        '- 形状：{"summary":"一句话说明这封信要你做什么",'
+        '- 形状：{"summary":"概述这封信","points":["关键要点"],'
         '"actions":[{"action":"…","reason":"…"}]'
         '${wantsReply ? ',"replyDraft":"…"' : ''}'
         '${wantsForward ? ',"forwardNote":"…"' : ''}}\n'
+        '- `summary` 是**概述**（谁、为了什么、要你做什么），不是一句话复述；\n'
+        '- `points` 是关键要点数组，每条一句话：对方的要求、关键事实、'
+        '时间/期限、附件要你做什么；不要复述客套与签名；没有要点就给空数组 `[]`；\n'
+        '$lengthHint\n'
         '- `actions` 给 1–4 项，**最推荐的放第一个**（顺序就是优先级）；\n'
         '- `reason` 一句话，说明**为什么**建议做这一件（不要复述信件内容）；\n'
         '${wantsNone ? '- 这封信确实不用处理时，就把 `none` 放进 `actions`。' : ''}'
@@ -216,6 +225,31 @@ abstract final class AiPrompts {
         '- 来信里没有的信息**一律不要编**（时间、人名、承诺）。\n'
         '\n'
         '来信：\n$input';
+  }
+
+  /// 分档边界（字符数，spec §3.2 的表格）。600 与 2000 **都归中等**：
+  /// 表里写的是 `<600` / `600–2000` / `>2000`，边界两边不能留缝。
+  static const int _suggestShortChars = 600;
+  static const int _suggestMediumChars = 2000;
+
+  /// 摘要颗粒度的分档说明，**一整行 prompt**（含 `- ` 前缀）。
+  ///
+  /// 按**模型实际看到的输入长度**判，不是原始信件长度：调用方可能已经做过
+  /// 「前 6000 + 尾 2000」的采样（`SuggestInput.build`），这里说的就是它手里
+  /// 那一段 —— 模型据实知道该粗到什么程度，比让它猜「这封算长算短」可靠。
+  static String _suggestLengthHint(int chars) {
+    if (chars < _suggestShortChars) {
+      return '- 长度分档：这封信很短（$chars 字），`summary` 用 1–2 句讲清'
+          '「谁、要你做什么」就够了；`points` 给 0–2 条，'
+          '确实没有要点就给空数组。';
+    }
+    if (chars <= _suggestMediumChars) {
+      return '- 长度分档：这封信长度中等（$chars 字），`summary` 写 2–3 句，'
+          '把来龙去脉与要你做的事说清楚；`points` 给 1–3 条。';
+    }
+    return '- 长度分档：这封信很长（$chars 字），`summary` 写 2–4 句概述'
+        '（谁、为了什么、要你做什么）；`points` 给 2–5 条，覆盖对方的要求、'
+        '关键事实、时间/期限、附件要你做什么。';
   }
 
   /// `suggest` 里每一行动作的解释，**唯一给模型看的语义表**。

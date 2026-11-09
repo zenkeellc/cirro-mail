@@ -1767,6 +1767,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSuggestPanelTitle => 'AI 建议';
 
   @override
+  String get aiSuggestSummaryTitle => '摘要';
+
+  @override
+  String get aiSuggestActionsTitle => '建议操作';
+
+  @override
   String aiSuggestReading(int chars) {
     return '已阅读：主题、发件人、正文 $chars 字';
   }
@@ -1783,7 +1789,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String aiSuggestTruncated(int chars) {
-    return '正文过长，只取前 $chars 字';
+    return '正文过长，已取开头和结尾（原文 $chars 字）';
   }
 
   @override

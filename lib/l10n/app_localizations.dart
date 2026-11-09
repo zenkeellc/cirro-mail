@@ -3302,6 +3302,18 @@ abstract class AppLocalizations {
   /// **'AI suggestions'**
   String get aiSuggestPanelTitle;
 
+  /// suggestion panel: section title above the summary paragraph
+  ///
+  /// In en, this message translates to:
+  /// **'Summary'**
+  String get aiSuggestSummaryTitle;
+
+  /// suggestion panel: section title above the action cards
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested actions'**
+  String get aiSuggestActionsTitle;
+
   /// suggestion panel header line 1
   ///
   /// In en, this message translates to:
@@ -3320,10 +3332,10 @@ abstract class AppLocalizations {
   /// **'quoted text trimmed · {chars} chars original'**
   String aiSuggestQuotedDropped(int chars);
 
-  /// suggestion panel header: body hit the length cap
+  /// suggestion panel header: body hit the length cap; chars is the ORIGINAL length (head+tail sampling)
   ///
   /// In en, this message translates to:
-  /// **'Body too long — using the first {chars} chars'**
+  /// **'Body too long — using the beginning and end ({chars} chars original)'**
   String aiSuggestTruncated(int chars);
 
   /// suggestion panel: fetching the full body

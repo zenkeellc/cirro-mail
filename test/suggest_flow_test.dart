@@ -12,6 +12,7 @@ import 'package:mail_app/features/ai/ai_client.dart';
 import 'package:mail_app/features/ai/ai_service.dart';
 import 'package:mail_app/features/ai/ai_settings.dart';
 import 'package:mail_app/features/suggest/mail_action.dart';
+import 'package:mail_app/features/suggest/suggest_dock_request.dart';
 import 'package:mail_app/features/suggest/suggest_flow.dart';
 import 'package:mail_app/features/suggest/suggestion.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
@@ -53,6 +54,17 @@ MailRow fullRow() => const MailRow(
 
 /// 这条用例两次重读之间要能区分「谁给的那一份」——留一个哨兵字段。
 const String _kFreshMarker = '补全之后的完整正文';
+
+/// 把测试窗口设成**手机宽**。
+///
+/// `SuggestFlow.open` 2026-11-09 起按宽度分流：`< 600` 才 push 整页、才调
+/// `opener`；默认的 800×600 会走宽屏（请求详情页停靠面板），下面这些
+/// 「面板拿到的回调对不对」的用例就一条都走不到。
+void useCompactWindow(WidgetTester tester) {
+  tester.view.physicalSize = const Size(400, 800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -212,6 +224,7 @@ void main() {
 
   testWidgets('执行器拿到的是**重读过的那一行**，不是传进来那个对象',
       (tester) async {
+    useCompactWindow(tester);
     // 库里已经是全文（这就是 `ensureFull` 干完活之后的样子），
     // 而调用方手里那个 `row` 还是列表页给的摘要行。
     await db.mailDao.upsertPage(<MailRow>[fullRow()]);
@@ -239,6 +252,7 @@ void main() {
   });
 
   testWidgets('用户关掉面板（pop null）：一次都不执行', (tester) async {
+    useCompactWindow(tester);
     await db.mailDao.upsertPage(<MailRow>[fullRow()]);
     final executed = <MailRow>[];
 
@@ -255,6 +269,7 @@ void main() {
   });
 
   testWidgets('补正文失败（实例不支持 full / 网络挂）**不阻断**', (tester) async {
+    useCompactWindow(tester);
     // 库里只有摘要那一行 —— 补不上就是补不上。
     await db.mailDao.upsertPage(<MailRow>[summaryRow()]);
     when(() => repo.ensureFull(any())).thenThrow(Exception('实例不支持 full'));
@@ -327,6 +342,7 @@ void main() {
   });
 
   testWidgets('面板拿到的 row / starEnabled / launch 都对', (tester) async {
+    useCompactWindow(tester);
     await db.mailDao.upsertPage(<MailRow>[fullRow()]);
     when(() => ai.suggest(
           input: any(named: 'input'),
@@ -407,6 +423,7 @@ void main() {
   /// 「直接 `true`」的结果一样 —— 单靠它，把 `capabilitiesProvider` 那一行
   /// 换成常量也能全绿。这里用 `absent`（实例没有 `/star/list`）把两条路分开。
   testWidgets('实例明确没有星标能力时，面板拿到的是 false', (tester) async {
+    useCompactWindow(tester);
     MailRow? seenRow;
     var seenStarEnabled = true;
 
@@ -476,5 +493,71 @@ void main() {
     expect(seenStarEnabled, isFalse,
         reason: '`absent` 是「端点不存在」—— 与详情页那颗星同一个判据，'
             '不能退化成写死的 true');
+  });
+
+  // 2026-11-09：宽屏不再是「弹一个面板」——面板是详情页正文下方的一块。
+  // `open` 在这里只负责发一次请求；认领与打开由详情页做（见
+  // `mail_detail_screen.dart` 的 `_bodyWithSuggest`）。
+  testWidgets('宽屏：不弹整页，只请求详情页把面板停靠到正文下方',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await db.mailDao.upsertPage(<MailRow>[fullRow()]);
+
+    var pageOpened = 0;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        aiServiceProvider.overrideWithValue(ai),
+        emailRepositoryProvider.overrideWithValue(repo),
+        capabilitiesProvider.overrideWith(
+          (ref, profileId) => Stream<InstanceCapabilities>.value(
+            const InstanceCapabilities(),
+          ),
+        ),
+      ],
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
+        home: Scaffold(
+          body: Consumer(
+            builder: (context, ref, _) => ElevatedButton(
+              key: const ValueKey('go'),
+              onPressed: () => SuggestFlow.open(
+                context,
+                ref,
+                row: summaryRow(),
+                opener: (
+                  BuildContext _, {
+                  required MailRow row,
+                  required bool starEnabled,
+                  required Future<MailRow?> Function() refresh,
+                  required Future<AiStart> Function(String, List<String>)
+                      launch,
+                }) async {
+                  pageOpened++;
+                  return null;
+                },
+              ),
+              child: const Text('走'),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.byKey(const ValueKey('go')));
+    await tester.pump();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const ValueKey('go'))),
+    );
+    expect(
+      container.read(suggestDockRequestProvider),
+      const MailRef(profileId: 'p1', emailId: 7),
+      reason: '列表页 / 详情页顶栏都靠这条一次性请求去开正文下方的面板',
+    );
+    expect(pageOpened, 0, reason: '宽屏的形态是停靠面板，不是整页路由');
   });
 }

@@ -32,16 +32,29 @@ class SuggestionChoice {
       '${reason.isEmpty ? '' : ', reason: $reason'})';
 }
 
-/// 一次分析的产出：一句话总结 + 按「该先做哪个」排好序的选项。
+/// 一次分析的产出：概述 + 关键要点 + 按「该先做哪个」排好序的选项。
 ///
 /// **顺序即优先级**（spec §3.1）：数组的第一项就是最推荐的，所以这里没有
 /// 单独的 `priority` 字段 —— 让模型同时维护一个数组和一个排序数字，两者
 /// 不一致时还得决定信谁，不如只留一个有顺序的东西。
 class Suggestion {
-  const Suggestion({this.summary = '', required this.choices});
+  const Suggestion({
+    this.summary = '',
+    this.points = const <String>[],
+    required this.choices,
+  });
 
-  /// 面板顶部那一句。拿不到就是空串（面板据此不画第一行）。
+  /// 摘要的**概述段**（2–4 句；短信 1–2 句）。拿不到就是空串（面板据此不画）。
+  ///
+  /// 它比旧版那句「一句话说明这封信要你做什么」长：2026-11-09 起摘要要能让
+  /// 用户不点开正文就知道「谁、要什么、有什么时间点」。
   final String summary;
+
+  /// 关键要点：对方的要求、关键事实、时间/期限、附件要你做什么。
+  ///
+  /// 可空（短信、旧模型回话、旧网关都没有这一段）；解析器会把别名
+  /// `highlights` / `keyPoints` 也收成这一份，见 [SuggestionParser]。
+  final List<String> points;
 
   /// 至少一项（兜底见 [SuggestionParser]）。
   final List<SuggestionChoice> choices;
@@ -89,6 +102,11 @@ abstract final class SuggestionParser {
   /// 分析塞进 reason，不截的话面板会被一行字顶开。
   static const int maxReasonLength = 200;
 
+  /// `points` 的条数上限与单条长度上限。摘要区要能一眼扫完；模型偶尔会把
+  /// 整段分析塞进一条要点，不截的话左栏会被一条字顶满。
+  static const int maxPoints = 6;
+  static const int maxPointLength = 300;
+
   static SuggestionParseResult parse({
     required String raw,
     required List<MailAction> pool,
@@ -105,6 +123,7 @@ abstract final class SuggestionParser {
     // 那是**兜底**。
     var sawActions = false;
     var summary = '';
+    var points = const <String>[];
     String? replyDraft;
     String? forwardNote;
     final fromJson = <SuggestionChoice>[];
@@ -143,6 +162,7 @@ abstract final class SuggestionParser {
       buffer.write(text.substring(at));
       scanText = buffer.toString();
       summary = _text(decoded['summary'])?.trim() ?? '';
+      points = _points(decoded);
       replyDraft = _nonBlank(_text(decoded['replyDraft']));
       forwardNote = _nonBlank(_text(decoded['forwardNote']));
       final items = decoded['actions'];
@@ -234,7 +254,50 @@ abstract final class SuggestionParser {
         ),
     ];
 
-    return SuggestionParsed(Suggestion(summary: summary, choices: out));
+    return SuggestionParsed(
+      Suggestion(summary: summary, points: points, choices: out),
+    );
+  }
+
+  /// 读 `points`（关键要点）。三个键名都认：新 prompt 用 `points`，模型偶尔会
+  /// 写成 `highlights` / `keyPoints` —— 这份解析器的既有口径就是「宁可多认几
+  /// 种写法」。
+  ///
+  /// **数组与单个字符串都认**：模型有时把要点写成一句话，有时把每一条用换行
+  /// 塞进一个字符串。两种都拆开、去空、去重，最后截断到
+  /// [maxPoints] × [maxPointLength]。
+  ///
+  /// 拿不到就返回空列表（不是 null）：面板据此不画要点区，旧模型/旧网关的
+  /// 回话与今天的行为逐字相同。
+  static List<String> _points(Map<Object?, Object?> decoded) {
+    for (final key in const <String>['points', 'highlights', 'keyPoints']) {
+      final value = decoded[key];
+      final raw = <String>[];
+      if (value is List) {
+        for (final item in value) {
+          final line = _text(item)?.trim() ?? '';
+          if (line.isNotEmpty) raw.add(line);
+        }
+      } else {
+        final text = _text(value)?.trim() ?? '';
+        if (text.isNotEmpty) raw.addAll(text.split('\n'));
+      }
+      final out = <String>[];
+      final seen = <String>{};
+      for (var line in raw) {
+        // 模型爱在要点前加 `- ` / `• ` / `1. ` —— 那不是内容。
+        line = line
+            .replaceFirst(RegExp(r'^(?:[-*•·]\s+|\d{1,2}[.)、]\s*)'), '')
+            .trim();
+        if (line.isEmpty || !seen.add(line)) continue;
+        out.add(line.length <= maxPointLength
+            ? line
+            : line.substring(0, maxPointLength));
+        if (out.length == maxPoints) break;
+      }
+      if (out.isNotEmpty) return out;
+    }
+    return const <String>[];
   }
 
   /// 剥掉首尾的 ```` ```json ```` / ```` ``` ````。

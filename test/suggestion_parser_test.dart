@@ -400,4 +400,53 @@ void main() {
       expect(s.choices.single.replyDraft, isNull);
     });
   });
+
+  // 2026-11-09：摘要从「一句话」扩成「概述 + 关键要点」。旧回话没有
+  // `points` 也必须能读（旧网关/旧模型），所以这里既钉新字段，也钉降级。
+  group('摘要要点 points', () {
+    test('数组逐条带出来（顺序原样）', () {
+      const raw = '{"summary":"概述","points":["周五前确认","附件是季度报告"],'
+          '"actions":[{"action":"reply","reason":"在等"}]}';
+      final s = suggestionOf(SuggestionParser.parse(raw: raw, pool: _all));
+      expect(s.summary, '概述');
+      expect(s.points, <String>['周五前确认', '附件是季度报告']);
+    });
+
+    test('别名 highlights / keyPoints 也认', () {
+      for (final key in const <String>['highlights', 'keyPoints']) {
+        final raw = '{"summary":"s","$key":["一条"],"actions":[]}';
+        final s = suggestionOf(SuggestionParser.parse(raw: raw, pool: _all));
+        expect(s.points, <String>['一条'], reason: key);
+      }
+    });
+
+    test('单个字符串按换行拆开；`- ` / `1. ` 前缀清掉', () {
+      const raw = '{"summary":"s","points":"- 第一条\\n2. 第二条\\n\\n",'
+          '"actions":[]}';
+      final s = suggestionOf(SuggestionParser.parse(raw: raw, pool: _all));
+      expect(s.points, <String>['第一条', '第二条']);
+    });
+
+    test('空串、重复项、纯空白都去掉', () {
+      const raw = '{"summary":"s","points":["同一条","","同一条","  "],'
+          '"actions":[]}';
+      final s = suggestionOf(SuggestionParser.parse(raw: raw, pool: _all));
+      expect(s.points, <String>['同一条']);
+    });
+
+    test('条数与单条长度都有上限', () {
+      final many = List<String>.generate(10, (i) => '要点 $i').join('","');
+      final long = 'x' * (SuggestionParser.maxPointLength + 50);
+      final raw = '{"summary":"s","points":["$long","$many"],"actions":[]}';
+      final s = suggestionOf(SuggestionParser.parse(raw: raw, pool: _all));
+      expect(s.points.length, SuggestionParser.maxPoints);
+      expect(s.points.first.length, SuggestionParser.maxPointLength);
+    });
+
+    test('旧回话完全没有 points → 空列表（面板不画要点区）', () {
+      const raw = '{"summary":"s","actions":[{"action":"none","reason":""}]}';
+      final s = suggestionOf(SuggestionParser.parse(raw: raw, pool: _all));
+      expect(s.points, isEmpty);
+    });
+  });
 }

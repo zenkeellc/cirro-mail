@@ -145,26 +145,73 @@ void main() {
     });
   });
 
-  group('8000 字符上限（spec §5.3）', () {
-    test('超长时从头截，truncated 为 true，originalChars 是原本的字数', () {
-      final body = '甲' * 9000;
+  group('8000 字符上限：长信取开头 + 结尾（spec §3.2）', () {
+    test('超长时取前 6000 + 后 2000，truncated / tailIncluded 都为 true', () {
+      // 两头都放可辨认的字：只取前 8000 的旧做法会把结尾那个 E 丢掉。
+      final body = 'S${'甲' * 8998}E';
       final input = SuggestInput.build(row(content: '<p>$body</p>'));
       expect(input.bodyChars, 8000);
       expect(input.originalChars, 9000);
       expect(input.truncated, isTrue);
+      expect(input.tailIncluded, isTrue);
+      // 开头 6000 字（S + 5999 个甲）与结尾 2000 字（1999 个甲 + E）都在。
+      expect(input.text, contains('S${'甲' * 5999}'));
+      expect(input.text, contains('${'甲' * 1999}E'));
+      // 6000 个连续的甲只会出现在「头 + 尾直接拼接」的错做法里 —— 中间被
+      // 挖掉之后这个形状不该存在。
+      expect(input.text, isNot(contains('甲' * 6000)));
     });
 
-    test('刚好 8000 不算截断', () {
+    test('长信结尾的行动信息不会被截掉（旧做法正好截在这里）', () {
+      final body = '${'甲' * 8990}请周五前确认';
+      final input = SuggestInput.build(row(content: '<p>$body</p>'));
+      expect(input.text, contains('请周五前确认'));
+    });
+
+    test('截断标记插在头与尾之间，说明原文多少字、看到开头与结尾各多少字', () {
+      final body = 'S${'甲' * 8998}E';
+      final input = SuggestInput.build(row(content: '<p>$body</p>'));
+      expect(input.text, contains('已截断'));
+      expect(input.text, contains('原文 9000 字'));
+      expect(input.text, contains('开头 6000 字'));
+      expect(input.text, contains('结尾 2000 字'));
+      expect(input.text, contains('合计 8000 字'));
+      expect(input.text, contains('中间省略 1000 字'));
+      // 位置：开头那段 → 标记 → 结尾那段。抬头里不再写这句。
+      final headAt = input.text.indexOf('S${'甲' * 10}');
+      final markAt = input.text.indexOf('已截断');
+      final tailAt = input.text.indexOf('${'甲' * 10}E');
+      expect(headAt, greaterThanOrEqualTo(0));
+      expect(markAt, greaterThan(headAt));
+      expect(tailAt, greaterThan(markAt));
+    });
+
+    test('刚好 8000 不算截断，tailIncluded 为 false', () {
       final input = SuggestInput.build(row(content: '<p>${'甲' * 8000}</p>'));
       expect(input.bodyChars, 8000);
       expect(input.truncated, isFalse);
+      expect(input.tailIncluded, isFalse);
     });
 
-    test('maxChars 可传（测试与将来调档用）', () {
+    test('短/中正文一字不动：没有截断标记，tailIncluded 为 false', () {
+      final input = SuggestInput.build(row(
+        content: '<p>${'甲' * 599}</p>',
+      ));
+      expect(input.bodyChars, 599);
+      expect(input.originalChars, 599);
+      expect(input.truncated, isFalse);
+      expect(input.tailIncluded, isFalse);
+      expect(input.text, isNot(contains('已截断')));
+    });
+
+    test('maxChars 可传（测试与将来调档用）：同样按 3:1 取两头', () {
       final input = SuggestInput.build(row(content: '<p>${'甲' * 50}</p>'), maxChars: 10);
       expect(input.bodyChars, 10);
       expect(input.originalChars, 50);
       expect(input.truncated, isTrue);
+      expect(input.tailIncluded, isTrue);
+      // 10 的 3/4 是 7（整数除），尾巴 3 —— 仍满足「头 + 尾 = maxChars」。
+      expect(input.text, contains('开头 7 字与结尾 3 字'));
     });
   });
 
@@ -201,13 +248,6 @@ void main() {
 
       final starred = SuggestInput.build(row(content: '<p>正文</p>', isStar: 1));
       expect(starred.text, contains('已加星标'));
-    });
-
-    test('截断时正文前面那句如实告诉模型（§5.3 不能偷偷截）', () {
-      final input = SuggestInput.build(row(content: '<p>${'甲' * 9000}</p>'));
-      expect(input.text, contains('已截断'));
-      expect(input.text, contains('9000'));
-      expect(input.text, contains('8000'));
     });
 
     test('正文与抬头之间有分隔线，正文从分隔线之后开始', () {
