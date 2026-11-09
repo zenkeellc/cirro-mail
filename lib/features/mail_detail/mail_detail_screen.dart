@@ -127,10 +127,21 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
       suggestDockRequestProvider,
       (_, next) {
         if (next == null || next != _ref) return;
-        // 认领掉：同一个请求不能再被别的页面（比如随后重建的这一页）消费。
-        ref.read(suggestDockRequestProvider.notifier).consume(next);
-        if (!mounted || Breakpoints.compactOf(context)) return;
-        setState(() => _suggestOpen = true);
+        if (!mounted) return;
+        // `fireImmediately` 那次回调发生在 `initState` 里（本页还没完成第一帧）
+        // —— 那时**读写 provider**（`consume`）、读 `MediaQuery` 与 `setState`
+        // 都是在构建途中动状态：Riverpod 会抛「Tried to modify a provider while
+        // the widget tree was building」，`Breakpoints.compactOf` 会抛
+        // 「dependOnInheritedWidgetOfExactType called before initState completed」。
+        // 统一推到帧后：多等一帧对用户不可见，却避开了这两条边界
+        // （窄屏那条路同样只是认领，不开面板）。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          // 认领掉：同一个请求不能再被别的页面（比如随后重建的这一页）消费。
+          ref.read(suggestDockRequestProvider.notifier).consume(next);
+          if (Breakpoints.compactOf(context)) return;
+          setState(() => _suggestOpen = true);
+        });
       },
       fireImmediately: true,
     );

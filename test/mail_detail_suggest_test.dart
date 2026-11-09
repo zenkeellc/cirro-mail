@@ -18,6 +18,7 @@ import 'package:mail_app/features/ai/ai_settings.dart';
 import 'package:mail_app/features/mail_detail/mail_detail_screen.dart';
 import 'package:mail_app/features/mail_list/mail_panes.dart';
 import 'package:mail_app/features/notifications/notification_service.dart';
+import 'package:mail_app/features/suggest/suggest_dock_request.dart';
 import 'package:mail_app/features/suggest/suggest_panel.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
 import 'package:mail_app/providers/ai_providers.dart';
@@ -251,6 +252,58 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('ai-suggest-close')));
     await tester.pump();
     expect(find.byType(SuggestView), findsNothing);
+    await disposeDetail(tester);
+  });
+
+  testWidgets('宽屏：列表先发停靠请求，详情页挂载时认领并打开面板', (tester) async {
+    // 列表行菜单那条路：列表页先 `_open`（宽屏折成 `?sel=`），再发一次请求。
+    // 本页可能**晚一帧**才挂载 —— 所以订阅必须 `fireImmediately`，且认领后清掉。
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    await db.mailDao.upsertPage(<MailRow>[mail()]);
+    final ai = _FakeAi();
+    when(() => ai.suggest(
+          input: any(named: 'input'),
+          actionIds: any(named: 'actionIds'),
+        )).thenAnswer((_) async => AiStarted(AiStream(
+          text: const Stream<String>.empty(),
+          done: Future<String>.value(''),
+          cancel: () {},
+        )));
+
+    final container = ProviderContainer(overrides: [
+      bootstrapProvider.overrideWithValue(BootstrapData(
+        db: db,
+        tokens: TokenStore(),
+        prefs: PrefsStore(await SharedPreferences.getInstance()),
+      )),
+      notificationServiceProvider.overrideWithValue(_SilentNotifications()),
+      attachmentCacheProvider.overrideWithValue(noopAttachmentCache()),
+      aiServiceProvider.overrideWithValue(ai),
+      aiSettingsProvider.overrideWith(_UsableAiSettings.new),
+    ]);
+    addTearDown(container.dispose);
+    container
+        .read(suggestDockRequestProvider.notifier)
+        .request(const MailRef(profileId: profileId, emailId: emailId));
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
+        home: const MailDetailScreen(profileId: profileId, emailId: emailId),
+      ),
+    ));
+    await settle(tester);
+
+    expect(find.byType(SuggestView), findsOneWidget);
+    expect(
+      container.read(suggestDockRequestProvider),
+      isNull,
+      reason: '认领之后必须清掉，不能留给下一封同号邮件',
+    );
     await disposeDetail(tester);
   });
 
