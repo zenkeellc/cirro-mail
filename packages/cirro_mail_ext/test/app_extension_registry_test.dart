@@ -679,6 +679,70 @@ void main() {
     });
   });
 
+  group('推送重新登记触发器', () {
+    /// 公开版（核心没挂触发器），或者核心还没走到初始化：扩展在 license
+    /// 就绪时调它必须是安静的 no-op —— 不能抛，也不能挂住调用方。
+    test('未挂钩子时 requestPushSync 是安全的空操作', () async {
+      await AppExtensionRegistry.instance.requestPushSync();
+    });
+
+    test('挂上之后 requestPushSync 恰好触发一次', () async {
+      var calls = 0;
+      AppExtensionRegistry.instance.attachPushSyncTrigger(() async {
+        calls++;
+      });
+      await AppExtensionRegistry.instance.requestPushSync();
+      expect(calls, 1);
+    });
+
+    /// 核心的重试会重建整棵 `ProviderScope`，`NotificationHost` 的 initState
+    /// 可能走第二次；第二个触发器若覆盖第一个，就会指向一个已经废弃的 `ref`。
+    /// 所以只认第一次 —— 与 [attachMailStore] / [attachDraftStore] 同一口径。
+    test('attach 幂等：第二次不覆盖第一个', () async {
+      final calls = <String>[];
+      AppExtensionRegistry.instance.attachPushSyncTrigger(() async {
+        calls.add('first');
+      });
+      AppExtensionRegistry.instance.attachPushSyncTrigger(() async {
+        calls.add('second');
+      });
+      await AppExtensionRegistry.instance.requestPushSync();
+      expect(calls, <String>['first']);
+    });
+
+    /// 扩展多半是在 `onBootstrap` 里 `unawaited` 地调它 —— 异常漏出去就是一条
+    /// 未捕获的 zone 错误；补登记本来就是尽力而为的事，留一行日志即可。
+    test('触发器抛错不冒泡（requestPushSync 正常完成）', () async {
+      AppExtensionRegistry.instance.attachPushSyncTrigger(() async {
+        throw StateError('补登记失败');
+      });
+      await expectLater(
+        AppExtensionRegistry.instance.requestPushSync(),
+        completes,
+      );
+    });
+
+    /// `reset` 是「回到没挂」的状态：清掉之后 request 是 no-op，而且可以重新
+    /// 挂（测试里每个用例前后都 reset）。
+    test('reset 清掉触发器，之后可以重新挂', () async {
+      var oldCalls = 0;
+      AppExtensionRegistry.instance.attachPushSyncTrigger(() async {
+        oldCalls++;
+      });
+      AppExtensionRegistry.instance.reset();
+
+      await AppExtensionRegistry.instance.requestPushSync();
+      expect(oldCalls, 0, reason: 'reset 之后不该再调旧触发器');
+
+      var newCalls = 0;
+      AppExtensionRegistry.instance.attachPushSyncTrigger(() async {
+        newCalls++;
+      });
+      await AppExtensionRegistry.instance.requestPushSync();
+      expect(newCalls, 1);
+    });
+  });
+
   group('启动钩子', () {
     test('bootstrapAll 不等待 —— 同步方法返回时 Future 还没结束', () {
       final gate = Completer<void>();

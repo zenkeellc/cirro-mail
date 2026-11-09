@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -88,6 +89,15 @@ class _NotificationHostState extends ConsumerState<NotificationHost> {
       ref.read(syncSchedulerProvider).onSlowTick = ticker.onHeartbeat;
       unawaited(ticker.run());
     }
+
+    // 扩展在「license / 托管推送配置刚就绪」时会调 `requestPushSync`，要求
+    // 核心补一轮登记：托管推送下绑定未就绪的那一轮 `syncAll` 是被**跳过**的
+    // （见 `PushService.syncAll` 的守卫），等 license 回来时没人再登记的话，
+    // 整次运行都可能带着旧绑定/没有绑定。触发器就挂在这里 —— 与推送初始化
+    // 同处、且注册表自己保证只认第一次（重试重建 `ProviderScope` 不会换掉）。
+    AppExtensionRegistry.instance.attachPushSyncTrigger(
+      () => ref.read(pushServiceProvider).syncAll(reason: 'license-ready'),
+    );
 
     // FCM 那条链路是**懒接**的：只在用户已经填好中转配置时才碰 Firebase。
     // 没配的用户（以及 Linux/Windows 这些没有 FCM 实现的平台 —— 注释里

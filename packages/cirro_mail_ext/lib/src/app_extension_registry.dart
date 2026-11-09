@@ -49,6 +49,7 @@ class AppExtensionRegistry {
     _mailStoreReady = Completer<MailStore>();
     _draftStore = null;
     _draftStoreReady = Completer<DraftStore>();
+    _pushSyncTrigger = null;
   }
 
   // ---- 本地邮件读取 ----
@@ -362,6 +363,35 @@ class AppExtensionRegistry {
       if (built != null) return built;
     }
     return fallback();
+  }
+
+  /// 核心挂上来的「重新登记推送」触发器（延迟/按需）。
+  Future<void> Function()? _pushSyncTrigger;
+
+  /// 挂上「重新登记推送」触发器。**只认第一次**（第二次是空操作）。
+  ///
+  /// 由核心在推送链路的初始化处挂一次；扩展在「license / 托管推送配置刚
+  /// 就绪」时通过 [requestPushSync] 触发它，让核心补一轮 `syncAll`。核心没挂
+  /// （公开版、或者核心还没走到那一步）时 [requestPushSync] 是安静的 no-op。
+  ///
+  /// 为什么不让扩展直接调核心的 service：扩展只认这个包，反向 import
+  /// `package:mail_app/...` 会把商业代码与公开核心焊死（见包的 library 注释）。
+  void attachPushSyncTrigger(Future<void> Function() trigger) {
+    _pushSyncTrigger ??= trigger;
+  }
+
+  /// 扩展在「license/托管推送配置刚就绪」时调用；没有触发器时安静 no-op。
+  ///
+  /// **异常不冒泡**：触发的是「补一轮登记」这种尽力而为的事，调用方多半在
+  /// 启动钩子里且不 await 它 —— 漏出去就是一条未捕获的 zone 错误。
+  Future<void> requestPushSync() async {
+    final trigger = _pushSyncTrigger;
+    if (trigger == null) return;
+    try {
+      await trigger();
+    } catch (error) {
+      debugPrint('requestPushSync 失败：$error');
+    }
   }
 
   // ---- 邮件正文外联资源 ----
