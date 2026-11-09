@@ -147,6 +147,24 @@ class SuggestSession {
   /// 要的「包括 ensureFull」。
   Future<void> restart() => start();
 
+  /// 直接落到**上一次的成品**，不发请求。
+  ///
+  /// 用途只有一个：窗口宽窄切换时面板那个 widget 会被整棵拆掉重建（内嵌右栏
+  /// ↔ 整页详情，见 `suggest_dock_state.dart`），新视图手里有上一份结果
+  /// （`SuggestSnapshot`）。不 adopt 的话同一封信会被重新分析一遍 —— 用户看到
+  /// 「结果明明出来了又转圈」，而且白烧一次 token。
+  ///
+  /// 只该在**新会话第一次启动前**调（`start()` 之前）；之后要重来一律走
+  /// [restart]（它会换掉 `AiRun`、重新补正文，见类注释第 1 条）。
+  void adoptResult({
+    required SuggestionParseResult parsed,
+    required SuggestInput input,
+  }) {
+    _input = input;
+    _parsed = parsed;
+    stage.value = SuggestStage.done;
+  }
+
   void _launchRun() {
     _detach();
     final run = AiRun.pending();

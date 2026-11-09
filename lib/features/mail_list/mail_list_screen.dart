@@ -15,6 +15,7 @@ import '../../providers/profile_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../../router.dart';
 import '../compose/compose_preselect.dart';
+import '../suggest/suggest_dock_state.dart';
 import '../sync/sync_status_panel.dart';
 import 'mail_list_column.dart';
 import 'mail_list_view.dart';
@@ -425,6 +426,9 @@ class _MailListScreenState extends ConsumerState<MailListScreen> {
   /// `accountId` 同样不能漏：它是「钉住」这条标志本身，漏了就是 R2 那个
   /// 「关掉右栏之后筛选按钮又冒出来、列表变宽」。
   void _clearSelection() {
+    // 关右栏 = 「这一封看完了」：正文下方那块 AI 建议面板跟着收掉。留着的话
+    // 下次点开同一封会带着上一次的面板冒出来（见 `suggestDockStateProvider`）。
+    ref.read(suggestDockStateProvider.notifier).close();
     context.go(
       Routes.mailOf(
         Routes.aliasOf(widget.profileId),

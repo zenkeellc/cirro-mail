@@ -5,6 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_stream_view.dart';
 import 'mail_action.dart';
+import 'suggest_dock_state.dart';
 import 'suggest_session.dart';
 import 'suggestion.dart';
 
@@ -93,6 +94,8 @@ class SuggestView extends StatefulWidget {
     this.onClose,
     this.isPage = false,
     this.sourceLabel,
+    this.cached,
+    this.onResult,
   });
 
   final MailRow row;
@@ -122,6 +125,17 @@ class SuggestView extends StatefulWidget {
   /// 逐像素相同。
   final String? sourceLabel;
 
+  /// 上一次的成品（见 `SuggestSnapshot`）。
+  ///
+  /// 只在**停靠面板**上给：窗口宽窄切换会把面板所在的 widget 拆掉重建，新视图
+  /// 拿这一份直接画结果，不再发请求（否则同一封信会被重新分析一遍）。
+  /// 整页形态的生命周期就是「用户自己 push 的那一页」，没有这个问题，传 null。
+  final SuggestSnapshot? cached;
+
+  /// 结果出来了就交出去（停靠面板把它记进 `suggestDockStateProvider`，
+  /// 下一次重建时作为 [cached] 回填）。整页形态传 null。
+  final ValueChanged<SuggestSnapshot>? onResult;
+
   @override
   State<SuggestView> createState() => _SuggestViewState();
 }
@@ -139,15 +153,41 @@ class _SuggestViewState extends State<SuggestView> {
   /// 执行两遍。点下第一项之后其余的点击一律忽略。
   bool _picked = false;
 
+  /// 已经交出去的成品。`restart()` 之后会有新对象，那时要再交一次（缓存跟着
+  /// 更新）；同一个对象重复交是空转。
+  SuggestionParseResult? _reported;
+
   @override
   void initState() {
     super.initState();
-    // 视图一挂上就走流程（点这颗按钮的人就是要这个）。
-    _session.start();
+    _session.stage.addListener(_reportResult);
+    final cached = widget.cached;
+    if (cached != null) {
+      // 宽窄切换重建出来的新视图：直接画上一份结果，不重跑分析。
+      _reported = cached.parsed;
+      _session.adoptResult(parsed: cached.parsed, input: cached.input);
+    } else {
+      // 视图一挂上就走流程（点这颗按钮的人就是要这个）。
+      _session.start();
+    }
+  }
+
+  /// 结果态出现时把成品交出去（停靠面板用它跨重建保结果）。
+  void _reportResult() {
+    final onResult = widget.onResult;
+    if (onResult == null) return;
+    if (_session.stage.value != SuggestStage.done) return;
+    final parsed = _session.parsed;
+    final input = _session.inputOrNull;
+    if (parsed == null || input == null) return;
+    if (identical(parsed, _reported)) return;
+    _reported = parsed;
+    onResult(SuggestSnapshot(parsed: parsed, input: input));
   }
 
   @override
   void dispose() {
+    _session.stage.removeListener(_reportResult);
     _session.dispose();
     super.dispose();
   }

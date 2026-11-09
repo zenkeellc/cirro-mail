@@ -77,64 +77,69 @@ class AppShell extends ConsumerWidget {
       // 撰写页也是「沉进去」的一屏：手机上没有一级导航的位置，页内自己有
       // 关闭/发送。判据与宽屏的「不挂 FAB」同源（见 [isComposeRoute]）。
       final hideNav = isDetailRoute(uri) || app_router.isComposeRoute(uri);
-      return Scaffold(
-        body: navigationShell,
-        // 写邮件入口：**每一屏都有，且只有这一颗**（宽窄各一支，见下面宽屏
-        // 那一处）。页面上不再挂自己的 FAB —— 外壳的 Scaffold 是各页的祖先，
-        // 它把 FAB 画在 body 最上层，页面上再挂一颗只会被盖住。
-        //
-        // 判据曾经是「这一屏有没有自带 FAB」（`pageOwnsComposeFab`），那要靠
-        // 外壳读地址来判断，而地址在外壳这一层会慢一帧 —— 按钮于是时有时无。
-        // 现在页面上没有别处会挂，这一颗就是共用那一颗；剩下的例外只有
-        // **详情页**与**设置那一支**（见 `showsComposeFab`）—— 那是刻意不给，
-        // 不是「谁挂」的问题。写邮件页 / 同步页是顶层路由，推上去整棵盖住
-        // 外壳，这一颗自动不可见。
-        floatingActionButton: showsComposeFab(uri, compact: true)
-            ? const ComposeAction(fab: true)
-            : null,
-        bottomNavigationBar: hideNav
-            ? null
-            : NavigationBar(
-                selectedIndex: current,
-                onDestinationSelected: (index) => _onSelect(context, ref, index),
-                destinations: <Widget>[
-                  for (final item in _destinations(context, ref))
-                    NavigationDestination(
-                      icon: BadgedIcon(icon: item.icon, count: item.count),
-                      selectedIcon:
-                          BadgedIcon(icon: item.selectedIcon, count: item.count),
-                      label: item.label,
-                    ),
-                ],
-              ),
+      return _BreakpointRouteSync(
+        child: Scaffold(
+          body: navigationShell,
+          // 写邮件入口：**每一屏都有，且只有这一颗**（宽窄各一支，见下面宽屏
+          // 那一处）。页面上不再挂自己的 FAB —— 外壳的 Scaffold 是各页的祖先，
+          // 它把 FAB 画在 body 最上层，页面上再挂一颗只会被盖住。
+          //
+          // 判据曾经是「这一屏有没有自带 FAB」（`pageOwnsComposeFab`），那要靠
+          // 外壳读地址来判断，而地址在外壳这一层会慢一帧 —— 按钮于是时有时无。
+          // 现在页面上没有别处会挂，这一颗就是共用那一颗；剩下的例外只有
+          // **详情页**与**设置那一支**（见 `showsComposeFab`）—— 那是刻意不给，
+          // 不是「谁挂」的问题。写邮件页 / 同步页是顶层路由，推上去整棵盖住
+          // 外壳，这一颗自动不可见。
+          floatingActionButton: showsComposeFab(uri, compact: true)
+              ? const ComposeAction(fab: true)
+              : null,
+          bottomNavigationBar: hideNav
+              ? null
+              : NavigationBar(
+                  selectedIndex: current,
+                  onDestinationSelected: (index) =>
+                      _onSelect(context, ref, index),
+                  destinations: <Widget>[
+                    for (final item in _destinations(context, ref))
+                      NavigationDestination(
+                        icon: BadgedIcon(icon: item.icon, count: item.count),
+                        selectedIcon: BadgedIcon(
+                            icon: item.selectedIcon, count: item.count),
+                        label: item.label,
+                      ),
+                  ],
+                ),
+        ),
       );
     }
 
-    return Scaffold(
-      // 宽屏也挂（上一版只在窄屏挂了，于是宽屏的星标 / 发件箱 / 草稿箱 /
-      // 附件缓存 / 详情页上一个浮动按钮都没有 —— 而 macOS 的默认窗口就是
-      // 800×600，即默认启动就是宽屏）。与侧栏顶部那颗 `ComposeAction()`
-      // **不是重复**：那颗是一级导航的一部分，这一颗跟着内容区走。
-      //
-      // 设置那一支**不挂**（见 `showsComposeFab`）：那儿侧栏那颗就在旁边，
-      // 多这一颗是同一件事说两遍。宽屏的详情页也不挂 —— 它压在阅读区正文上。
-      floatingActionButton: showsComposeFab(uri, compact: false)
-          ? const ComposeAction(fab: true)
-          : null,
-      body: Row(
-        children: <Widget>[
-          // 地址取 `GoRouterState.of(context)` —— 这里解析到的是**外壳那一页**
-          // （`AppShell` 就挂在那棵子树下，`GoRouterState.of` 从顶层 Navigator
-          // 的注册表里查得到它），所以这一层**不随分支内的导航重建**。
-          //
-          // 这不影响侧栏高亮：它需要的 `uri` 是**整条地址**，而整条地址只有
-          // 最外那一层 `GoRouterState` 上才有（`match.dart` 的 `buildState`
-          // 里 `uri: matches.uri` —— 所有 match 共用同一个；被分支单独收窄的
-          // 只有 `matchedLocation`）。外壳页那次 build 恰好就在整条地址刚变的
-          // 时候发生，所以 `uri` 每次都是新的。
-          _sidebar(context, ref, uri),
-          Expanded(child: navigationShell),
-        ],
+    return _BreakpointRouteSync(
+      child: Scaffold(
+        // 宽屏也挂（上一版只在窄屏挂了，于是宽屏的星标 / 发件箱 / 草稿箱 /
+        // 附件缓存 / 详情页上一个浮动按钮都没有 —— 而 macOS 的默认窗口就是
+        // 800×600，即默认启动就是宽屏）。与侧栏顶部那颗 `ComposeAction()`
+        // **不是重复**：那颗是一级导航的一部分，这一颗跟着内容区走。
+        //
+        // 设置那一支**不挂**（见 `showsComposeFab`）：那儿侧栏那颗就在旁边，
+        // 多这一颗是同一件事说两遍。宽屏的详情页也不挂 —— 它压在阅读区正文上。
+        floatingActionButton: showsComposeFab(uri, compact: false)
+            ? const ComposeAction(fab: true)
+            : null,
+        body: Row(
+          children: <Widget>[
+            // 地址取 `GoRouterState.of(context)` —— 这里解析到的是**外壳那一页**
+            // （`AppShell` 就挂在那棵子树下，`GoRouterState.of` 从顶层 Navigator
+            // 的注册表里查得到它），所以这一层**不随分支内的导航重建**。
+            //
+            // 这不影响侧栏高亮：它需要的 `uri` 是**整条地址**，而整条地址只有
+            // 最外那一层 `GoRouterState` 上才有（`match.dart` 的 `buildState`
+            // 里 `uri: matches.uri` —— 所有 match 共用同一个；被分支单独收窄的
+            // 只有 `matchedLocation`）。外壳页那次 build 恰好就在整条地址刚变的
+            // 时候发生，所以 `uri` 每次都是新的。
+            _sidebar(context, ref, uri),
+            Expanded(child: navigationShell),
+          ],
+        ),
       ),
     );
   }
@@ -414,6 +419,56 @@ class _SidebarHeader extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// 窗口跨过「分栏 / 单栏」那条线时，让 go_router 重算一次重定向。
+///
+/// 为什么需要它：用户在分栏里打开的「那一封」在两种形态里是**两种地址** ——
+/// 分栏是 `?sel=`（详情画在右栏），单栏是压一页详情路径（`/mail/<节点>/<e>`）。
+/// 而 go_router 的重定向只在**导航**时跑；用户拖窗口不是一次导航，于是两种
+/// 形态各自停在了对方那套地址形状上：拖窄之后右栏没了、`?sel=` 没人读，屏幕
+/// 一下退回「这一屏的邮件列表」（连正文下方那块 AI 建议面板一起消失）；拖宽
+/// 之后详情又不回右栏。这正是用户报的那个 bug。
+///
+/// 折叠本身是纯函数，在 `router.dart` 的 `foldSelectionAcrossBreakpoints`；
+/// 这里只负责**什么时候**重算：
+///
+/// - 只在**跨过** `Breakpoints` 的分栏那条线时（[Breakpoints.isExpanded]
+///   翻转）—— 拖窗口时每一帧都 refresh 就是每帧重解析一遍路由；
+/// - 放在**帧后** —— 重定向读的是 `MediaQuery` 里的宽度，而
+///   `didChangeDependencies` 这一刻 `MediaQuery` 可能还是上一帧的值。
+class _BreakpointRouteSync extends StatefulWidget {
+  const _BreakpointRouteSync({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_BreakpointRouteSync> createState() => _BreakpointRouteSyncState();
+}
+
+class _BreakpointRouteSyncState extends State<_BreakpointRouteSync> {
+  /// 上一次看到的形态：true = 分栏，false = 单栏。
+  bool? _lastPanes;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final panes = Breakpoints.isExpanded(MediaQuery.sizeOf(context).width);
+    final last = _lastPanes;
+    _lastPanes = panes;
+    // 第一帧只是记下起点，不跳。
+    if (last == null || last == panes) return;
+    final router = GoRouter.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 重跑最外层重定向（`router.dart` 的 `_redirect`）：把 `?sel=` 展开成
+      // 一整页详情，或者反过来把详情折回右栏。
+      router.refresh();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 @immutable

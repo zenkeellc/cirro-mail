@@ -345,7 +345,7 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
       initialLocation: Routes.mailAll,
       refreshListenable: refresh,
       debugLogDiagnostics: kDebugMode,
-      redirect: (context, state) => _redirect(ref, state),
+      redirect: (context, state) => _redirect(ref, context, state),
       routes: <RouteBase>[
         GoRoute(
           path: Routes.startupFailure,
@@ -534,8 +534,7 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
                       path: ':emailId',
                       name: 'starredDetail',
                       redirect: (context, state) =>
-                          _paneRedirectForDetail(context, state,
-                              root: Routes.starred),
+                          _paneRedirectForDetail(context, state),
                       builder: (context, state) => MailDetailScreen(
                         profileId: state.uri.queryParameters['profile'] ?? '',
                         emailId: int.tryParse(
@@ -616,14 +615,160 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
   name: 'router',
 );
 
-/// 重定向：把「有没有实例」「登没登录」「地址还对不对」折算成该落在哪个页面。
-String? _redirect(Ref ref, GoRouterState state) => resolveRedirect(
-  healthy: ref.read(bootstrapProvider).isHealthy,
-  async: ref.read(profilesProvider),
-  location: state.matchedLocation,
-  // 两条分支各用各的参数名：`/mail/:profileId` 与 `/login/:profileId`。
-  profileIdParam: state.pathParameters['profileId'],
-);
+/// 重定向：把「有没有实例」「登没登录」「地址还对不对」折算成该落在哪个页面，
+/// 再把「打开的是哪一封」按当前宽度在两种形态之间折一次。
+///
+/// 后半句（[foldSelectionAcrossBreakpoints]）放在**最外层**而不是挂在各条列表
+/// 路由上：窗口变宽变窄时 `AppShell` 会就地 `GoRouter.refresh()` 一次（见
+/// `app_shell.dart` 的 `_BreakpointRouteSync`），而 refresh 走的就是这条最外层
+/// 重定向 —— 挂在内层的话，宽窄切换时根本没有一次「导航」能让内层重定向跑起来。
+///
+/// 顺序是**先鉴权、后折叠**：`resolveRedirect` 返回的地址可能是一张完全不同的
+/// 页面（登录页 / 设置页），那一刻折叠它没有意义。反过来，折叠出的新地址会被
+/// go_router 再跑一轮重定向（它自己会递归），所以鉴权那一轮不会漏。
+String? _redirect(Ref ref, BuildContext context, GoRouterState state) {
+  final auth = resolveRedirect(
+    healthy: ref.read(bootstrapProvider).isHealthy,
+    async: ref.read(profilesProvider),
+    location: state.matchedLocation,
+    // 两条分支各用各的参数名：`/mail/:profileId` 与 `/login/:profileId`。
+    profileIdParam: state.pathParameters['profileId'],
+  );
+  if (auth != null) return auth;
+  return foldSelectionAcrossBreakpoints(
+    panes: Breakpoints.panesOf(context),
+    uri: state.uri,
+  );
+}
+
+/// 窗口跨过断点时，把「当前打开的是哪一封」在两种形态之间折一次。
+///
+/// 两种形态（见 `Breakpoints`）：
+///
+/// - **分栏**（>= 1024）：选中态是 `?sel=`（`/mail/<节点>?sel=`、
+///   `/starred?sel=`、`/outbox?sel=`），详情画在右栏里；
+/// - **单栏**（< 1024）：详情是**一整页**（`/mail/<节点>/<e>`、`/starred/<e>`、
+///   `/outbox/<e>`）。
+///
+/// 这条函数解决的是**窗口尺寸变化**这个用户报过的 bug：用户在分栏里点开一封
+/// 邮件、甚至打开了正文下方的 AI 建议面板，然后把窗口拖窄 —— 以前地址还停在
+/// `?sel=` 上，而单栏形态**根本没有右栏**，于是屏幕一下退回「这一屏的邮件
+/// 列表」，用户明明选中的那封不见踪影（连 AI 面板一起）。反过来把窗口拖宽时，
+/// 地址还是 `/mail/<节点>/<e>`，详情就退回成一张压着列表的整页。
+///
+/// 现在两个方向都由这里折：单栏 → 整页详情地址，分栏 → `?sel=`。**只看宽度，
+/// 不看平台**，与 `Breakpoints` 同一条规矩。
+///
+/// 纯函数（只吃 `Uri` 与一个宽度判据），`pane_routes_test.dart` 里逐条钉住。
+/// 返回 null = 不需要折（照常匹配）。
+@visibleForTesting
+String? foldSelectionAcrossBreakpoints({
+  required bool panes,
+  required Uri uri,
+}) {
+  final segments = uri.pathSegments;
+  if (segments.isEmpty) return null;
+  // `pathSegments` 里没有前导斜杠（`/mail/all` → `mail` / `all`），而路由常量
+  // 都带斜杠；拼回第一段再比，免得两套写法各错一半。
+  final root = '/${segments.first}';
+  final query = uri.queryParameters;
+
+  if (panes) {
+    // ---- 整页详情 → 分栏选中 -------------------------------------------
+    //
+    // 与 `Routes.mailOf` / `paneSelectionOf` 的写法**逐字对齐**：参数只在非
+    // 默认值时写出来，否则同一条列表会出现两个「看着不一样其实一样」的地址。
+    if (segments.length == 3 && root == Routes.mail) {
+      final emailId = _positive(segments[2]);
+      if (emailId == null) return null;
+      final node = segments[1];
+      // 聚合节点（`/mail/all/<e>`）：实例只能从 `profile=` 补；补不到就画不出
+      // 右栏（`_selectedOf` 同一个口径），照常整页显示。
+      if (Routes.parseProfileId(node) == null) {
+        final profileId = query['profile'] ?? '';
+        if (profileId.isEmpty) return null;
+        return paneSelectionOf(
+          root: '${Routes.mail}/${Routes.kAggregateNode}',
+          profileId: profileId,
+          emailId: emailId,
+          folder: folderOf(query['folder']),
+          unreadOnly: _unreadOfUri(uri),
+        );
+      }
+      return Routes.mailOf(
+        node,
+        accountId: Routes.parseAccountId(query[Routes.accountParam]),
+        folder: folderOf(query['folder']),
+        selectedEmailId: emailId,
+        unreadOnly: _unreadOfUri(uri),
+      );
+    }
+    if (segments.length == 2 && root == Routes.starred) {
+      final emailId = _positive(segments[1]);
+      if (emailId == null) return null;
+      final profileId = query['profile'] ?? '';
+      if (profileId.isEmpty) return null;
+      // 星标这一支**不带 folder**（见 `paneSelectionOf` 的注释）。
+      return paneSelectionOf(
+        root: Routes.starred,
+        profileId: profileId,
+        emailId: emailId,
+        unreadOnly: _unreadOfUri(uri),
+      );
+    }
+    if (segments.length == 2 && root == Routes.outbox) {
+      final id = _positive(segments[1]);
+      if (id == null) return null;
+      return Routes.outboxWith(id);
+    }
+    return null;
+  }
+
+  // ---- 分栏选中 → 整页详情 ---------------------------------------------
+  if (segments.length == 2 && root == Routes.mail) {
+    final emailId = _positive(query['sel'] ?? '');
+    if (emailId == null) return null;
+    final node = segments[1];
+    // 聚合节点的 `sel` 必带 `profile=`（`paneSelectionOf` 写出来的就是那个
+    // 形状）；缺了就折不出一整页详情，宁可停在列表上。
+    final profileId = Routes.parseProfileId(node) ?? (query['profile'] ?? '');
+    if (profileId.isEmpty) return null;
+    return detailRouteOf(
+      node: node,
+      profileId: profileId,
+      emailId: emailId,
+      folder: folderOf(query['folder']),
+      accountId: Routes.parseAccountId(query[Routes.accountParam]),
+      unreadOnly: _unreadOfUri(uri),
+    );
+  }
+  if (segments.length == 1 && root == Routes.starred) {
+    final emailId = _positive(query['sel'] ?? '');
+    if (emailId == null) return null;
+    final profileId = query['profile'] ?? '';
+    if (profileId.isEmpty) return null;
+    return detailRouteOf(
+      node: Routes.starred,
+      profileId: profileId,
+      emailId: emailId,
+      folder: MailFolder.starred,
+      unreadOnly: _unreadOfUri(uri),
+    );
+  }
+  if (segments.length == 1 && root == Routes.outbox) {
+    final id = _positive(query['sel'] ?? '');
+    if (id == null) return null;
+    return Routes.outboxDetailOf(id);
+  }
+  return null;
+}
+
+/// 地址里的「选中项 id」：没写 / 不是数 / 非正数都算「没选中」。
+int? _positive(String? raw) {
+  final value = int.tryParse(raw ?? '');
+  if (value == null || value <= 0) return null;
+  return value;
+}
 
 /// [resolveRedirect] 的输入之一 —— 实例列表还没读出来时要区别对待，
 /// 所以直接把 `AsyncValue` 传进来（而不是只传 `.value`）。
@@ -728,54 +873,21 @@ MailRef? _selectedOf(BuildContext context, GoRouterState state, {String? root}) 
 /// 详情路由的宽屏折返：`/mail/<p>/<e>` → `/mail/<p>?sel=<e>`，
 /// `/starred/<e>?profile=x` → `/starred?sel=<e>&profile=x`。
 ///
-/// 返回 null 表示「照常匹配」—— 窄屏全部走这条，行为与今天完全一致。
-String? _paneRedirectForDetail(
-  BuildContext context,
-  GoRouterState state, {
-  String? root,
-}) {
-  if (!Breakpoints.panesOf(context)) return null;
-  final emailId = int.tryParse(state.pathParameters['emailId'] ?? '') ?? 0;
-  if (emailId <= 0) return null;
-
-  if (root != null) {
-    final profileId = state.uri.queryParameters['profile'] ?? '';
-    if (profileId.isEmpty) return null;
-    return paneSelectionOf(
-      root: root,
-      profileId: profileId,
-      emailId: emailId,
+/// 真正的折法在 [foldSelectionAcrossBreakpoints]（那是窗口变宽变窄时也走同一条
+/// 函数的地方）；这里保留一层只是为了**导航那一刻**就折掉：go_router 的 route
+/// 级重定向在进入那条路由时跑，早于任何一帧布局，深链（通知、浏览器历史）落到
+/// 整页详情地址时不会先闪一下那张整页再被折进右栏。
+///
+/// 返回 null 表示「照常匹配」—— 单栏全部走这条，行为与今天完全一致。
+String? _paneRedirectForDetail(BuildContext context, GoRouterState state) =>
+    foldSelectionAcrossBreakpoints(
+      panes: Breakpoints.panesOf(context),
+      uri: state.uri,
     );
-  }
-
-  final node = state.pathParameters['profileId'];
-  // 聚合节点（`/mail/all/<e>`）：右栏能画，但**实例不在路径里** —— 用同一个
-  // 详情的 `profile=` 查询参数补上（与 `_selectedOf` 的口径一致），缺了就画
-  // 不出右栏，照常整页显示。
-  if (Routes.parseProfileId(node) == null) {
-    final profile = state.uri.queryParameters['profile'] ?? '';
-    if (profile.isEmpty) return null;
-    return paneSelectionOf(
-      root: '${Routes.mail}/${Routes.kAggregateNode}',
-      profileId: profile,
-      emailId: emailId,
-      folder: folderOf(state.uri.queryParameters['folder']),
-      unreadOnly: _unreadOf(state),
-    );
-  }
-
-  return Routes.mailOf(
-    node!,
-    accountId: Routes.parseAccountId(state.uri.queryParameters[Routes.accountParam]),
-    folder: folderOf(state.uri.queryParameters['folder']),
-    selectedEmailId: emailId,
-    unreadOnly: _unreadOf(state),
-  );
-}
 
 /// 地址里「只看未读」（与 `HomeEntry._unreadOf` 同一口径）。
-bool _unreadOf(GoRouterState state) {
-  final raw = state.uri.queryParameters[Routes.unreadParam];
+bool _unreadOfUri(Uri uri) {
+  final raw = uri.queryParameters[Routes.unreadParam];
   return raw == '1' || raw == 'true';
 }
 

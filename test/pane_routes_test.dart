@@ -274,4 +274,163 @@ void main() {
       expect(ref.emailId, 7);
     });
   });
+
+  /// **窗口宽窄切换时「打开的是哪一封」不许丢**（用户报的 bug）。
+  ///
+  /// 分栏里选中一封是 `?sel=`，单栏里打开一封是压一页详情路径 —— 两种形态的
+  /// 地址形状不同，而窗口拖过断点不是一次导航。这段折/展就是两种形态之间
+  /// 唯一的桥：拖窄时把 `?sel=` 展成一整页详情（否则右栏没了、屏幕退回收件箱
+  /// 列表，连正文下方的 AI 建议面板一起消失），拖宽时折回右栏。
+  group('foldSelectionAcrossBreakpoints', () {
+    /// 按「路径 + 查询参数」比，不按字符串：参数是平级的，次序不是语义。
+    void expectTarget(
+      String? actual, {
+      required String path,
+      Map<String, String> query = const <String, String>{},
+    }) {
+      expect(actual, isNotNull, reason: '应当折到某个地址上');
+      final uri = Uri.parse(actual!);
+      expect(uri.path, path);
+      expect(uri.queryParameters, query);
+    }
+
+    test('分栏：聚合列表的整页详情折回 ?sel=（实例走 profile=）', () {
+      expectTarget(
+        foldSelectionAcrossBreakpoints(
+          panes: true,
+          uri: Uri.parse('/mail/all/7?profile=p1&unread=1'),
+        ),
+        path: '/mail/all',
+        query: const <String, String>{
+          'sel': '7',
+          'profile': 'p1',
+          'unread': '1',
+        },
+      );
+    });
+
+    test('分栏：单实例 + 钉住邮箱 + 已发送，三个维度都跟着走', () {
+      expectTarget(
+        foldSelectionAcrossBreakpoints(
+          panes: true,
+          uri: Uri.parse('/mail/p1/7?account=0&folder=send'),
+        ),
+        path: '/mail/p1',
+        query: const <String, String>{
+          'account': '0',
+          'folder': 'send',
+          'sel': '7',
+        },
+      );
+    });
+
+    test('分栏：星标 / 发件箱各有各的 ?sel= 形状', () {
+      expectTarget(
+        foldSelectionAcrossBreakpoints(
+          panes: true,
+          uri: Uri.parse('/starred/7?profile=p1'),
+        ),
+        path: '/starred',
+        query: const <String, String>{'sel': '7', 'profile': 'p1'},
+      );
+      expectTarget(
+        foldSelectionAcrossBreakpoints(
+          panes: true,
+          uri: Uri.parse('/outbox/3'),
+        ),
+        path: '/outbox',
+        query: const <String, String>{'sel': '3'},
+      );
+    });
+
+    test('单栏：聚合列表的 ?sel= 展成一整页详情', () {
+      expectTarget(
+        foldSelectionAcrossBreakpoints(
+          panes: false,
+          uri: Uri.parse('/mail/all?sel=7&profile=p1&unread=1'),
+        ),
+        path: '/mail/all/7',
+        query: const <String, String>{'profile': 'p1', 'unread': '1'},
+      );
+    });
+
+    test('单栏：单实例 + 钉住邮箱 + 已发送，展出的详情把入口维度带全', () {
+      expectTarget(
+        foldSelectionAcrossBreakpoints(
+          panes: false,
+          uri: Uri.parse('/mail/p1?account=0&folder=send&sel=7'),
+        ),
+        path: '/mail/p1/7',
+        query: const <String, String>{'account': '0', 'folder': 'send'},
+      );
+    });
+
+    test('单栏：星标 / 发件箱', () {
+      expectTarget(
+        foldSelectionAcrossBreakpoints(
+          panes: false,
+          uri: Uri.parse('/starred?sel=7&profile=p1'),
+        ),
+        path: '/starred/7',
+        query: const <String, String>{'profile': 'p1'},
+      );
+      expectTarget(
+        foldSelectionAcrossBreakpoints(
+          panes: false,
+          uri: Uri.parse('/outbox?sel=3'),
+        ),
+        path: '/outbox/3',
+      );
+    });
+
+    test('不该折的一个都不折', () {
+      String? fold(bool panes, String location) => foldSelectionAcrossBreakpoints(
+            panes: panes,
+            uri: Uri.parse(location),
+          );
+
+      // 分栏下已经带 sel 的列表 / 单栏下的整页详情：都是各自形态的**正确**
+      // 形状，再折一次就是死循环。
+      expect(fold(true, '/mail/all?sel=7&profile=p1'), isNull);
+      expect(fold(false, '/mail/all/7?profile=p1'), isNull);
+      // 没选中任何一封。
+      expect(fold(true, '/mail/all'), isNull);
+      expect(fold(false, '/mail/all?unread=1'), isNull);
+      // 聚合列表的 sel 缺 profile：折不出一整页详情（`_selectedOf` 同一个
+      // 口径，画不出右栏就别假装能画）。
+      expect(fold(false, '/mail/all?sel=7'), isNull);
+      // 星标的 sel 缺 profile 同理。
+      expect(fold(false, '/starred?sel=7'), isNull);
+      // 不是这三个入口的地址，原样放过。
+      expect(fold(true, '/settings'), isNull);
+      expect(fold(false, '/drafts'), isNull);
+      expect(fold(true, '/mail/all/0?profile=p1'), isNull);
+      expect(fold(false, '/outbox?sel=x'), isNull);
+    });
+
+    test('往返：折两次回到等价地址（两个方向的参数都不丢）', () {
+      const locations = <String>[
+        '/mail/all?sel=7&profile=p1&unread=1',
+        '/mail/p1?account=0&folder=send&sel=7',
+        '/starred?sel=7&profile=p1',
+        '/outbox?sel=3',
+      ];
+      for (final location in locations) {
+        final detail = foldSelectionAcrossBreakpoints(
+          panes: false,
+          uri: Uri.parse(location),
+        );
+        expect(detail, isNotNull, reason: location);
+        final back = foldSelectionAcrossBreakpoints(
+          panes: true,
+          uri: Uri.parse(detail!),
+        );
+        expect(
+          Uri.parse(back!),
+          Uri.parse(location),
+          reason: '$location → $detail → $back',
+        );
+      }
+    });
+  });
 }

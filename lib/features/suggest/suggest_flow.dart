@@ -14,6 +14,7 @@ import '../ai/ai_service.dart';
 import '../ai/ai_settings.dart';
 import 'mail_action_runner.dart';
 import 'suggest_dock_request.dart';
+import 'suggest_dock_state.dart';
 import 'suggest_panel.dart';
 import 'suggestion.dart';
 
@@ -184,6 +185,12 @@ abstract final class SuggestFlow {
     @visibleForTesting SuggestExecutor? executor,
   }) async {
     final deps = SuggestFlow.deps(ref, row);
+
+    // 面板已经停在这一封上（典型来路：宽屏开着面板，窗口拖窄之后面板还在，
+    // 用户又点了一次 AI 入口）——再「打开」一次只会叠一张同样的整页、或者重跑
+    // 一遍分析，两样都是错。什么都不做就是对的。
+    final mailRef = MailRef(profileId: row.profileId, emailId: row.emailId);
+    if (ref.read(suggestDockStateProvider).isOpenFor(mailRef)) return;
 
     // 手机：整页。执行仍留在调用方 —— 页面只负责「选」，`onDeleted` 才找得到
     // 正确的宿主（内嵌详情页 / 列表）。

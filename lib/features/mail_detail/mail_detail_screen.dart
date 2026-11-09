@@ -29,6 +29,7 @@ import '../compose/compose_launcher.dart';
 import '../mail_list/mail_panes.dart';
 import '../suggest/mail_action_runner.dart';
 import '../suggest/suggest_dock_request.dart';
+import '../suggest/suggest_dock_state.dart';
 import '../suggest/suggest_flow.dart';
 import '../suggest/suggest_panel.dart';
 import '../suggest/suggestion.dart';
@@ -105,13 +106,6 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   /// 的焦点抢回来。
   String? _focusedMailKey;
 
-  /// 「AI 建议」停靠面板是不是开着（宽屏：插在正文下方；窄屏走整页路由，见
-  /// `SuggestFlow.open`）。
-  ///
-  /// 宽屏从列表行菜单点进来时，列表页没法直接摸到本页的 `State` —— 它发一次
-  /// [suggestDockRequestProvider] 请求，本页收到、认领并打开面板。
-  bool _suggestOpen = false;
-
   /// 停靠请求的订阅（`initState` 里建，`dispose` 里关）。
   late final ProviderSubscription<MailRef?> _suggestDockSub;
 
@@ -121,6 +115,14 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   @override
   void initState() {
     super.initState();
+    // 「AI 建议」停靠面板的开关**不在本页的 `State` 里**，在
+    // `suggestDockStateProvider`。理由：窗口拖过「分栏 / 单栏」那条线时本页会
+    // 被整棵拆掉重建（内嵌右栏 ↔ 整页详情，见 `router.dart` 的
+    // `foldSelectionAcrossBreakpoints`）—— 开关留在 `State` 里就会跟着旧
+    // widget 一起消失，正是用户报的「AI 提示框一改窗口大小就不见」。
+    //
+    // 从列表行菜单点进来时，列表页摸不到本页的 `State`，它发一次
+    // `suggestDockRequestProvider` 请求；本页收到、认领并打开面板。
     // `fireImmediately`：列表页可能先发请求、本页后挂载（宽屏从行菜单点进来
     // 时 `?sel=` 才把右栏建出来）—— 只靠「变化时通知」会漏掉这一种。
     _suggestDockSub = ref.listenManual<MailRef?>(
@@ -129,23 +131,41 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
         if (next == null || next != _ref) return;
         if (!mounted) return;
         // `fireImmediately` 那次回调发生在 `initState` 里（本页还没完成第一帧）
-        // —— 那时**读写 provider**（`consume`）、读 `MediaQuery` 与 `setState`
-        // 都是在构建途中动状态：Riverpod 会抛「Tried to modify a provider while
-        // the widget tree was building」，`Breakpoints.compactOf` 会抛
-        // 「dependOnInheritedWidgetOfExactType called before initState completed」。
-        // 统一推到帧后：多等一帧对用户不可见，却避开了这两条边界
-        // （窄屏那条路同样只是认领，不开面板）。
+        // —— 那时**读写 provider**（`consume`）是在构建途中动状态：Riverpod 会
+        // 抛「Tried to modify a provider while the widget tree was building」。
+        // 统一推到帧后：多等一帧对用户不可见，却避开了这条边界。
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           // 认领掉：同一个请求不能再被别的页面（比如随后重建的这一页）消费。
           ref.read(suggestDockRequestProvider.notifier).consume(next);
-          if (Breakpoints.compactOf(context)) return;
-          setState(() => _suggestOpen = true);
+          // 不管宽窄都开：宽窄切换后面板要能留下来（窄屏原先走整页路由，
+          // 保留在 `SuggestFlow.open` 里；这一条只处理「列表行菜单先选中、
+          // 详情晚一帧挂载」的竞态）。
+          ref.read(suggestDockStateProvider.notifier).open(next);
         });
       },
       fireImmediately: true,
     );
+    // 上一封的面板会话不许跟着换到这封信上：**只在真的是另一封时**收掉。
+    // 窗口宽窄切换重挂的是同一封，那种情况下面板必须还在。
+    _closeStaleDock();
     WidgetsBinding.instance.addPostFrameCallback((_) => _openOnce());
+  }
+
+  /// 收掉「不是当前这一封」的面板状态（切信 / 从列表点开另一封时）。
+  ///
+  /// 帧后写 provider：`initState` / `didUpdateWidget` 都可能跑在构建阶段。
+  void _closeStaleDock() {
+    final openFor = ref.read(suggestDockStateProvider).openFor;
+    if (openFor == null || openFor == _ref) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 帧后重新读一遍：这中间面板可能已经被别人收掉 / 换成当前这一封。
+      final still = ref.read(suggestDockStateProvider).openFor;
+      if (still != null && still != _ref) {
+        ref.read(suggestDockStateProvider.notifier).close();
+      }
+    });
   }
 
   @override
@@ -161,7 +181,7 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
       _opened = false;
       _syncing = false;
       // 换了一封：上一封的停靠面板不能跟着留在新邮件下面。
-      _suggestOpen = false;
+      _closeStaleDock();
       WidgetsBinding.instance.addPostFrameCallback((_) => _openOnce());
     }
   }
@@ -353,6 +373,11 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
     // 内嵌形态（宽屏右栏）**不折叠**：右栏最窄也有 `readerMinWidth`（420），
     // 六颗图标放得下 —— 折叠是窄屏整页才需要的（见 [_actions] 的 `collapse`）。
     final actions = _actions(row, isSendFolder, syncing);
+    // 面板开关在 provider 上（见 `initState` 的注释）：两种布局共用同一份，
+    // 窗口宽窄切换把本页拆了重建之后它还在这儿。
+    final suggestOpen = ref.watch(
+      suggestDockStateProvider.select((state) => state.isOpenFor(_ref)),
+    );
 
     if (widget.embedded) {
       return Column(
@@ -362,7 +387,15 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
           // `Breakpoints.readerMaxWidth` 900）在宽屏上会把右栏变成一条居中的
           // 窄带，两边的留白比正文还宽 —— 而右栏本来就是用户自己拖出来的：
           // 嫌它宽，拖分隔条就是那个调节手段。
-          Expanded(child: _bodyWithSuggest(row, ossBase, attachments, ac)),
+          Expanded(
+            child: _bodyWithSuggest(
+              row,
+              ossBase,
+              attachments,
+              ac,
+              showSuggest: suggestOpen,
+            ),
+          ),
         ],
       );
     }
@@ -390,11 +423,17 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
       // 整页形态同样不封顶（需求二说的是「占满全部宽度」）。这条路径在
       // 宽屏上只可能出现在**拖窄到刚够单栏**的那一刻（>= 1024 时路由会把
       // 选中折进分栏），所以不封顶不会变成一条 1800px 宽的正文。
-      body: _bodyWithSuggest(row, ossBase, attachments, ac),
+      body: _bodyWithSuggest(
+        row,
+        ossBase,
+        attachments,
+        ac,
+        showSuggest: suggestOpen,
+      ),
     );
   }
 
-  /// 正文 +（宽屏）**停靠在正文下方的 AI 建议面板**。
+  /// 正文 + **停靠在正文下方的 AI 建议面板**。
   ///
   /// 为什么是「正文下方插入」而不是弹窗：弹窗会盖住用户正在读的那一段，而
   /// 建议要引用正文里的细节；停靠在下方时正文与建议同时可见。
@@ -403,21 +442,24 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   /// 挤没。两列/一列由面板自己按**面板宽度**判（>= 720 两列），不按窗口宽
   /// —— 宽屏的阅读区可能被用户拖得很窄。
   ///
-  /// 窄屏不出现停靠面板（走 `SuggestFlow.open` 的整页路由）；这里的
-  /// [_suggestOpen] 只在宽屏被置真，窄屏就算残留也画不出来。
+  /// **[showSuggest] 不分宽窄**：窄屏开面板仍然走 `SuggestFlow.open` 的整页
+  /// 路由（那里是「点」进来的），但**已经从宽屏带着一张开着的面板缩下来**时，
+  /// 面板必须继续可见（用户的原话是「需要保持那个 AI 推荐建议面板一直可见」）。
+  /// [SuggestView] 的窄形态本来就是按面板自身宽度排的（单列 + 右侧图标栏），
+  /// 最低 240 高也放得下 —— 所以这里不再按 `Breakpoints.compactOf` 藏它。
   Widget _bodyWithSuggest(
     MailRow row,
     String ossBase,
     List<MailAttachment> attachments,
-    Color ac,
-  ) {
+    Color ac, {
+    required bool showSuggest,
+  }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final showDock = _suggestOpen && !Breakpoints.compactOf(context);
         return Column(
           children: <Widget>[
             Expanded(child: _body(row, ossBase, attachments, ac)),
-            if (showDock)
+            if (showSuggest)
               SizedBox(
                 height: (constraints.maxHeight * 0.45).clamp(240.0, 420.0),
                 child: _suggestDock(row),
@@ -428,11 +470,15 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
     );
   }
 
-  /// 宽屏的停靠面板。回调与 `SuggestFlow.open` 组装的是同一份
+  /// 停靠面板。回调与 `SuggestFlow.open` 组装的是同一份
   /// （[SuggestFlow.deps]）—— 两个入口的补正文 / 起请求口径不会分叉。
+  ///
+  /// 结果交给 [suggestDockStateProvider] 存着：窗口宽窄切换重建本页时新面板
+  /// 拿它直接画，不再重跑一次分析（见 [SuggestSnapshot]）。
   Widget _suggestDock(MailRow row) {
     final theme = Theme.of(context);
     final deps = SuggestFlow.deps(ref, row);
+    final state = ref.read(suggestDockStateProvider);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLow,
@@ -451,7 +497,13 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
           refresh: deps.refresh,
           launch: deps.launch,
           onPick: _onSuggestPick,
-          onClose: () => setState(() => _suggestOpen = false),
+          onClose: () =>
+              ref.read(suggestDockStateProvider.notifier).close(),
+          // 宽窄切换重建出来的面板拿这份成品直接画结果（不重跑分析）。
+          cached: state.snapshot,
+          onResult: (snapshot) => ref
+              .read(suggestDockStateProvider.notifier)
+              .publish(_ref, snapshot),
           // 抬头右侧的来源署名（设计稿 §5.3）：与 `SuggestFlow.open` 那条路
           // 用的是同一个 `deps.sourceLabel`，两个入口不会一个署名一个不署名。
           sourceLabel: deps.sourceLabel,
@@ -468,7 +520,7 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   void _onSuggestPick(SuggestionChoice choice) {
     final row = ref.read(mailDetailProvider(_ref)).value;
     if (row == null) return;
-    setState(() => _suggestOpen = false);
+    ref.read(suggestDockStateProvider.notifier).close();
     unawaited(
       MailActionRunner.execute(
         context,
@@ -927,6 +979,10 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   ///
   /// 同一个动作两个入口行为不一样，正是本仓库反复吃过的那一类 bug。
   void _afterDelete() {
+    // 这一封没了，面板状态也该跟着走 —— 否则「开着的面板」会挂在一个已经不
+    // 存在的邮件上，下一封同号邮件（本地自增/服务端回收时可能复用）一打开
+    // 就顶着一个旧面板。
+    ref.read(suggestDockStateProvider.notifier).close();
     if (widget.embedded) {
       widget.onClose?.call();
     } else if (context.mounted) {
