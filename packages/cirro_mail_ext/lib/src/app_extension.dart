@@ -294,17 +294,35 @@ abstract class AppExtension {
   /// `mail-push`，中转端据此给这台设备打上 `license_id` —— 云草稿的跨设备事件
   /// （`kind=draft_changed`）就是按这个 license 路由的。
   ///
-  /// 返回 `null`（公开版的默认，或者用户没登录 / 没订阅）= 不参与，注册请求体
-  /// 与没有这条接缝时**逐字相同**：老中转端、开源版都不受影响。
+  /// 返回 `null`（公开版的默认，或者用户确实没登录 / 没订阅）= 不参与，注册
+  /// 请求体与没有这条接缝时**逐字相同**：老中转端、开源版都不受影响。
   ///
-  /// ## 必须快、只查内存
+  /// ## ⚠️ 返回 null 会**清掉**中转端既有的绑定
   ///
-  /// 核心在每次登记前问一次（每个收件邮箱一次），典型实现在登录 / 续期时就把
-  /// 这两个值解好放在内存里。这里做网络往返会把一次登记拖成 N 次往返。
+  /// `/register` 在中转端是 UPSERT：一次「不带 license」的登记会把这台设备
+  /// 在这一行上的 `license_id` 覆盖成 null，它从此不在云草稿的事件路由里 ——
+  /// 而请求本身是 200，客户端看不到任何错误。所以：
   ///
-  /// 多个扩展都返回非 null 时，注册表按注册顺序取**第一个**（与
-  /// [appDisplayName] 同一口径：设备身份只能有一个）。
-  ({String licenseId, String licenseDeviceId})? pushLicenseBinding() => null;
+  /// - 实现**必须**在核心第一次 `syncAll` 之前就绪（典型时机是 [onBootstrap]，
+  ///   或者 [managedPushConfig] 第一次给得出配置的那一刻）；
+  /// - **没就绪时不要返回 `null` 去糊弄**：核心会按「装了扩展、但这一轮没有
+  ///   绑定」处理，**跳过本轮登记**（保留中转端既有绑定），等下一轮再登记。
+  ///   也就是说 null 只该表示「这台设备真的没有订阅」，不是「我还没读到」。
+  ///
+  /// ## 是 **getter**，而且只查内存
+  ///
+  /// **商业实现必须 override 这个 getter** —— 写成同名方法
+  /// `pushLicenseBinding()` 只是个普通方法，**不会覆盖**这里，注册表读到的
+  /// 永远是这个 null（于是注册请求永远不带 license，而且没有任何报错）。
+  ///
+  /// 核心每轮 `syncAll` 只读**一次**（见 `PushService.syncAll`），同一轮里每个
+  /// 收件邮箱带的都是同一份身份 —— 典型实现在登录 / 续期时就把这两个值解好
+  /// 放在内存里；这里做网络往返会把一次登记拖成 N 次往返。
+  ///
+  /// 多个扩展都给得出时，注册表按注册顺序取**第一个非空**（与
+  /// [appDisplayName] 同一口径：设备身份只能有一个）。`licenseId` 是路由键，
+  /// **空白串按「不认领」处理**（继续问下一个）；`licenseDeviceId` 允许为空。
+  ({String licenseId, String licenseDeviceId})? get pushLicenseBinding => null;
 
   /// 收到 `kind=draft_changed` 的**静默推送**时调用。
   ///
@@ -312,12 +330,17 @@ abstract class AppExtension {
   /// `notification` 字段），核心**不会**为它构造通知事件、不会弹横幅 ——
   /// 这里只需要「拉一轮增量」，什么时候弹提示是扩展自己的事。
   ///
-  /// ## 四个入口都可能走到这里
+  /// ## 每个入口都可能走到这里，但不是同一处代码
   ///
-  /// 前台 `Messaging#onMessage`、后台入口 `pushServiceBackgroundEntry`、用户
-  /// 点开推送 `onMessageOpenedApp`、冷启动 `getInitialMessage` —— 全都过同一处
-  /// `kind` 分派，所以实现必须**幂等**：同一条事件到达两次（比如 iOS 的后台
-  /// 唤醒 + 前台恢复）只能安排一次拉取，不能变成两轮请求。
+  /// 前台 `Messaging#onMessage`、用户点开推送 `onMessageOpenedApp`、冷启动
+  /// `getInitialMessage` 都收口在 `PushService._decode` 的 `kind` 分派里；
+  /// **后台入口 `pushServiceBackgroundEntry` 是独立的一条** —— 它不构造
+  /// `PushMailEvent`、也不经过 `_decode`，`draft_changed` 在那里就地交给这个
+  /// 钩子（见该函数的注释）。后台那一侧（尤其 Android 另起的 FlutterEngine）
+  /// 不会执行 `main()`，注册表得由入口自己先注册好。
+  ///
+  /// 所以实现必须**幂等**：同一条事件到达两次（比如 iOS 的后台唤醒 + 前台
+  /// 恢复）只能安排一次拉取，不能变成两轮请求。
   ///
   /// ## 实现必须快
   ///

@@ -1,8 +1,7 @@
-import 'dart:async';
-
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mail_app/core/extensions.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/core/storage/token_store.dart';
 import 'package:mail_app/data/models/mailbox_account.dart';
@@ -158,12 +157,15 @@ void main() {
       await pumpEventQueue();
 
       expect(calls, <String>['ext-a']);
-      // 待取槽是空的：订阅之后什么都不会来（超时而不是干等）。
-      await expectLater(
-        push.background.first.timeout(const Duration(milliseconds: 100)),
-        throwsA(isA<TimeoutException>()),
-        reason: 'draft_changed 不该变成一条后台推送事件',
-      );
+      // 待取槽是空的、广播流上也没有事件。订阅要**显式取消**：`.first` 的
+      // 超时只让 Future 失败，它底下对 `background` 的订阅还挂着，
+      // `_rawBackground` 会一直 `hasListener = true` —— 后续用例投递的事件
+      // 就进不了待取槽（静默丢失）。
+      final events = <PushMailEvent>[];
+      final sub = push.background.listen(events.add);
+      await pumpEventQueue();
+      expect(events, isEmpty, reason: 'draft_changed 不该变成一条后台推送事件');
+      await sub.cancel();
     });
 
     /// 一个扩展抛错不拖累下一个 —— 这个钩子是「静默推送到达」的公共事件，
@@ -180,6 +182,61 @@ void main() {
       await pumpEventQueue();
 
       expect(calls, <String>['ext-good']);
+    });
+  });
+
+  /// `draft_changed` 既不进待取槽、也不进后台事件流。两条都要钉住：
+  /// 先到的 `new_mail` 不被它顶掉；订阅者不会把它当一封信去同步一轮。
+  group('draft_changed 不占后台事件流', () {
+    test('先到的 new_mail 仍在待取槽里（draft_changed 不覆盖它）', () async {
+      final push = await service(prefs: _configuredPrefs);
+
+      await pushServiceBackgroundEntry(RemoteMessage(data: _newMail()));
+      await pushServiceBackgroundEntry(RemoteMessage(data: _draftChanged()));
+
+      final event = await push.background.first;
+      expect(event.emailId, 128);
+    });
+
+    /// 后台流是一条**旁路**：`draft_changed` 到达时它上面什么都不会来。
+    /// 订阅必须显式取消 —— 残留的监听会让下一次入口投递走广播流（没人接 →
+    /// 丢），而不是进待取槽，事件于是静默消失。
+    test('订阅后收不到事件；取消订阅后监听者不残留', () async {
+      final push = await service(prefs: _configuredPrefs);
+
+      final received = <PushMailEvent>[];
+      final sub = push.background.listen(received.add);
+      await pumpEventQueue();
+      expect(received, isEmpty, reason: 'draft_changed 不该变成一条后台推送事件');
+      await sub.cancel();
+
+      // 取消之后再投一条：监听者若还残留着，这条会进广播流（没人听 → 丢），
+      // 而不是待取槽 —— 下面 `.first` 就会超时。
+      await pushServiceBackgroundEntry(RemoteMessage(data: _newMail()));
+      expect((await push.background.first).emailId, 128);
+    });
+  });
+
+  /// Android 的后台入口跑在插件另起的 FlutterEngine 里，**`main()` 不会
+  /// 执行** —— 那边注册表是空的，`draft_changed` 会在注册表里找不到扩展而
+  /// 被丢掉。这条钉住「入口自己会注册一遍」。
+  ///
+  /// 公开仓的 [kAppExtensions] 是空列表（`registerAll` 什么都不加），注册表
+  /// 上看不出那句话有没有跑，所以这里同时断言结构性的计数器；商业版里计数
+  /// 与注册表内容都会是实打实的扩展。
+  group('后台入口注册扩展（Android 后台引擎不跑 main()）', () {
+    test('entry 顶部会 registerAll(kAppExtensions)', () async {
+      // setUp 已经清过注册表；这里连计数器一起归零，断的是「这一次调用」。
+      expect(backgroundRegisterAllCalls, 0);
+
+      await pushServiceBackgroundEntry(RemoteMessage(data: _newMail()));
+
+      expect(backgroundRegisterAllCalls, 1, reason: '入口必须自己注册一遍扩展');
+      expect(
+        AppExtensionRegistry.instance.extensions.map((ext) => ext.id).toList(),
+        kAppExtensions.map((ext) => ext.id).toList(),
+        reason: '公开版 kAppExtensions 为空表，两边都是空；商业版里这里是扩展本身',
+      );
     });
   });
 }

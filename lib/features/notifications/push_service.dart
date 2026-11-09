@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/error/app_exception.dart';
+import '../../core/extensions.dart';
 import '../../core/storage/prefs_store.dart';
 import '../../core/storage/token_store.dart';
 import '../../data/models/mail_ref.dart';
@@ -61,6 +62,18 @@ final StreamController<Map<String, dynamic>> _rawBackground =
 /// （`SyncEngine.syncOnce`），多条推送共用一次刷新就够了。
 Map<String, dynamic>? _pendingBackgroundData;
 
+/// 后台入口里 `registerAll(kAppExtensions)` 走过几遍。**只给测试用**。
+///
+/// 公开版的 [kAppExtensions] 是空列表，`registerAll` 什么都不加 —— 注册表上
+/// 根本看不出那句话有没有被执行。这里因此需要一条「结构性断言」：后台入口
+/// 漏掉注册时，Android 那边的 `draft_changed` 会静默丢失，没有任何别的可见
+/// 症状。商业版里它还会顺带证明扩展真的进了注册表。
+int _backgroundRegisterAllCalls = 0;
+
+/// 见 [_backgroundRegisterAllCalls]。
+@visibleForTesting
+int get backgroundRegisterAllCalls => _backgroundRegisterAllCalls;
+
 /// 后台消息的顶层入口。
 ///
 /// **必须是顶层函数**：Android 侧插件会拿它的 `callbackHandle` 去唤醒后台
@@ -76,6 +89,19 @@ Map<String, dynamic>? _pendingBackgroundData;
 /// **既不进待取槽也不自己弹通知**（服务端发的本来就是 data-only 静默消息）。
 @pragma('vm:entry-point')
 Future<void> pushServiceBackgroundEntry(RemoteMessage message) async {
+  // **这里必须重新注册一遍扩展。** Android 上这个入口跑在插件另起的一个
+  // FlutterEngine 里（**`main()` 不会被跑**），注册表在那边是空的 —— 少了
+  // 这一句，`draft_changed` 交给 `AppExtension.onDraftChanged` 时注册表里
+  // 一个扩展都没有，事件当场被丢掉（云草稿的跨设备同步正是靠它触发）。
+  //
+  // 读的是同一个 `kAppExtensions`（`lib/core/extensions.dart`）—— 两个入口
+  // 共用一份事实来源，正是那个常量存在的理由（与
+  // `background_sync_task.dart#backgroundSyncCallbackDispatcher` 同一口径）。
+  // Apple 平台上这里与 `main()` 同 isolate，`registerAll` 按 `id` 去重，
+  // 重复注册无害。
+  AppExtensionRegistry.instance.registerAll(kAppExtensions);
+  _backgroundRegisterAllCalls++;
+
   if (message.data['kind'] == 'draft_changed') {
     unawaited(AppExtensionRegistry.instance.notifyDraftChanged());
     return;
@@ -87,13 +113,14 @@ Future<void> pushServiceBackgroundEntry(RemoteMessage message) async {
   }
 }
 
-/// 把待取槽清空。
+/// 把待取槽清空，并归零后台入口的注册计数。
 ///
 /// 只给测试用：槽是库级的，而 `flutter test` 里同一个 isolate 会连着跑
 /// 一大批用例，不主动清的话「上一条用留下的待取事件」会漏到下一条里。
 @visibleForTesting
 void resetBackgroundForTesting() {
   _pendingBackgroundData = null;
+  _backgroundRegisterAllCalls = 0;
 }
 
 /// 真·后台推送（FCM）。
@@ -125,9 +152,16 @@ class PushService {
     @visibleForTesting Future<ManagedPushConfig?> Function()? readManagedConfig,
     @visibleForTesting bool? forceAvailable,
     @visibleForTesting this._clientFactory,
+    @visibleForTesting String? forceFcmToken,
   })  : available = forceAvailable ?? _detectAvailable(),
+        _fcmToken = forceFcmToken ?? '',
         _readManagedConfig =
-            readManagedConfig ?? AppExtensionRegistry.instance.managedPushConfig;
+            readManagedConfig ?? AppExtensionRegistry.instance.managedPushConfig {
+    // 传了 token 就等于「FCM 已经初始化好、token 拿到了」：测试里碰不到
+    // Firebase 插件（`initializeApp` / `getToken` 都要平台通道），没有这个
+    // 入口就永远走不到 `/register`，也就断言不了请求体。
+    _initialized = forceFcmToken != null;
+  }
 
   final PrefsStore _prefs;
   final TokenStore _tokens;
@@ -184,7 +218,10 @@ class PushService {
   final RelayClient Function(String baseUrl)? _clientFactory;
 
   bool _initialized = false;
-  String _fcmToken = '';
+
+  /// 在构造函数的初始化列表里落（`forceFcmToken` 或空串）—— 这里不再给
+  /// 声明初值，否则同一个字段有两处来源。
+  String _fcmToken;
 
   /// FCM 的 token 只有在**拿到之后**才可能变（App 卸载重装、数据清理、
   /// token 轮换），所以每次注册都现取，拿不到就不注册。
@@ -568,8 +605,10 @@ class PushService {
 
   /// 把一个 FCM 的 data 载荷折成 [PushMailEvent]；认不出来返回 null。
   ///
-  /// 三个入口（前台 / 后台点开 / 冷启动点开）与后台事件流都收口到这里，
-  /// 所以 `kind` 的分派**只有这一处**：
+  /// 前台 / 点开 / 冷启动三个入口与后台事件流都收口到这里；**后台 entry
+  /// （[pushServiceBackgroundEntry]）是独立的一条** —— 它不构造事件、不经过
+  /// 这里，`draft_changed` 在那边就地交给扩展钩子。除此之外 `kind` 的分派
+  /// 只有这一处：
   ///
   /// - `draft_changed`：云草稿的跨设备静默事件 —— 交给扩展钩子，**不构造
   ///   通知事件**（没有 `PushMailEvent` 就没有横幅）；服务端发的是 data-only
@@ -741,12 +780,37 @@ class PushService {
   /// 之所以一次全登记（而不是每个实例各自登记）：一个本地 profile 通常只对应
   /// 一个 `instanceId`，但两个 profile 指向同一台服务器时它们共用同一个位 ——
   /// 分开登记会把同一批邮箱重复上报。
+  ///
+  /// ## 绑定未就绪时**跳过**这一轮
+  ///
+  /// `/register` 在中转端是 UPSERT：不带 license 的一次登记会把这台设备的
+  /// `license_id` 覆盖成 null（= 从云草稿的跨设备路由里被摘掉），而请求本身
+  /// 回 200，失败完全不可见。所以「装了扩展、却这一轮读不到绑定」时不发这
+  /// 一轮（见函数里的守卫）：保留中转端既有绑定，等下一轮再登记。公开版没有
+  /// 扩展，照旧登记，行为逐字不变。
   Future<PushSyncResult> syncAll({String reason = ''}) async {
     await refreshManagedConfig();
     if (!available) return const PushSyncResult(ok: false, message: '这个平台用不了系统推送');
     if (!enabled) return const PushSyncResult(ok: false, message: '系统推送开关是关着的');
     if (!isConfigured) {
       return const PushSyncResult(ok: false, message: '还没有填推送中转的三条配置');
+    }
+
+    // 本机 Pro 订阅的设备身份（公开版恒为 null）。这一轮只读一次：每个收件
+    // 邮箱带的都该是同一份身份，而且钩子契约要求它只查内存、必须快。
+    final binding = AppExtensionRegistry.instance.pushLicenseBinding;
+
+    // **绑定未就绪时不要发这一轮登记。** 装了扩展就说明这条接缝有人要用；
+    // 此时读不到绑定，多半是实现还没解好（典型：启动时 `onBootstrap` 里的
+    // 取回还没回来），而不是「这台设备没有订阅」。照常发的话，一次不带
+    // license 的 UPSERT 会把中转端既有的 `license_id` 冲掉 —— 用户从此收不到
+    // 云草稿的跨设备事件，且没有任何报错。宁可不发，等下一轮。
+    //
+    // 公开版（空注册表）没有东西会给出绑定，照旧登记 —— 行为与加这条接缝
+    // 之前逐字相同。
+    if (AppExtensionRegistry.instance.extensions.isNotEmpty && binding == null) {
+      debugPrint('推送：设备绑定未就绪，跳过本轮登记（保留中转端既有绑定）');
+      return const PushSyncResult(ok: false, message: '设备绑定未就绪，已跳过本轮登记');
     }
 
     final deviceToken = await _deviceCode();
@@ -776,10 +840,6 @@ class PushService {
     final failures = <String>[];
     var subscriptionRequired = false;
     final entitlement = _entitlement;
-
-    // 本机 Pro 订阅的设备身份（公开版恒为 null）。只读一次：这一轮里每个
-    // 收件邮箱带的都该是同一份身份，而且钩子契约要求它只查内存、必须快。
-    final binding = AppExtensionRegistry.instance.pushLicenseBinding;
 
     for (final profile in loggedIn) {
       final mailboxes = await _readMailboxes(profile.id);

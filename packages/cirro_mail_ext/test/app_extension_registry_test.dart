@@ -25,6 +25,8 @@ class _FakeExt extends AppExtension {
     this.closed,
     this.closeFail = false,
     this.binding,
+    this.bindingFail = false,
+    this.onDraft,
     this.draftCalls,
     this.draftFail = false,
   });
@@ -75,6 +77,13 @@ class _FakeExt extends AppExtension {
   /// 本机订阅的设备身份（`AppExtension.pushLicenseBinding`），null = 没有订阅。
   final ({String licenseId, String licenseDeviceId})? binding;
 
+  /// 读绑定抛不抛 —— 验注册表「一条坏实现不拖累下一个」的纪律。
+  final bool bindingFail;
+
+  /// `onDraftChanged` 里要 await 的东西（null = 立刻返回）。测试用 `Completer`
+  /// 卡住它，验「注册表是逐个 await 的」。
+  final Future<void> Function()? onDraft;
+
   /// `onDraftChanged` 被调用时往里记自己的 id（null = 不记账）。
   final List<String>? draftCalls;
 
@@ -82,11 +91,16 @@ class _FakeExt extends AppExtension {
   final bool draftFail;
 
   @override
-  ({String licenseId, String licenseDeviceId})? pushLicenseBinding() => binding;
+  ({String licenseId, String licenseDeviceId})? get pushLicenseBinding {
+    if (bindingFail) throw StateError('$id 读订阅身份失败');
+    return binding;
+  }
 
   @override
   Future<void> onDraftChanged() async {
     draftCalls?.add(id);
+    final hook = onDraft;
+    if (hook != null) await hook();
     if (draftFail) throw StateError('$id 处理草稿事件失败');
   }
 
@@ -590,6 +604,52 @@ void main() {
       final binding = AppExtensionRegistry.instance.pushLicenseBinding;
       expect(binding?.licenseId, 'CM-A', reason: '设备身份只能有一个');
       expect(binding?.licenseDeviceId, 'dev-a');
+    });
+
+    /// 一条坏实现**不该把后面的真订阅一起吞掉**（与 [managedPushConfig] /
+    /// [prepareNotificationPolicies] 同一条纪律）。这里第一扩展在 getter 里
+    /// 直接抛，第二个给出有效绑定 —— 注册请求不该因此退回「不带 license」。
+    test('pushLicenseBinding：第一个扩展抛错，第二个的有效绑定仍被采用', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('boom', bindingFail: true),
+        _FakeExt('pro', binding: (licenseId: 'CM-A', licenseDeviceId: 'dev-a')),
+      ]);
+      final binding = AppExtensionRegistry.instance.pushLicenseBinding;
+      expect(binding?.licenseId, 'CM-A');
+      expect(binding?.licenseDeviceId, 'dev-a');
+    });
+
+    /// `licenseId` 是路由键：空白串与「没有绑定」等价（与 [appDisplayName]
+    /// 的「空白不算认领」同一口径）。它若不跳过，一次配空了的绑定会告诉中转端
+    /// 「这台设备没有 license」，把后面那个真订阅盖掉。
+    test('pushLicenseBinding：licenseId 空白不算认领，继续往后找', () {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('blank', binding: (licenseId: '   ', licenseDeviceId: 'dev-x')),
+        _FakeExt('pro', binding: (licenseId: '  CM-A  ', licenseDeviceId: ' dev-a ')),
+      ]);
+      final binding = AppExtensionRegistry.instance.pushLicenseBinding;
+      expect(binding?.licenseId, 'CM-A', reason: '传给中转端的值不该带首尾空白');
+      expect(binding?.licenseDeviceId, 'dev-a');
+    });
+
+    /// 与 [notifyComposeClosed] 同一纪律：**逐个 await**。两个扩展各拉一轮
+    /// 会把同一条事件变成两轮请求（也违反「实现必须幂等」的兜底假设），所以
+    /// 前一个没完成之前，后一个不能开始。
+    test('notifyDraftChanged：第一个没完成前第二个不开始（逐个 await）', () async {
+      final gate = Completer<void>();
+      final calls = <String>[];
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('slow', draftCalls: calls, onDraft: () => gate.future),
+        _FakeExt('fast', draftCalls: calls),
+      ]);
+
+      final running = AppExtensionRegistry.instance.notifyDraftChanged();
+      await pumpEventQueue();
+      expect(calls, <String>['slow'], reason: '前一个还卡着，后一个必须还没开始');
+
+      gate.complete();
+      await running;
+      expect(calls, <String>['slow', 'fast']);
     });
 
     /// 与 [notifyComposeClosed] 同一纪律：核心是 `unawaited` 调它，这里

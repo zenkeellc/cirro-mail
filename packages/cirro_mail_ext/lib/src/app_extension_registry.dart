@@ -156,10 +156,12 @@ class AppExtensionRegistry {
   // ---- 云草稿推送（license 绑定 / 跨设备事件） ----
 
   /// 本机订阅的设备身份（见 [AppExtension.pushLicenseBinding]），按注册顺序
-  /// 取**第一个非 null**。
+  /// 取**第一个非空**。
   ///
   /// 与 [appDisplayName] 同一口径：设备身份只能有一个，两个实现同时生效会让
-  /// 中转端把云草稿事件路由到哪台设备变成一件没人答得上来的事。
+  /// 中转端把云草稿事件路由到哪台设备变成一件没人答得上来的事。`licenseId`
+  /// 是路由键，**空白串按「不认领」处理**（继续问下一个）—— 扩展把值配空了
+  /// 不该把后面那个真订阅盖掉，传给中转端的值也一律去掉首尾空白。
   ///
   /// **单个扩展抛异常不拖累别的扩展**（与 [managedPushConfig] 同一条纪律）：
   /// 推送登记是尽力而为的东西，一条坏实现按「没有绑定」处理，注册请求退回
@@ -167,8 +169,14 @@ class AppExtensionRegistry {
   ({String licenseId, String licenseDeviceId})? get pushLicenseBinding {
     for (final ext in _extensions) {
       try {
-        final binding = ext.pushLicenseBinding();
-        if (binding != null) return binding;
+        final binding = ext.pushLicenseBinding;
+        if (binding == null) continue;
+        final licenseId = binding.licenseId.trim();
+        if (licenseId.isEmpty) continue;
+        return (
+          licenseId: licenseId,
+          licenseDeviceId: binding.licenseDeviceId.trim(),
+        );
       } catch (e) {
         debugPrint('扩展 ${ext.id} 的推送订阅身份读取失败：$e');
       }
