@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // `context.push` 是 go_router 的扩展方法，`router.dart` **不 re-export** 它
 // （它自己只 import 了 `package:go_router/go_router.dart`）。本仓库里另外
 // 8 个用 `context.push` 的文件都直接 import 这个包。
-import 'package:go_router/go_router.dart';
 
 import '../../core/util/time_utils.dart';
 import '../../data/models/mail_ref.dart';
@@ -12,7 +11,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/mail_providers.dart';
 import '../../providers/notification_providers.dart';
-import '../../router.dart';
+import '../compose/compose_launcher.dart';
 import 'mail_action.dart';
 import 'suggest_draft.dart';
 import 'suggestion.dart';
@@ -229,7 +228,10 @@ abstract final class MailActionRunner {
     final db = ref.read(databaseProvider);
     int id;
     try {
-      id = await db.localDao.saveDraft(
+      // 用 `createComposeDraft` 而不是 `saveDraft`：前者在同一个事务里
+      // 把「打开中」标记也写上（撰写页要出现在左侧「邮件撰写」里，并且
+      // 重启后能恢复）。少了那一步这一页只进草稿箱、不进撰写列表。
+      id = await db.localDao.createComposeDraft(
         profileId: row.profileId,
         accountEmail: draft.accountEmail,
         recipientsJson: draft.recipientsJson,
@@ -241,9 +243,7 @@ abstract final class MailActionRunner {
       return;
     }
     if (!context.mounted) return;
-    await context.push(
-      Routes.composeOf(profileId: row.profileId, draftId: id),
-    );
+    openComposeDraft(context, draftId: id, profileId: row.profileId);
   }
 
   /// 稍后提醒（spec §7.3 雷三 / §7.4 / §7.5）。

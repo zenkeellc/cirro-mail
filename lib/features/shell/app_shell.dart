@@ -16,6 +16,7 @@ import '../home/home_nav.dart';
 import '../mail_list/mailbox_scope.dart';
 import '../sync/sync_status_panel.dart';
 import 'nav_sidebar.dart';
+import 'sidebar_compose.dart';
 import 'sidebar_mailboxes.dart';
 
 /// 已登录区域的外壳：手机底部导航 / 平板桌面左侧导航栏 + 一个内容区。
@@ -73,7 +74,9 @@ class AppShell extends ConsumerWidget {
       // 两个理由，第二个才是关键：详情页有自己的返回箭头，底部导航在那儿
       // 只是多余的 80px；而底部导航是**一级导航**，停在那儿等于在说
       // 「你现在在收件箱这一层」——用户其实已经沉进一封信里了。
-      final hideNav = isDetailRoute(uri);
+      // 撰写页也是「沉进去」的一屏：手机上没有一级导航的位置，页内自己有
+      // 关闭/发送。判据与宽屏的「不挂 FAB」同源（见 [isComposeRoute]）。
+      final hideNav = isDetailRoute(uri) || app_router.isComposeRoute(uri);
       return Scaffold(
         body: navigationShell,
         // 写邮件入口：**每一屏都有，且只有这一颗**（宽窄各一支，见下面宽屏
@@ -275,6 +278,11 @@ class AppShell extends ConsumerWidget {
             ],
           ],
         ),
+        // 「邮件撰写」分类：下级是**正在编辑**的页面（不是全部草稿 ——
+        // 那是草稿箱页的事）。与草稿箱同一张表，见 `ComposePages` 的注释。
+        NavSidebarGroup(
+          items: <Widget>[SidebarComposeGroup(uri: uri)],
+        ),
       ],
       // 设置常驻在底部，不跟着列表滚（见 `NavSidebar.footer`）。
       footer: _settingsItem(context, ref, uri),
@@ -468,6 +476,9 @@ bool isDetailRoute(Uri uri) {
 /// 判据全在地址上，不看 Navigator 深度：深度会把「写邮件」那种流程也算成
 /// 「沉进去了」，而那正是不该收按钮的地方。
 bool showsComposeFab(Uri uri, {required bool compact}) {
+  // 撰写页自己就有发送按钮；再挂一颗「写邮件」FAB 是同一件事说两遍，
+  // 而且它正好压在编辑区右下角。
+  if (app_router.isComposeRoute(uri)) return false;
   if (!compact && isDetailRoute(uri)) return false;
   if (_isSettingsBranch(uri)) return false;
   return true;

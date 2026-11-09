@@ -22,6 +22,7 @@ import 'package:flutter_quill/flutter_quill.dart' as q;
 import 'package:flutter_quill/internal.dart' as qi;
 import 'package:flutter_quill/quill_delta.dart' as qd;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/theme/breakpoints.dart';
 import '../../features/ai/ai_prompts.dart';
@@ -32,9 +33,12 @@ import '../../features/ai/inline_continuation.dart';
 import '../../features/ai/preflight.dart';
 import '../../features/ai/rewrite_selection.dart';
 import '../../l10n/app_localizations.dart';
+import '../../router.dart';
 import '../../providers/ai_providers.dart';
+import '../../providers/core_providers.dart';
 import '../../providers/mail_providers.dart';
 import '../../providers/settings_providers.dart';
+import '../mail_list/mail_panes.dart' show PaneHeader, kPaneHeaderHeight;
 import '../shortcuts/mail_intents.dart';
 import 'ai/ai_draft_sheet.dart';
 import 'ai/ai_ghost_text.dart';
@@ -48,6 +52,7 @@ import 'attachment_chips.dart';
 import 'compose_attachments.dart';
 import 'compose_controller.dart';
 import 'compose_draft.dart';
+import 'compose_draft_saver.dart';
 import 'compose_field_row.dart';
 import 'compose_html.dart';
 import 'compose_quote.dart';
@@ -94,9 +99,14 @@ import 'table/table_html_codec.dart';
 /// 防抖回写的一份副本（见 [_pushBody]）。反过来（每次 state 变化都重建一份
 /// Document）会把光标、选区和撤销栈一起丢掉。
 class ComposeScreen extends ConsumerStatefulWidget {
-  const ComposeScreen({super.key, this.args = const ComposeArgs()});
+  const ComposeScreen({super.key, this.args = const ComposeArgs(), this.from});
 
   final ComposeArgs args;
+
+  /// 关页时回到的地址（地址栏上的 `from` 参数，见 `Routes.fromParam`）。
+  ///
+  /// null / 空 = 回草稿箱：深链直接进撰写页、或那个「来的地方」已经不在了。
+  final String? from;
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -245,6 +255,29 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   /// 上一次看过的 notify 序号，用来去重 SnackBar。
   String? _lastNotice;
 
+  /// 草稿自动保存的**唯一写入口**（见 `ComposeDraftSaver`）。
+  ///
+  /// **懒建**：只有 `args.draftId > 0` 时才碰它 —— 读 `databaseProvider`
+  /// 是有副作用的（要求 `bootstrapProvider` 已就绪），而直接装
+  /// `ComposeScreen` 的测试不提供那一套。`draftId <= 0` 的旧路径（测试 /
+  /// 没有草稿行的深链）整体不自动保存，沿用控制器的「离开即存草稿」。
+  ComposeDraftSaver? _saverInstance;
+
+  ComposeDraftSaver get _saver => _saverInstance ??= ComposeDraftSaver(
+        dao: ref.read(databaseProvider).localDao,
+        draftId: widget.args.draftId,
+      );
+
+  /// 这一页有没有可自动保存的草稿行。
+  bool get _saverEnabled => widget.args.draftId > 0;
+
+  /// 最近一次拍给保存器的快照：判「内容变没变」用，也是 dispose 收尾的底稿
+  /// （收件人/附件/发件邮箱这些字段在 dispose 时已不能从 controller 读）。
+  ComposeDraftSnapshot? _lastSnapshot;
+
+  /// 首次装载的基线拍过了没有（见 [_maybeMarkBaseline]）。
+  bool _baselineMarked = false;
+
   @override
   void initState() {
     super.initState();
@@ -272,6 +305,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   @override
   void dispose() {
     _writeBack?.cancel();
+    // 收尾落盘要在 `_quill` / `_subject` 销毁前拍快照（保存器自己会 fire-and-forget
+    // 写完，不 await）。这一步覆盖「从侧栏切走」：那种退出不经过任何按钮，
+    // 只有 dispose 这一个时机。
+    _saveOnDispose();
     _quill.removeListener(_onBodyChanged);
     _quill.dispose();
     _bodyFocus.dispose();
@@ -282,6 +319,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   ComposeController get _c =>
       ref.read(composeControllerProvider(widget.args).notifier);
+
+  /// 当前 state 的公开读法（`Notifier.state` 是 protected）。
+  ComposeState get _state => ref.read(composeControllerProvider(widget.args));
 
   @override
   Widget build(BuildContext context) {
@@ -300,6 +340,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
     _syncEditor(state);
     _drainNotice(context, state);
+    // 自动保存：只在**内容字段**真的变了时才拍快照（光标、提示、配额这些
+    // state 变化会被 [_scheduleAutosave] 里的快照比较挡掉，不写库）。
+    _maybeMarkBaseline(state);
+    ref.listen<ComposeState>(
+      composeControllerProvider(widget.args),
+      (previous, next) => _scheduleAutosave(next),
+    );
 
     // AI 设置是异步来的（要读 prefs + 钥匙串）。**读不到就按默认走** ——
     // 默认里 `preflightEnabled` 是 true、`hasApiKey` 是 false，于是
@@ -324,27 +371,35 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     // 清空）再装一次 —— 判据见 `_adoptInitialBody`。
     if (_bodyRevision != state.bodyRevision) _adoptInitialBody(state);
 
+    // 撰写页在正式链路里是「邮件」分支的根路由：返回键不能放行（放行只会
+    // 把 App 退到后台），必须自己 `go` 回 `from`。但 widget 测试里
+    // `ComposeScreen` 是直接装在一个普通 Navigator 上的 —— 那时没有
+    // GoRouter，放行 pop 才是对的行为，所以判据挂在「有没有路由宿主」上。
+    final hostedByRouter = GoRouter.maybeOf(context) != null;
     return PopScope(
-      // 系统返回手势（安卓返回键、iOS 边缘滑动、桌面端的 Esc/返回）
-      // **不走 [_leave]** —— 那是给 `X` 按钮用的。少了这一层，用户打完最后
-      // 一句话就按返回键时，那段字还在编辑器里、连 250 ms 的防抖都没烧完，
-      // 而 `saveDraftOnExit` 读的是 `state.body` 这份**副本** —— 于是它既进
-      // 不了草稿也去不了别处，静默丢掉。这一层与 [_leave] 走同一个出口。
+      // 系统返回（安卓返回键、iOS 边缘滑动、桌面端的 Esc/返回）与 `X` 走
+      // **同一个出口**：先落盘，再决定「关掉这一页」还是「留着继续写」。
       //
-      // `canPop: true`：**不拦**返回，只借这次回调落一次盘。拦下来自己再
-      // `pop()`（`canPop: false` 那种写法）会多一次 `didPop` 翻转，而这一页
-      // 本来就没有「确定要离开吗」要问 —— 内容会存进草稿，不会丢。
-      canPop: true,
+      // `canPop: false` 是必须的：撰写页现在是「邮件」那一支的**根路由**，
+      // 下面没有可 pop 的栈 —— 放行返回不会关掉任何东西，只会让 Android 把
+      // App 退到后台（用户以为自己退出了，其实那封信还开在列表里）。
+      // 所以这里拦下，自己 `go` 回 `from`（见 [_goBack]）。
+      // 代价：iOS 的边缘返回手势在撰写页上不可用，出口是 X / 返回键 ——
+      // 与「这是一页根路由」的取舍一致。
+      canPop: !hostedByRouter,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) return;
-        // `X` / 放弃草稿那两个按钮**已经自己存过一次**了（见 `_leavingFromButton`），
-        // 它们随后那次 `pop()` 会走到这里 —— 直接放过。
-        if (_leavingFromButton) return;
-        // 回调在 `dispose` **之前**跑（探针 probe_popscope2：日志里
-        // `invoked` 永远排在 `dispose` 前面），所以 `_quill` 还活着，
-        // `_flushBody` 读得到它。
-        _flushBody();
-        unawaited(_c.saveDraftOnExit());
+        if (!hostedByRouter) {
+          // 旧语义（测试 / 嵌入式）：Navigator 已经弹掉这一页，这里只补一次
+          // 落盘。回调在 `dispose` 之前跑，`_quill` 还活着。
+          if (!didPop || _leavingFromButton) return;
+          _flushBody();
+          unawaited(_c.saveDraftOnExit());
+          return;
+        }
+        if (didPop) return;
+        if (state.busy || _leavingFromButton) return;
+        // 回调在 `dispose` **之前**跑，`_quill` 还活着，[_flushBody] 读得到它。
+        unawaited(_leave(context));
       },
       child: Shortcuts(
         // 页面自己的一层快捷键。
@@ -422,63 +477,45 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     // 窄屏（< 600）：与导航那一套断点同一个判据（`Breakpoints.compactOf`），
     // 而不是自己再定一个数 —— 手机上写信页是全屏 push 的，判据只该有一处。
     final compact = Breakpoints.compactOf(context);
+    final title = _title(l10n, state);
+    final closeButton = IconButton(
+      icon: const Icon(Icons.close),
+      tooltip: l10n.close_,
+      onPressed: state.busy ? null : () => _leave(context),
+    );
+    final actions = _headerActions(
+      context,
+      l10n,
+      state,
+      settings,
+      aiUsable,
+      compact: compact,
+    );
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_title(l10n, state)),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          tooltip: l10n.close_,
-          onPressed: state.busy ? null : () => _leave(context),
-        ),
-        actions: <Widget>[
-          if (state.draftId != null)
-            IconButton(
-              tooltip: l10n.discard,
-              icon: const Icon(Icons.delete_outline),
-              onPressed: state.busy ? null : () => _discard(context),
+      // 宽/中屏与「邮件预览」同一套顶栏（`PaneHeader`，60 高）：撰写页现在
+      // 只占内容区、左侧一级导航一直在，再撑一个 56 的 Material AppBar 会与
+      // 旁边的列表/预览差 4px，切来切去标题会上下跳。窄屏仍是整屏的 AppBar。
+      appBar: compact
+          ? AppBar(
+              title: Text(title),
+              leading: closeButton,
+              actions: actions,
+            )
+          : PreferredSize(
+              preferredSize: const Size.fromHeight(kPaneHeaderHeight),
+              child: PaneHeader(
+                actions: <Widget>[closeButton, ...actions],
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
             ),
-          // ④ 润色全文。原来这里是「起标题」—— 起标题挪到了主题栏里那颗
-          // 内联图标（它属于那一行），这颗图标改成「把整篇正文润一遍」。
-          //
-          // 只在设置里开着、且**有路可走**时出现（BYOK 配好或托管通道注册了）：
-          // 没配 Key 的用户不该看到一个点了只回一句「去设置」的图标。
-          if (aiUsable && settings.polishEnabled)
-            IconButton(
-              tooltip: l10n.aiPolishTooltip,
-              icon: const Icon(Icons.auto_fix_high_outlined),
-              onPressed: state.busy ? null : _polishAll,
-            ),
-          // 配了延迟时，旁边多一个「立即发送」—— 那封信不必先排队再等。
-          // 只在延迟不为 0 时出现：为 0 时它与主按钮是同一件事，
-          // 并排两个一样的按钮只会让人犹豫点哪个。
-          if (ref.watch(sendDelayProvider) > Duration.zero)
-            IconButton(
-              tooltip: l10n.sendNow,
-              icon: const Icon(Icons.bolt),
-              onPressed: state.canSendNow ? () => _sendNow(context) : null,
-            ),
-          // 发送主按钮。窄屏只留图标：标题 + 关闭 +（丢弃）+（润色）+
-          // 立即发送 + 一颗带字的按钮，在 360–420 这一档手机上会把 AppBar 挤到
-          // 溢出（`RenderFlex overflowed` 那道黄黑条纹比少两个字难看得多）。
-          // tooltip 仍然保留 —— 悬停 / 长按照样读得到「发送」。
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: compact
-                ? IconButton(
-                    key: const ValueKey('compose-send'),
-                    tooltip: l10n.send,
-                    icon: const Icon(Icons.send, size: 18),
-                    onPressed: state.canSendNow ? () => _send(context) : null,
-                  )
-                : FilledButton.icon(
-                    key: const ValueKey('compose-send'),
-                    onPressed: state.canSendNow ? () => _send(context) : null,
-                    icon: const Icon(Icons.send, size: 18),
-                    label: Text(l10n.send),
-                  ),
-          ),
-        ],
-      ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -710,6 +747,68 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         ComposeMode.blank => l10n.compose,
       };
 
+  /// 顶栏右侧的动作组（窄屏 `AppBar.actions` 与宽屏 `PaneHeader.actions`
+  /// 共用同一份 —— 两处各写一遍，迟早有一边多一颗/少一颗）。
+  ///
+  /// [compact] 只影响发送按钮的形状（窄屏放不下带字的按钮）。
+  List<Widget> _headerActions(
+    BuildContext context,
+    AppLocalizations l10n,
+    ComposeState state,
+    AiSettings settings,
+    bool aiUsable, {
+    required bool compact,
+  }) {
+    return <Widget>[
+      if (state.draftId != null)
+        IconButton(
+          tooltip: l10n.discard,
+          icon: const Icon(Icons.delete_outline),
+          onPressed: state.busy ? null : () => _discard(context),
+        ),
+      // ④ 润色全文。原来这里是「起标题」—— 起标题挪到了主题栏里那颗
+      // 内联图标（它属于那一行），这颗图标改成「把整篇正文润一遍」。
+      //
+      // 只在设置里开着、且**有路可走**时出现（BYOK 配好或托管通道注册了）：
+      // 没配 Key 的用户不该看到一个点了只回一句「去设置」的图标。
+      if (aiUsable && settings.polishEnabled)
+        IconButton(
+          tooltip: l10n.aiPolishTooltip,
+          icon: const Icon(Icons.auto_fix_high_outlined),
+          onPressed: state.busy ? null : _polishAll,
+        ),
+      // 配了延迟时，旁边多一个「立即发送」—— 那封信不必先排队再等。
+      // 只在延迟不为 0 时出现：为 0 时它与主按钮是同一件事，
+      // 并排两个一样的按钮只会让人犹豫点哪个。
+      if (ref.watch(sendDelayProvider) > Duration.zero)
+        IconButton(
+          tooltip: l10n.sendNow,
+          icon: const Icon(Icons.bolt),
+          onPressed: state.canSendNow ? () => _sendNow(context) : null,
+        ),
+      // 发送主按钮。窄屏只留图标：标题 + 关闭 +（丢弃）+（润色）+
+      // 立即发送 + 一颗带字的按钮，在 360–420 这一档手机上会把 AppBar 挤到
+      // 溢出（`RenderFlex overflowed` 那道黄黑条纹比少两个字难看得多）。
+      // tooltip 仍然保留 —— 悬停 / 长按照样读得到「发送」。
+      Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: compact
+            ? IconButton(
+                key: const ValueKey('compose-send'),
+                tooltip: l10n.send,
+                icon: const Icon(Icons.send, size: 18),
+                onPressed: state.canSendNow ? () => _send(context) : null,
+              )
+            : FilledButton.icon(
+                key: const ValueKey('compose-send'),
+                onPressed: state.canSendNow ? () => _send(context) : null,
+                icon: const Icon(Icons.send, size: 18),
+                label: Text(l10n.send),
+              ),
+      ),
+    ];
+  }
+
   // ------------------------------------------------------------ 编辑器同步
 
   /// **挂 `QuillController` 而不是 `document.changes`**：后者是 per-Document
@@ -901,6 +1000,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     if (notice == _lastNotice) return;
     _lastNotice = notice;
     final isError = state.noticeIsError;
+    // 发送成功（`close`）意味着草稿行已经删了：立刻掐掉保存器，防止收尾那次
+    // dispose 把内容又写回一条新草稿（UPDATE-only 已经兜了一层，这里是第二道）。
+    if (!isError) {
+      _saver.abandon();
+      _leavingFromButton = true;
+    }
     _scheduleNotice(
       context,
       notice: notice,
@@ -929,7 +1034,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     required bool close,
   }) {
     final messenger = ScaffoldMessenger.maybeOf(context);
+    // 正式链路走 `go`（根路由没有可 pop 的栈）；没有 GoRouter 宿主
+    // （widget 测试直接装 `ComposeScreen`）时退回 `pop`。
+    final router = GoRouter.maybeOf(context);
     final navigator = Navigator.of(context);
+    final backTarget = _backTarget();
     // 关的必须是**这一页**，不能是「栈顶那一页」。这一条是防一个很窄但
     // 真实存在的窗口：post-frame 回调还没跑，用户先按了返回键 ——
     // 那时 `PopScope` 已经放行、这一页正在被弹走，再 pop 一次就把
@@ -942,7 +1051,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 消费掉，否则下次进这个页面还会弹一遍。
       if (mounted) _c.consumeNotice();
-      if (close && (route?.isCurrent ?? false)) navigator.pop();
+      if (close && (route?.isCurrent ?? false)) {
+        final goRouter = router;
+        if (goRouter != null) {
+          goRouter.go(backTarget);
+        } else {
+          navigator.pop();
+        }
+      }
       messenger?.clearSnackBars();
       messenger?.showSnackBar(
         SnackBar(
@@ -1023,13 +1139,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         startReview:
             (SuggestFlow.channelConfigured(ref) || settings.isUsable) &&
                     AiPreflight.shouldRun(settings)
-            ? () => ComposeAi.startReview(
-                  ref.read(aiServiceProvider),
-                  subject: _subject.text,
-                  body: bodyText,
-                  attachmentCount: attachmentCount,
-                )
-            : null,
+                ? () => ComposeAi.startReview(
+                      ref.read(aiServiceProvider),
+                      subject: _subject.text,
+                      body: bodyText,
+                      attachmentCount: attachmentCount,
+                    )
+                : null,
       ),
     );
     // null = 用户点了外面把面板划走了 → **不发送**。返回 true 只在
@@ -1054,7 +1170,87 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     }
   }
 
-  /// 离开页面：先把草稿存下来（空信不存，见控制器），再 pop。
+  // ------------------------------------------------------- 草稿自动保存
+
+  /// 把 state 拍成一次「可落盘的草稿快照」。
+  ///
+  /// 只收**内容字段**：光标、选区、发送进度、提示语之类的 state 变化不该触发
+  /// 写库（快照相等时保存器会直接丢弃）。
+  ComposeDraftSnapshot _snapshotOf(ComposeState state) =>
+      ComposeDraftSnapshot(
+        accountEmail: state.sender?.email ?? '',
+        recipientsJson: encodeRecipientAddresses(state.effectiveRecipients),
+        subject: state.subject,
+        content: state.body,
+        attachmentPaths:
+            state.attachments.map((a) => a.path).toList(growable: false),
+      );
+
+  /// 首次装载之后拍一次基线：否则打开一封几 MB 的草稿、一个字没改，切走时
+  /// 会先整行重写一遍。
+  ///
+  /// 从草稿箱/侧栏打开（`args.hasDraftHint`）时**等读草稿那一趟回来再拍**：
+  /// 第一帧的 state 还是空壳，拿它当基线的话，草稿一到就会被当成「内容变了」
+  /// 写回库 —— 正是要避免的那次写放大。判据是 `bodyRevision` 被控制在
+  /// `_restoreDraft` 里 +1 了（见 `ComposeState.bodyRevision` 的注释）。
+  void _maybeMarkBaseline(ComposeState state) {
+    if (_baselineMarked || !_saverEnabled) return;
+    if (widget.args.hasDraftHint && state.bodyRevision == 0) return;
+    _baselineMarked = true;
+    final snapshot = _snapshotOf(state);
+    _lastSnapshot = snapshot;
+    _saver.markSaved(snapshot);
+  }
+
+  void _scheduleAutosave(ComposeState state) {
+    if (!_saverEnabled) return;
+    final snapshot = _snapshotOf(state);
+    if (snapshot == _lastSnapshot) return;
+    _lastSnapshot = snapshot;
+    _saver.schedule(snapshot);
+  }
+
+  /// `dispose` 里的收尾落盘：直接用页面自己还活着的编辑器/主题框拍快照，
+  /// 不碰 provider（那时它可能已经被回收）。
+  void _saveOnDispose() {
+    if (!_saverEnabled) return;
+    // 整棵树被拆掉（切页面、退出、测试收尾）时 `ref` 可能正在失效：
+    // 收尾落盘失败只能静默 —— 这里抛出去会让 dispose 变成一次崩溃，
+    // 而内容顶多丢最后不到 1.5s（防抖窗口），比崩掉好。
+    try {
+      final base = _lastSnapshot ?? const ComposeDraftSnapshot();
+      _saver.dispose(
+        base.copyWith(
+          subject: _subject.text,
+          content: DocumentCodec.encode(_quill.document),
+        ),
+      );
+    } catch (_) {
+      // 见上。
+    }
+  }
+
+  /// 关页之后回哪儿：`from` 指向自己（撰写页）时不回，退到草稿箱。
+  String _backTarget() {
+    final from = widget.from;
+    if (from == null || from.isEmpty) return Routes.drafts;
+    if (Uri.tryParse(from)?.path == Routes.compose) return Routes.drafts;
+    return from;
+  }
+
+  void _goBack(BuildContext context) {
+    final router = GoRouter.maybeOf(context);
+    if (router != null) {
+      router.go(_backTarget());
+      return;
+    }
+    // 没有 GoRouter 宿主（widget 测试里直接装 `ComposeScreen`，或将来被
+    // 别的容器嵌入）：退回 Navigator 的 pop 语义。
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
+  }
+
+  /// 离开页面：先把草稿存下来（空信不存，见控制器），再 `go` 回进入前的地址。
   ///
   /// 这是 `X` 按钮的出口。**系统返回手势不经过这里**，它走 `build()` 里那层
   /// `PopScope` —— 两处都要 `_flushBody()` + `saveDraftOnExit()`，只是手势那
@@ -1067,12 +1263,21 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     // 先落一次盘再走：防抖没烧完就退出的话，`state.body` 还是旧的，
     // 用户最后那几秒打的字会既进不了草稿、也没有别的地方留着（见 [_flushBody]）。
     _flushBody();
-    await _c.saveDraftOnExit();
-    // 下面这次 `pop()` 会**再触发一遍** `PopScope` 的回调（`canPop: true` 时
-    // 程序化 pop 与返回手势一视同仁）—— 竖起闸门，别让它把同一封信存第二遍。
+    if (_saverEnabled) {
+      // 把刚才推上去的那一版也拍进保存器（listener 是下一帧才跑的，
+      // 这里不能等它）。然后强制落盘，再决定「留草稿 / 删空行」。
+      _scheduleAutosave(_state);
+      await _saver.flush();
+      await _c.closeComposePage();
+      _saver.abandon();
+    } else {
+      // 没有草稿行的旧路径（测试里直接用 `ComposeScreen`）：沿用控制器的
+      // 「离开即存草稿」。
+      await _c.saveDraftOnExit();
+    }
     if (!context.mounted) return;
     _leavingFromButton = true;
-    Navigator.of(context).pop();
+    _goBack(context);
   }
 
   Future<void> _discard(BuildContext context) async {
@@ -1094,12 +1299,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       ),
     );
     if (confirmed != true) return;
+    // 先掐掉保存器：否则 `discardDraft()` 删完行之后，防抖里那一次迟到写
+    // 会落到 0 行（不会复活，但没必要），以及别让收尾 pop 再存一次。
+    _saver.abandon();
     await _c.discardDraft();
     if (!context.mounted) return;
-    // 同一道闸：用户刚刚选择「放弃」，下面这次 `pop()` 不能让 `PopScope`
-    // 又把内容存回草稿箱。
     _leavingFromButton = true;
-    Navigator.of(context).pop();
+    _goBack(context);
   }
 
   // ------------------------------------------------------------ 斜杠 / 插入

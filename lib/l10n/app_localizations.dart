@@ -974,6 +974,36 @@ abstract class AppLocalizations {
   /// **'Compose'**
   String get compose;
 
+  /// No description provided for @composePages.
+  ///
+  /// In en, this message translates to:
+  /// **'Composing'**
+  String get composePages;
+
+  /// No description provided for @composePagesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No pages being edited'**
+  String get composePagesEmpty;
+
+  /// No description provided for @composeEditing.
+  ///
+  /// In en, this message translates to:
+  /// **'Editing'**
+  String get composeEditing;
+
+  /// No description provided for @sidebarExpand.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand'**
+  String get sidebarExpand;
+
+  /// No description provided for @sidebarCollapse.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse'**
+  String get sidebarCollapse;
+
   /// No description provided for @composeSectionSignatures.
   ///
   /// In en, this message translates to:

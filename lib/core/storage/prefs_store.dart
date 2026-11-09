@@ -51,6 +51,8 @@ class PrefsStore {
   static const String _kPaneListWidth = 'cm_pane_list_width';
   static const String _kSendDelay = 'cm_send_delay_seconds';
   static const String _kSidebarMailboxes = 'cm_sidebar_mailboxes_expanded';
+  /// 「邮件撰写」分类的展开态（默认展开，见 [sidebarComposeExpanded]）。
+  static const String _kSidebarCompose = 'cm_sidebar_compose_expanded';
   /// 单独收起的那些实例 id（默认展开，所以只在偏离默认时才写）。
   static const String _kSidebarCollapsed = 'cm_sidebar_collapsed_instances';
   static const String _kAiSettings = 'cm_ai_settings';
@@ -167,6 +169,15 @@ class PrefsStore {
 
   Future<void> setSidebarMailboxesExpanded(bool value) =>
       _prefs.setBool(_kSidebarMailboxes, value);
+
+  /// 左侧「邮件撰写」分类展开不展开。**默认展开** —— 需求就是默认展开，
+  /// 而且这一组的存在意义就是「让你看见现在开着哪几页」；默认收着等于
+  /// 新加的功能没人看得见。没写过的老用户升级上来也走 `?? true`。
+  bool get sidebarComposeExpanded =>
+      _prefs.getBool(_kSidebarCompose) ?? true;
+
+  Future<void> setSidebarComposeExpanded(bool value) =>
+      _prefs.setBool(_kSidebarCompose, value);
 
   /// 用户在侧栏里**单独收起**了哪些实例的邮箱列表。
   ///

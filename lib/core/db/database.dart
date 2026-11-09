@@ -22,7 +22,7 @@ part 'database.g.dart';
 @DriftDatabase(
   tables: [
     Profiles, Capabilities, Mailboxes, Mails, Attachments, SyncStates,
-    OutboxEntries, RecipientsHistory, Drafts, Reminders,
+    OutboxEntries, RecipientsHistory, Drafts, ComposePages, Reminders,
   ],
   daos: [ProfileDao, MailDao, LocalDao, ReminderDao],
 )
@@ -60,7 +60,7 @@ class AppDatabase extends _$AppDatabase {
   static const String _dbName = 'cloud_mail';
 
   @override
-  int get schemaVersion => 4;   // 3 → 4：sync_states.remote_total_at（侧栏总数 TTL）
+  int get schemaVersion => 5;   // 4 → 5：compose_pages（打开中的撰写页）
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -123,6 +123,12 @@ class AppDatabase extends _$AppDatabase {
             // 与 v3 之前的显示完全一致（侧栏右侧只有未读数）。同样是一条
             // **ADD COLUMN**，没有任何回填 —— 两个 isolate 各跑一次也安全。
             await m.addColumn(syncStates, syncStates.remoteTotalAt);
+          }
+          if (from < 5) {
+            // 只建表 `compose_pages`（打开中的撰写页）。理由与 v3 那条一样：
+            // 两个 isolate 会各跑一次，靠 SQLite 的 user_version 串行化，
+            // 语句必须快且可重复；这里没有回填，旧库升级后就是「一页都没开」。
+            await m.createTable(composePages);
           }
         },
         beforeOpen: (details) async {

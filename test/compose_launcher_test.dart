@@ -5,9 +5,9 @@
 // 开出同一个地址。各写一遍的话，「预选发件箱」这个行为迟早只在其中一处生效
 // —— 症状是「点 FAB 从对的邮箱发，按 Cmd+N 从默认邮箱发」。
 //
-// 这里用**真的 `GoRouter`**（不是断言字符串拼接）：`context.push` 是 go_router
-// 的扩展方法，在一个普通 `Navigator` 上会直接抛；而且「顶层 push 而不是 go」
-// 这件事只有走真路由器才验得出来。
+// 这里用**真的 `GoRouter`**（不是断言字符串拼接）：`context.go` 是 go_router
+// 的扩展方法，在一个普通 `Navigator` 上会直接抛；而「地址上带 `from`
+// （进撰写页之前在哪）这件事只有走真路由器才验得出来。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,10 +17,7 @@ import 'package:mail_app/features/compose/compose_launcher.dart';
 import 'package:mail_app/features/compose/compose_preselect.dart';
 
 void main() {
-  /// 装一棵「外壳 + 顶层 push」的最小树，返回被推上去的地址。
-  ///
-  /// 用 `GoRouter.optionURLReflectsImperativeAPIs` 之外的办法：监听
-  /// `routerDelegate` 的 `currentConfiguration.uri` —— push 之后它就是新地址。
+  /// 装一棵最小树，返回 `go` 之后的地址（`state.uri` 就是它）。
   Future<GoRouter> pump(WidgetTester tester, Widget Function(BuildContext) body) async {
     final router = GoRouter(
       initialLocation: '/list',
@@ -60,7 +57,7 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(find.text('compose:/compose'), findsOneWidget);
+    expect(find.text('compose:/compose?from=%2Flist'), findsOneWidget);
   });
 
   testWidgets('新建：预选了发件箱就带上 profile 与 account', (tester) async {
@@ -83,7 +80,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(
-      find.text('compose:/compose?profile=p1&account=12'),
+      find.text('compose:/compose?profile=p1&account=12&from=%2Flist'),
       findsOneWidget,
     );
   });
@@ -109,7 +106,7 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(find.text('compose:/compose?profile=p1'), findsOneWidget);
+    expect(find.text('compose:/compose?profile=p1&from=%2Flist'), findsOneWidget);
   });
 
   testWidgets('新建：读的是 composePreselectProvider 里那一份', (tester) async {
@@ -130,7 +127,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(find.text('compose:/compose?profile=p9&account=3'), findsOneWidget);
+    expect(find.text('compose:/compose?profile=p9&account=3&from=%2Flist'), findsOneWidget);
   });
 
   testWidgets('回复：带 email 与 mode，不带 account', (tester) async {
@@ -155,7 +152,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(
-      find.text('compose:/compose?profile=p2&email=42&mode=reply'),
+      find.text('compose:/compose?profile=p2&email=42&mode=reply&from=%2Flist'),
       findsOneWidget,
     );
   });
@@ -182,7 +179,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(
-      find.text('compose:/compose?profile=p3&email=8&mode=forward'),
+      find.text('compose:/compose?profile=p3&email=8&mode=forward&from=%2Flist'),
       findsOneWidget,
     );
   });

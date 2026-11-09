@@ -1060,6 +1060,38 @@ class ComposeController extends Notifier<ComposeState> {
     await _saveDraft();
   }
 
+  /// 显式关闭撰写页（X / Esc / 系统返回）：内容已经由页面落到草稿行上了。
+  ///
+  /// 两种收尾：
+  /// - **什么都没写**（空白页、或回复页一个字没敲）→ 删掉草稿行（连同
+  ///   「打开中」标记）：草稿箱里不该留下一条点击「写邮件」就有的空记录；
+  /// - **写过东西** → 只删「打开中」标记：内容回草稿箱，页面从左侧
+  ///   「邮件撰写」里消失。
+  ///
+  /// 空信判据与 [saveDraftOnExit] 同一口径（Delta 上判空、预填的引用块
+  /// 因为 `dirty == false` 不算「写过」）—— 两处若各写一套，回复页关掉时
+  /// 会出现「草稿箱里多一条只有引用块的空草稿」。
+  Future<void> closeComposePage() async {
+    final id = state.draftId;
+    if (id == null || id <= 0) return;
+    final dao = ref.read(databaseProvider).localDao;
+    final wroteSomething = state.dirty &&
+        (!DocumentCodec.isEmptyDelta(state.body) ||
+            state.subject.trim().isNotEmpty ||
+            state.effectiveRecipients.isNotEmpty ||
+            state.attachments.isNotEmpty);
+    try {
+      if (!wroteSomething) {
+        await dao.deleteDraft(id);
+      } else {
+        await dao.closeComposePage(id);
+      }
+    } catch (_) {
+      // 本地库写失败不该把用户卡在「关不掉的页面」上：内容已经落过盘，
+      // 标记留着的后果只是这一页下次启动又出现一次。
+    }
+  }
+
   /// 用户点「放弃草稿」。
   Future<void> discardDraft() async {
     final id = state.draftId;
@@ -1261,4 +1293,27 @@ final draftsProvider = StreamProvider.family<List<DbDraft>, String?>(
   (ref, profileId) =>
       ref.watch(databaseProvider).localDao.watchDrafts(profileId: profileId),
   name: 'drafts',
+);
+
+/// 左侧「邮件撰写」的数据源：**打开中**的草稿，按最后编辑时间倒序。
+///
+/// 与 [draftsProvider] 同源（同一张 `drafts` 表），差别只是 `INNER JOIN`
+/// 那张 `compose_pages`：草稿箱看全部，这里只看「此刻开着哪几页」。
+/// 不按实例过滤的理由也一样 —— 打开中的页面是这台设备上的东西。
+final openDraftsProvider = StreamProvider<List<DbDraft>>(
+  (ref) => ref.watch(databaseProvider).localDao.watchOpenDrafts(),
+  name: 'openDrafts',
+);
+
+/// 「邮件撰写」父项右侧的角标 = 打开页数。
+final openDraftCountProvider = Provider<int>(
+  (ref) => ref.watch(openDraftsProvider).value?.length ?? 0,
+  name: 'openDraftCount',
+);
+
+/// 打开中的草稿 id 集合（草稿箱页给对应行加「编辑中」标记）。
+final openDraftIdsProvider = Provider<Set<int>>(
+  (ref) =>
+      <int>{for (final draft in ref.watch(openDraftsProvider).value ?? const <DbDraft>[]) draft.id},
+  name: 'openDraftIds',
 );

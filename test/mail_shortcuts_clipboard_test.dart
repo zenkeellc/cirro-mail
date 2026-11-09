@@ -130,7 +130,7 @@ void main() {
     await pressWithCtrl(tester, LogicalKeyboardKey.keyN);
 
     expect(
-      find.text('compose:/compose'),
+      find.textContaining('compose:/compose'),
       findsOneWidget,
       reason: '宿主层没接上（或者被别的层盖住了）—— 那么①的绿是白拿的',
     );

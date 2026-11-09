@@ -10,7 +10,7 @@ part 'local_dao.g.dart';
 ///
 /// 这三张表的共同点：**纯本地**，服务端没有对应实体（Web 端的草稿在浏览器
 /// IndexedDB 里，App 读不到，两边不互通，UI 要说明）。
-@DriftAccessor(tables: [OutboxEntries, Drafts, RecipientsHistory])
+@DriftAccessor(tables: [OutboxEntries, Drafts, ComposePages, RecipientsHistory])
 class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
   LocalDao(super.db);
 
@@ -261,6 +261,131 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
   Future<DbDraft?> findDraft(int id) =>
       (select(drafts)..where((t) => t.id.equals(id))).getSingleOrNull();
 
+  /// 新建一条「正在编辑」的草稿（撰写页的空白底稿）。
+  ///
+  /// **一个事务写两张表**：草稿行 + 打开标记。分开写的话，崩在中间会留下一条
+  /// 只出现在草稿箱、却永远进不了「邮件撰写」的半行。
+  ///
+  /// 空行是刻意先插的：左侧「邮件撰写」要在用户点「写邮件」的**那一刻**就出现
+  /// 这一页（否则新页面在列表里不存在，切走就再也回不去），同时它的
+  /// `updated_at` 就是「新邮件在最前」的排序依据。用户什么都没写就关掉时由
+  /// `deleteDraft` 把这一行连同标记一起删掉 —— 空信不进草稿箱那条规矩不破。
+  Future<int> createComposeDraft({
+    required String profileId,
+    String accountEmail = '',
+    String recipientsJson = '',
+    String subject = '',
+    String content = '',
+    List<String> attachmentPaths = const <String>[],
+  }) {
+    final now = DateTime.now().toUtc();
+    return transaction(() async {
+      final id = await into(drafts).insert(
+        DraftsCompanion.insert(
+          profileId: profileId,
+          accountEmail: Value(accountEmail),
+          recipientsJson: Value(recipientsJson),
+          subject: Value(subject),
+          content: Value(content),
+          attachmentPathsJson: Value(encodeAttachmentPaths(attachmentPaths)),
+          updatedAt: now,
+        ),
+      );
+      await into(composePages).insert(
+        ComposePagesCompanion.insert(draftId: Value(id), openedAt: now),
+      );
+      return id;
+    });
+  }
+
+  /// 把一条草稿标记成「打开中」。
+  ///
+  /// 幂等：从草稿箱反复点开同一封、或深链进来两次，都不该炸主键。
+  /// `insertOnConflictUpdate` 顺手刷新 `opened_at`。
+  Future<void> markComposeOpen(int draftId) =>
+      into(composePages).insertOnConflictUpdate(
+        ComposePagesCompanion.insert(
+          draftId: Value(draftId),
+          openedAt: DateTime.now().toUtc(),
+        ),
+      );
+
+  /// 取消「打开中」标记：页从左侧「邮件撰写」消失，草稿内容仍在草稿箱里。
+  Future<void> closeComposePage(int draftId) =>
+      (delete(composePages)..where((t) => t.draftId.equals(draftId))).go();
+
+  /// 左侧「邮件撰写」的数据源：**打开中**的草稿，按最后编辑时间倒序。
+  ///
+  /// 排序就是需求：最后编辑的在上、新邮件在最前。`drafts.id` 那一级是同毫秒
+  /// 时的稳定兜底（自增 id 越大越新）—— 少了它，两条同一毫秒写进来的草稿
+  /// 在两次查询里顺序可能互换，侧栏会闪一下。
+  Stream<List<DbDraft>> watchOpenDrafts({String? profileId}) {
+    final query = select(drafts).join(<Join<HasResultSet, dynamic>>[
+      innerJoin(composePages, composePages.draftId.equalsExp(drafts.id)),
+    ]);
+    if (profileId != null) {
+      query.where(drafts.profileId.equals(profileId));
+    }
+    query.orderBy(<OrderingTerm>[
+      OrderingTerm(expression: drafts.updatedAt, mode: OrderingMode.desc),
+      OrderingTerm(expression: drafts.id, mode: OrderingMode.desc),
+    ]);
+    return query.watch().map(
+          (rows) => <DbDraft>[
+            for (final row in rows) row.readTable(drafts),
+          ],
+        );
+  }
+
+  /// 打开中的草稿 id 集合（草稿箱页给行加「编辑中」标记用）。
+  Stream<Set<int>> watchOpenDraftIds() => watchOpenDrafts().map(
+        (drafts) => <int>{for (final draft in drafts) draft.id},
+      );
+
+  /// 保存器的**按列增量更新**：null = 这一列没变。
+  ///
+  /// 为什么不是整行重写：正文 Delta 里可能内联着数 MB 的 base64 图片，
+  /// 用户只改了个主题却把 content 整列重写一遍，就是纯写放大。
+  ///
+  /// **只 UPDATE、绝不 INSERT**：行已经被删掉（发送成功 / 放弃 / 关闭空页）时
+  /// 这一步会写到 0 行 —— 这正是「迟到的防抖保存绝不能复活已删草稿」的实现，
+  /// 不靠任何内存里的标记，也不怕进程换个 isolate。
+  ///
+  /// 返回值是影响行数，调用方据此判定「行已不在」。
+  Future<int> updateDraftFields(
+    int id, {
+    String? accountEmail,
+    String? recipientsJson,
+    String? subject,
+    String? content,
+    List<String>? attachmentPaths,
+  }) {
+    final companion = DraftsCompanion(
+      accountEmail:
+          accountEmail == null ? const Value.absent() : Value(accountEmail),
+      recipientsJson: recipientsJson == null
+          ? const Value.absent()
+          : Value(recipientsJson),
+      subject: subject == null ? const Value.absent() : Value(subject),
+      content: content == null ? const Value.absent() : Value(content),
+      attachmentPathsJson: attachmentPaths == null
+          ? const Value.absent()
+          : Value(encodeAttachmentPaths(attachmentPaths)),
+      updatedAt: Value(DateTime.now().toUtc()),
+    );
+    return (update(drafts)..where((t) => t.id.equals(id))).write(companion);
+  }
+
+  /// 启动清理：删掉指向**已经不存在的草稿**的「打开中」标记。
+  ///
+  /// 正常路径不会留下孤儿（`deleteDraft` 在同一个事务里删标记），但进程可能
+  /// 在「草稿已删、标记还没删」之间被杀掉 —— 启动时兜一次，成本是一条
+  /// 单表 DELETE，不碰数据行。
+  Future<void> pruneComposePages() => customStatement(
+        'DELETE FROM compose_pages '
+        'WHERE draft_id NOT IN (SELECT id FROM drafts)',
+      );
+
   /// 草稿箱页面的数据源。按最近修改排序 —— 草稿列表里「最近改的那封」
   /// 几乎总是用户想找的那封。
   Stream<List<DbDraft>> watchDrafts({String? profileId}) {
@@ -278,8 +403,15 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
         .watch();
   }
 
-  Future<void> deleteDraft(int id) =>
-      (delete(drafts)..where((t) => t.id.equals(id))).go();
+  /// 删草稿：**连同它的「打开中」标记一起删**，一个事务。
+  ///
+  /// 这个方法是草稿本地删除的**唯一**入口（发送成功、放弃草稿、草稿箱删除都
+  /// 走它）—— 在这里收口，就不会在某条路径上漏删标记、留下一条永远点不开的
+  /// 侧栏行。
+  Future<void> deleteDraft(int id) => transaction(() async {
+        await (delete(composePages)..where((t) => t.draftId.equals(id))).go();
+        await (delete(drafts)..where((t) => t.id.equals(id))).go();
+      });
 
   // --------------------------------------------------------- 收件人历史
 

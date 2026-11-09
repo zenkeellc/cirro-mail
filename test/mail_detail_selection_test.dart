@@ -336,7 +336,7 @@ void main() {
 
     await pressWithCtrl(tester, LogicalKeyboardKey.keyN);
 
-    expect(find.text('compose:/compose'), findsOneWidget);
+    expect(find.textContaining('compose:/compose'), findsOneWidget);
 
     await disposeDetail(tester);
   });

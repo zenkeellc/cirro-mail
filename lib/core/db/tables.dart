@@ -266,6 +266,33 @@ class Drafts extends Table {
   DateTimeColumn get updatedAt => dateTime()();
 }
 
+/// 「打开中」的撰写页。**本机 UI 状态，不是草稿内容**。
+///
+/// 与 [Drafts] 是 1:1：一条草稿可以既躺在草稿箱里、又被某个撰写页打开着
+/// （左侧一级导航「邮件撰写」下列出来的就是这些）。关掉撰写页只删这一行，
+/// 草稿本身留着 —— 内容回草稿箱。
+///
+/// 为什么不直接在 [Drafts] 上加一列：
+/// - 「打开中」是**这台设备此刻开着哪几页**，属于 UI 状态。草稿云同步只该同步
+///   内容，不该把它当成内容推给别的设备；旁表让两件事各自演进。
+/// - 草稿表是草稿箱/发送链路共用的热表，少一列就少一处语义纠缠。
+///
+/// 不声明 drift 外键（本库 `PRAGMA foreign_keys` 虽然开了，但仓库既有做法是
+/// 手工维护跨表引用，见 [Reminders] 的同类说明）：删除草稿时由
+/// `LocalDao.deleteDraft` 在同一个事务里把这一行一起删掉；启动时
+/// `LocalDao.pruneComposePages` 再兜一次孤儿。
+@DataClassName('DbComposePage')
+class ComposePages extends Table {
+  /// 指向 [Drafts.id]。一行 = 一个此刻打开着的撰写页。
+  IntColumn get draftId => integer()();
+
+  /// 最近一次被打开的时间（诊断/未来排序用；列表排序看的是草稿的 `updatedAt`）。
+  DateTimeColumn get openedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {draftId};
+}
+
 /// 「稍后提醒」的一条排期（spec §7.1）。
 ///
 /// **刻意不声明 drift 外键**（指向 `mails`）：SQLite 的 `PRAGMA foreign_keys`

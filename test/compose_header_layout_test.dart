@@ -23,6 +23,7 @@ import 'package:mail_app/features/compose/compose_field_row.dart';
 import 'package:mail_app/features/compose/compose_screen.dart';
 import 'package:mail_app/features/compose/editor/compose_toolbar.dart';
 import 'package:mail_app/features/compose/editor/mail_quill_editor.dart';
+import 'package:mail_app/features/mail_list/mail_panes.dart' show PaneHeader;
 import 'package:mail_app/features/compose/sender_picker.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
 import 'package:mail_app/providers/core_providers.dart';
@@ -302,10 +303,13 @@ void main() {
   testWidgets('800 宽：发送按钮带文字（不窄屏时形状不变）', (tester) async {
     await pumpCompose(tester);
 
-    final appBar = find.byType(AppBar);
+    // 2026-11：撰写页从「顶层全屏」搬进外壳、只占内容区，宽屏顶栏换成与
+    // 列表/预览一致的 `PaneHeader`（60 高，不再是 Material AppBar）。
+    final header = find.byType(PaneHeader);
+    expect(header, findsOneWidget);
     expect(
       find.descendant(
-        of: appBar,
+        of: header,
         matching: find.widgetWithText(FilledButton, '发送'),
       ),
       findsOneWidget,

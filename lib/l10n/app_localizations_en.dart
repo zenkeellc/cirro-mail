@@ -518,6 +518,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get compose => 'Compose';
 
   @override
+  String get composePages => 'Composing';
+
+  @override
+  String get composePagesEmpty => 'No pages being edited';
+
+  @override
+  String get composeEditing => 'Editing';
+
+  @override
+  String get sidebarExpand => 'Expand';
+
+  @override
+  String get sidebarCollapse => 'Collapse';
+
+  @override
   String get composeSectionSignatures => 'Signatures';
 
   @override

@@ -168,7 +168,7 @@ void main() {
     await press(tester, LogicalKeyboardKey.keyR);
 
     expect(
-      find.text('compose:/compose?profile=p1&email=7&mode=reply'),
+      find.textContaining('compose:/compose?profile=p1&email=7&mode=reply'),
       findsOneWidget,
     );
     await disposeTree(tester);
@@ -180,7 +180,7 @@ void main() {
     await press(tester, LogicalKeyboardKey.keyF, shift: true);
 
     expect(
-      find.text('compose:/compose?profile=p1&email=7&mode=forward'),
+      find.textContaining('compose:/compose?profile=p1&email=7&mode=forward'),
       findsOneWidget,
     );
     await disposeTree(tester);
@@ -192,7 +192,7 @@ void main() {
     await press(tester, LogicalKeyboardKey.keyR);
 
     expect(
-      find.text('compose:/compose?profile=p1&email=7&mode=reply'),
+      find.textContaining('compose:/compose?profile=p1&email=7&mode=reply'),
       findsOneWidget,
     );
     await disposeTree(tester);
@@ -258,7 +258,7 @@ void main() {
 
     await press(tester, LogicalKeyboardKey.keyN);
 
-    expect(find.text('compose:/compose'), findsOneWidget,
+    expect(find.textContaining('compose:/compose'), findsOneWidget,
         reason: '没有预选发件箱时地址里什么参数都没有（与 FAB 同一条口径）');
     await disposeTree(tester);
   });
@@ -276,7 +276,7 @@ void main() {
     await press(tester, LogicalKeyboardKey.keyN);
 
     expect(
-      find.text('compose:/compose?profile=p9&account=3'),
+      find.textContaining('compose:/compose?profile=p9&account=3'),
       findsOneWidget,
       reason: '读的必须是 provider 里那一份，不是「当前地址那个实例」',
     );

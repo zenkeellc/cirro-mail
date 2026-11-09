@@ -199,6 +199,29 @@ final NotifierProvider<SidebarMailboxesController, bool>
   name: 'sidebarMailboxesExpanded',
 );
 
+/// 左侧「邮件撰写」分类的展开 / 收起。
+///
+/// 与 [SidebarMailboxesController] 同一个形状（UI 状态 + 落盘），**默认展开**
+/// —— 需求就是默认展开，而且这一组存在的意义就是「让你看见现在开着哪几页」。
+class SidebarComposeController extends Notifier<bool> {
+  @override
+  bool build() => ref.watch(prefsStoreProvider).sidebarComposeExpanded;
+
+  Future<void> set(bool expanded) async {
+    state = expanded;
+    await ref.read(prefsStoreProvider).setSidebarComposeExpanded(expanded);
+  }
+
+  Future<void> toggle() => set(!state);
+}
+
+final NotifierProvider<SidebarComposeController, bool>
+    sidebarComposeExpandedProvider =
+    NotifierProvider<SidebarComposeController, bool>(
+  SidebarComposeController.new,
+  name: 'sidebarComposeExpanded',
+);
+
 /// 单个实例的邮箱列表展开 / 收起（**记忆**的那一层）。
 ///
 /// 状态是「**收起**了哪些实例」的集合，默认展开 —— 与

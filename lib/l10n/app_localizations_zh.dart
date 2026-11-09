@@ -479,6 +479,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get compose => '写邮件';
 
   @override
+  String get composePages => '邮件撰写';
+
+  @override
+  String get composePagesEmpty => '没有正在编辑的邮件';
+
+  @override
+  String get composeEditing => '编辑中';
+
+  @override
+  String get sidebarExpand => '展开';
+
+  @override
+  String get sidebarCollapse => '收起';
+
+  @override
   String get composeSectionSignatures => '签名';
 
   @override

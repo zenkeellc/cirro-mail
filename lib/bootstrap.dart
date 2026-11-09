@@ -28,6 +28,14 @@ Future<BootstrapData> bootstrap() async {
     // 首次打开会跑 migration 建表；这一步失败几乎都是库文件损坏/无写权限，
     // 属于必须让用户看见的错误，所以就让它抛。
     await db.customSelect('SELECT 1').get();
+    // 「打开中的撰写页」标记的启动清理：正常路径删草稿时会在同一个事务里
+    // 删标记，但进程可能死在两步之间。一条单表 DELETE，不碰数据行；
+    // 失败不该拦启动（孤儿的唯一后果是侧栏多一个点不开的项，下次启动再清）。
+    try {
+      await db.localDao.pruneComposePages();
+    } catch (e) {
+      debugPrint('撰写页标记清理失败（不影响启动）：$e');
+    }
   } catch (e, st) {
     error = _describe('本地数据打不开', e, st);
     db = null;

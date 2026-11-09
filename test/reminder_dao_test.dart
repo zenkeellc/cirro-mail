@@ -128,13 +128,13 @@ void main() {
     expect(await fresh.reminderDao.all(), hasLength(1));
   });
 
-  test('schemaVersion 是 4（remote_total_at 是第 4 版加的）', () {
+  test('schemaVersion 是 5（compose_pages 是第 5 版加的）', () {
     // **这条只钉住版本号本身**，不证明 `onUpgrade` 的各条分支能跑通 ——
     // 见下面那段说明：本仓库没有 schema dump 基建，2 → 3 与 3 → 4 这两条
     // 迁移路径目前**没有自动化覆盖**。别把这条读成「迁移测过了」。
     final fresh = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(fresh.close);
-    expect(fresh.schemaVersion, 4);
+    expect(fresh.schemaVersion, 5);
   });
 
   group('级联清理（spec §7.1：不声明外键，改走既有的删除漏斗）', () {

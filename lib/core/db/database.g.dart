@@ -5947,6 +5947,212 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
   }
 }
 
+class $ComposePagesTable extends ComposePages
+    with TableInfo<$ComposePagesTable, DbComposePage> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ComposePagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _draftIdMeta = const VerificationMeta(
+    'draftId',
+  );
+  @override
+  late final GeneratedColumn<int> draftId = GeneratedColumn<int>(
+    'draft_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _openedAtMeta = const VerificationMeta(
+    'openedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> openedAt = GeneratedColumn<DateTime>(
+    'opened_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [draftId, openedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'compose_pages';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DbComposePage> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('draft_id')) {
+      context.handle(
+        _draftIdMeta,
+        draftId.isAcceptableOrUnknown(data['draft_id']!, _draftIdMeta),
+      );
+    }
+    if (data.containsKey('opened_at')) {
+      context.handle(
+        _openedAtMeta,
+        openedAt.isAcceptableOrUnknown(data['opened_at']!, _openedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_openedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {draftId};
+  @override
+  DbComposePage map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DbComposePage(
+      draftId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}draft_id'],
+      )!,
+      openedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}opened_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ComposePagesTable createAlias(String alias) {
+    return $ComposePagesTable(attachedDatabase, alias);
+  }
+}
+
+class DbComposePage extends DataClass implements Insertable<DbComposePage> {
+  /// 指向 [Drafts.id]。一行 = 一个此刻打开着的撰写页。
+  final int draftId;
+
+  /// 最近一次被打开的时间（诊断/未来排序用；列表排序看的是草稿的 `updatedAt`）。
+  final DateTime openedAt;
+  const DbComposePage({required this.draftId, required this.openedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['draft_id'] = Variable<int>(draftId);
+    map['opened_at'] = Variable<DateTime>(openedAt);
+    return map;
+  }
+
+  ComposePagesCompanion toCompanion(bool nullToAbsent) {
+    return ComposePagesCompanion(
+      draftId: Value(draftId),
+      openedAt: Value(openedAt),
+    );
+  }
+
+  factory DbComposePage.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DbComposePage(
+      draftId: serializer.fromJson<int>(json['draftId']),
+      openedAt: serializer.fromJson<DateTime>(json['openedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'draftId': serializer.toJson<int>(draftId),
+      'openedAt': serializer.toJson<DateTime>(openedAt),
+    };
+  }
+
+  DbComposePage copyWith({int? draftId, DateTime? openedAt}) => DbComposePage(
+    draftId: draftId ?? this.draftId,
+    openedAt: openedAt ?? this.openedAt,
+  );
+  DbComposePage copyWithCompanion(ComposePagesCompanion data) {
+    return DbComposePage(
+      draftId: data.draftId.present ? data.draftId.value : this.draftId,
+      openedAt: data.openedAt.present ? data.openedAt.value : this.openedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbComposePage(')
+          ..write('draftId: $draftId, ')
+          ..write('openedAt: $openedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(draftId, openedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DbComposePage &&
+          other.draftId == this.draftId &&
+          other.openedAt == this.openedAt);
+}
+
+class ComposePagesCompanion extends UpdateCompanion<DbComposePage> {
+  final Value<int> draftId;
+  final Value<DateTime> openedAt;
+  const ComposePagesCompanion({
+    this.draftId = const Value.absent(),
+    this.openedAt = const Value.absent(),
+  });
+  ComposePagesCompanion.insert({
+    this.draftId = const Value.absent(),
+    required DateTime openedAt,
+  }) : openedAt = Value(openedAt);
+  static Insertable<DbComposePage> custom({
+    Expression<int>? draftId,
+    Expression<DateTime>? openedAt,
+  }) {
+    return RawValuesInsertable({
+      if (draftId != null) 'draft_id': draftId,
+      if (openedAt != null) 'opened_at': openedAt,
+    });
+  }
+
+  ComposePagesCompanion copyWith({
+    Value<int>? draftId,
+    Value<DateTime>? openedAt,
+  }) {
+    return ComposePagesCompanion(
+      draftId: draftId ?? this.draftId,
+      openedAt: openedAt ?? this.openedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (draftId.present) {
+      map['draft_id'] = Variable<int>(draftId.value);
+    }
+    if (openedAt.present) {
+      map['opened_at'] = Variable<DateTime>(openedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ComposePagesCompanion(')
+          ..write('draftId: $draftId, ')
+          ..write('openedAt: $openedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $RemindersTable extends Reminders
     with TableInfo<$RemindersTable, DbReminder> {
   @override
@@ -6468,6 +6674,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $RecipientsHistoryTable recipientsHistory =
       $RecipientsHistoryTable(this);
   late final $DraftsTable drafts = $DraftsTable(this);
+  late final $ComposePagesTable composePages = $ComposePagesTable(this);
   late final $RemindersTable reminders = $RemindersTable(this);
   late final ProfileDao profileDao = ProfileDao(this as AppDatabase);
   late final MailDao mailDao = MailDao(this as AppDatabase);
@@ -6487,6 +6694,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     outboxEntries,
     recipientsHistory,
     drafts,
+    composePages,
     reminders,
   ];
 }
@@ -9410,6 +9618,149 @@ typedef $$DraftsTableProcessedTableManager =
       DbDraft,
       PrefetchHooks Function()
     >;
+typedef $$ComposePagesTableCreateCompanionBuilder =
+    ComposePagesCompanion Function({
+      Value<int> draftId,
+      required DateTime openedAt,
+    });
+typedef $$ComposePagesTableUpdateCompanionBuilder =
+    ComposePagesCompanion Function({
+      Value<int> draftId,
+      Value<DateTime> openedAt,
+    });
+
+class $$ComposePagesTableFilterComposer
+    extends Composer<_$AppDatabase, $ComposePagesTable> {
+  $$ComposePagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get draftId => $composableBuilder(
+    column: $table.draftId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get openedAt => $composableBuilder(
+    column: $table.openedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ComposePagesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ComposePagesTable> {
+  $$ComposePagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get draftId => $composableBuilder(
+    column: $table.draftId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get openedAt => $composableBuilder(
+    column: $table.openedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ComposePagesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ComposePagesTable> {
+  $$ComposePagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get draftId =>
+      $composableBuilder(column: $table.draftId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get openedAt =>
+      $composableBuilder(column: $table.openedAt, builder: (column) => column);
+}
+
+class $$ComposePagesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ComposePagesTable,
+          DbComposePage,
+          $$ComposePagesTableFilterComposer,
+          $$ComposePagesTableOrderingComposer,
+          $$ComposePagesTableAnnotationComposer,
+          $$ComposePagesTableCreateCompanionBuilder,
+          $$ComposePagesTableUpdateCompanionBuilder,
+          (
+            DbComposePage,
+            BaseReferences<_$AppDatabase, $ComposePagesTable, DbComposePage>,
+          ),
+          DbComposePage,
+          PrefetchHooks Function()
+        > {
+  $$ComposePagesTableTableManager(_$AppDatabase db, $ComposePagesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ComposePagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ComposePagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ComposePagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> draftId = const Value.absent(),
+                Value<DateTime> openedAt = const Value.absent(),
+              }) => ComposePagesCompanion(draftId: draftId, openedAt: openedAt),
+          createCompanionCallback:
+              ({
+                Value<int> draftId = const Value.absent(),
+                required DateTime openedAt,
+              }) => ComposePagesCompanion.insert(
+                draftId: draftId,
+                openedAt: openedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ComposePagesTable, DbComposePage>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $ComposePagesTable,
+                    DbComposePage
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ComposePagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ComposePagesTable,
+      DbComposePage,
+      $$ComposePagesTableFilterComposer,
+      $$ComposePagesTableOrderingComposer,
+      $$ComposePagesTableAnnotationComposer,
+      $$ComposePagesTableCreateCompanionBuilder,
+      $$ComposePagesTableUpdateCompanionBuilder,
+      (
+        DbComposePage,
+        BaseReferences<_$AppDatabase, $ComposePagesTable, DbComposePage>,
+      ),
+      DbComposePage,
+      PrefetchHooks Function()
+    >;
 typedef $$RemindersTableCreateCompanionBuilder =
     RemindersCompanion Function({
       Value<int> id,
@@ -9689,6 +10040,8 @@ class $AppDatabaseManager {
       $$RecipientsHistoryTableTableManager(_db, _db.recipientsHistory);
   $$DraftsTableTableManager get drafts =>
       $$DraftsTableTableManager(_db, _db.drafts);
+  $$ComposePagesTableTableManager get composePages =>
+      $$ComposePagesTableTableManager(_db, _db.composePages);
   $$RemindersTableTableManager get reminders =>
       $$RemindersTableTableManager(_db, _db.reminders);
 }

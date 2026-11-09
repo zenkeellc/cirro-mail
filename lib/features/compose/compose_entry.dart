@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,7 @@ import '../../data/models/mail_row.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/mail_providers.dart';
+import '../../providers/profile_providers.dart';
 import 'compose_draft.dart';
 import 'compose_screen.dart';
 
@@ -27,6 +30,7 @@ class ComposeEntry extends ConsumerStatefulWidget {
     this.draftId = 0,
     this.emailId = 0,
     this.initial,
+    this.from,
   });
 
   final ComposeMode mode;
@@ -45,6 +49,12 @@ class ComposeEntry extends ConsumerStatefulWidget {
 
   final MailRow? initial;
 
+  /// 进撰写页之前所在的地址（地址栏上的 `from` 参数）。
+  ///
+  /// 撰写页现在是「邮件」那一支的根路由，没有可 pop 的栈 —— 关闭时靠它
+  /// 回到用户来的地方；没有就回草稿箱（见 `ComposeScreen._leave`）。
+  final String? from;
+
   @override
   ConsumerState<ComposeEntry> createState() => _ComposeEntryState();
 }
@@ -54,6 +64,16 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
   bool _resolving = false;
   bool _failed = false;
 
+  /// 这一页真实的草稿行 id。
+  ///
+  /// 新建（路由没带 `draft`）时在 [initState] 之后补建一行再放行 —— 见
+  /// [_ensureDraft]。没有行就没有「邮件撰写」里那一项，也没有重启恢复。
+  int? _draftId;
+
+  /// 建行失败（本地库坏了）。**不挡住写信**：退化成「没有草稿行」的旧行为，
+  /// 至少这一封还能发出去；只是它不会出现在撰写列表里。
+  bool _draftFailed = false;
+
   MailRef get _ref =>
       MailRef(profileId: widget.profileId, emailId: widget.emailId);
 
@@ -61,6 +81,12 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
   void initState() {
     super.initState();
     _row = widget.initial;
+    _draftId = widget.draftId > 0 ? widget.draftId : null;
+    if (widget.draftId > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _markOpen());
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _ensureDraft());
+    }
     // 回复/转发才有正文要补；「写邮件」直接进。
     final needsFull = widget.emailId > 0 &&
         widget.profileId.isNotEmpty &&
@@ -68,6 +94,50 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
     if (needsFull) {
       _resolving = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _ensureFull());
+    }
+  }
+
+  /// 已有的草稿：把它标成「打开中」（深链 / 从草稿箱点开都会走到）。
+  Future<void> _markOpen() async {
+    final id = _draftId;
+    if (id == null || id <= 0) return;
+    try {
+      await ref.read(databaseProvider).localDao.markComposeOpen(id);
+    } catch (_) {
+      // 标记写不进去不挡写作：草稿内容照样能存，只是这一页不会出现在
+      // 左侧「邮件撰写」里（重启后也不会恢复）。
+    }
+  }
+
+  /// 新建的撰写页：先插一条草稿行 + 打开标记，再放行页面。
+  ///
+  /// 为什么不是「第一次保存时才建」：左侧「邮件撰写」要在用户点「写邮件」的
+  /// **那一刻**就有这一项 —— 否则切走之后这一页在列表里不存在，回不去；
+  /// 「重启恢复」也就无从谈起。空行由关闭时那句「什么都没写就删掉」收尾。
+  Future<void> _ensureDraft() async {
+    final profileId = widget.profileId.isNotEmpty
+        ? widget.profileId
+        : (ref.read(currentProfileIdProvider) ?? '');
+    if (profileId.isEmpty) {
+      // 一台实例都没有时写邮件入口本来就不出现（`ComposeAction`）；走到这里
+      // 说明是从深链/旧地址进来的 —— 退回「无草稿行」的旧行为。
+      if (mounted) setState(() => _draftFailed = true);
+      return;
+    }
+    try {
+      final dao = ref.read(databaseProvider).localDao;
+      final id = await dao.createComposeDraft(profileId: profileId);
+      if (!mounted) {
+        // 建行这段时间里用户已经把页面关掉了：没人会写这一行，留着只会让
+        // 下次启动在「邮件撰写」里冒出一页空白的「（无主题）」。删掉。
+        // 用创建前就抓好的 dao —— 此刻 `ref` 可能已经不能用了。
+        unawaited(dao.deleteDraft(id));
+        return;
+      }
+      setState(() => _draftId = id);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _draftFailed = true);
     }
   }
 
@@ -93,7 +163,7 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
 
   @override
   Widget build(BuildContext context) {
-    if (_resolving) {
+    if (_resolving || (_draftId == null && !_draftFailed)) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_failed && _row == null) {
@@ -125,10 +195,11 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
     }
 
     return ComposeScreen(
+      from: widget.from,
       args: ComposeArgs(
         profileId: widget.profileId.isEmpty ? null : widget.profileId,
         accountId: widget.accountId,
-        draftId: widget.draftId,
+        draftId: _draftId ?? 0,
         mode: widget.mode,
         mail: _row,
       ),

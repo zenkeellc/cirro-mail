@@ -232,6 +232,11 @@
   "pushPageNotesSwitchSlotBody": "App 会自动把旧实例位上的注册退掉，不用你手动清理。",
   "pushPageDocsHint": "完整命令与故障排查见仓库里的 docs/push-setup.md。",
   "compose": "写邮件",
+  "composePages": "邮件撰写",
+  "composePagesEmpty": "没有正在编辑的邮件",
+  "composeEditing": "编辑中",
+  "sidebarExpand": "展开",
+  "sidebarCollapse": "收起",
   "composeSectionSignatures": "签名",
   "composeSignatureFor": "{email} 的签名",
   "@composeSignatureFor": {

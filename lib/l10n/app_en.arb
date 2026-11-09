@@ -232,6 +232,11 @@
   "pushPageNotesSwitchSlotBody": "The app unsubscribes from the old slot automatically — there is nothing to clean up by hand.",
   "pushPageDocsHint": "Full commands and troubleshooting are in docs/push-setup.md in the repository.",
   "compose": "Compose",
+  "composePages": "Composing",
+  "composePagesEmpty": "No pages being edited",
+  "composeEditing": "Editing",
+  "sidebarExpand": "Expand",
+  "sidebarCollapse": "Collapse",
   "composeSectionSignatures": "Signatures",
   "composeSignatureFor": "Signature for {email}",
   "@composeSignatureFor": {

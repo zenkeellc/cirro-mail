@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/db/database.dart';
 import '../../core/db/mappers.dart' show decodeAttachmentPaths;
@@ -11,10 +10,10 @@ import '../../data/models/profile.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/profile_providers.dart';
-import '../../router.dart';
 import '../mail_list/mail_panes.dart' show PaneHeader;
 import '../sync/sync_status_panel.dart';
 import 'compose_controller.dart';
+import 'compose_launcher.dart';
 import 'compose_text.dart';
 import 'html/document_codec.dart';
 
@@ -41,6 +40,9 @@ class DraftsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final drafts = ref.watch(draftsProvider(null)).value ?? const <DbDraft>[];
+    // 哪些草稿此刻正开在「邮件撰写」里 —— 行上给一个「编辑中」标记。
+    // 与左侧菜单同一个数据源，两处不会各说各的。
+    final openIds = ref.watch(openDraftIdsProvider);
     final profiles = ref.watch(profilesProvider).value ?? const <Profile>[];
 
     final list = drafts.isEmpty
@@ -66,7 +68,8 @@ class DraftsScreen extends ConsumerWidget {
               return _DraftTile(
                 draft: draft,
                 profile: _profileOf(profiles, draft.profileId),
-                onOpen: () => _open(context, draft),
+                editing: openIds.contains(draft.id),
+                onOpen: () => _open(context, ref, draft),
                 onDelete: () => _delete(context, ref, draft),
               );
             },
@@ -120,9 +123,24 @@ class DraftsScreen extends ConsumerWidget {
   /// 不做「先删掉再新建」：那样中途反悔就没有退路了。写邮件页自己会在
   /// 原来的那一行上更新（`LocalDao.saveDraft(id:)`），一条草稿自始至终
   /// 只占一行。
-  void _open(BuildContext context, DbDraft draft) {
-    context.push(
-      Routes.composeOf(profileId: draft.profileId, draftId: draft.id),
+  Future<void> _open(
+    BuildContext context,
+    WidgetRef ref,
+    DbDraft draft,
+  ) async {
+    // 先补「打开中」标记：撰写页的数据源是 `drafts ⋈ compose_pages`，
+    // 少了这一步，用户从草稿箱点开一页、左侧「邮件撰写」里却看不到它。
+    // 写失败不挡打开 —— 内容照样能编辑/发送，只是这一页不进撰写列表。
+    try {
+      await ref.read(databaseProvider).localDao.markComposeOpen(draft.id);
+    } catch (_) {
+      // 同上：不挡。
+    }
+    if (!context.mounted) return;
+    openComposeDraft(
+      context,
+      draftId: draft.id,
+      profileId: draft.profileId,
     );
   }
 
@@ -189,12 +207,17 @@ class _DraftTile extends StatelessWidget {
   const _DraftTile({
     required this.draft,
     required this.profile,
+    required this.editing,
     required this.onOpen,
     required this.onDelete,
   });
 
   final DbDraft draft;
   final Profile? profile;
+
+  /// 这条草稿此刻正开在「邮件撰写」里。
+  final bool editing;
+
   final VoidCallback onOpen;
   final VoidCallback onDelete;
 
@@ -247,6 +270,14 @@ class _DraftTile extends StatelessWidget {
                   '$attachmentCount',
                   style: theme.textTheme.labelSmall
                       ?.copyWith(color: theme.colorScheme.outline),
+                ),
+              ],
+              if (editing) ...<Widget>[
+                const SizedBox(width: 8),
+                Text(
+                  l10n.composeEditing,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: theme.colorScheme.primary),
                 ),
               ],
               if (profile != null) ...<Widget>[

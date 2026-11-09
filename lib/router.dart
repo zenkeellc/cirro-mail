@@ -138,14 +138,23 @@ class Routes {
   /// 是一个**合法值**，见 [parseAccountId]。
   static const String accountParam = 'account';
 
-  /// 写邮件页。**顶层路由，不在 shell 分支里**。
+  /// 写邮件页。**「邮件」那一支里的一个根路由**（与 [drafts]、[outbox]
+  /// 同级），不是顶层路由。
   ///
-  /// 刻意不做成第五个底部导航项：`StatefulShellRoute` 用 indexedStack 保活
-  /// 每个分支，写邮件页一旦成为分支，它就**永远不会被回收** ——
-  /// `composeControllerProvider` 的自动释放（连同「离开即存草稿」这套兜底）
-  /// 全都失效，用户切走再切回来会看到一份躺在内存里的旧状态。
-  /// 而且分支根部没有可 pop 的东西，返回语义也就没了。
+  /// 2026-11 从顶层搬进来，原因就是这一版的需求：撰写页要和外层的一级导航
+  /// 一起存在（只占内容区、不再整窗盖住 App），并且要能被左侧「邮件撰写」
+  /// 分类像切页面一样切来切去。分支根路由没有可 pop 的栈 —— 进入用 `go`、
+  /// 离开用 `go(回去的地方)`，回去的地址记录在 [fromParam] 里。
+  ///
+  /// 它**不是**一个新的 shell 分支：分支的页面是 indexedStack 保活的，
+  /// 而撰写页需要「离开就销毁、内容靠草稿行恢复」（见 `ComposeDraftSaver`）。
   static const String compose = '/compose';
+
+  /// 进撰写页之前所在的地址。关页时 `go` 回这里；缺省（深链进来）回草稿箱。
+  ///
+  /// 写进地址而不是放 provider：切到另一封撰写页、或刷新/重启后再关页，
+  /// 它都得还在；页面也不需要知道「我是不是被 push 上来的」。
+  static const String fromParam = 'from';
 
   /// 同步状态页。**同样是顶层路由**，理由与 [compose] 一模一样：
   /// 它是「看一眼就走」的页面，而它下面挂着几条常驻的 drift 订阅
@@ -357,22 +366,6 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
           builder: (context, state) =>
               LoginScreen(profileId: state.pathParameters['profileId']!),
         ),
-        // 写邮件是顶层 push，不挂在任何 shell 分支下（见 `Routes.compose`
-        // 的注释：挂进分支就永远不会被回收，草稿落盘的兜底也失效）。
-        GoRoute(
-          path: Routes.compose,
-          name: 'compose',
-          builder: (context, state) {
-            final query = state.uri.queryParameters;
-            return ComposeEntry(
-              mode: composeModeOf(query['mode']),
-              profileId: query['profile'] ?? '',
-              accountId: int.tryParse(query['account'] ?? '') ?? 0,
-              draftId: int.tryParse(query['draft'] ?? '') ?? 0,
-              emailId: int.tryParse(query['email'] ?? '') ?? 0,
-            );
-          },
-        ),
         // 同步状态页。与写邮件页同样是顶层 push（见 `Routes.syncStatus`）。
         GoRoute(
           path: Routes.syncStatus,
@@ -479,6 +472,32 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>(
                   path: Routes.drafts,
                   name: 'drafts',
                   builder: (context, state) => const DraftsScreen(),
+                ),
+                // 写邮件页。**这一支里的根路由**（见 [Routes.compose]）：
+                // 左侧一级导航一直在，它只占内容区。
+                //
+                // `key` 里带 `draft`：从左侧子项切到另一封撰写页时地址只有
+                // 查询参数变化，go_router 的 pageKey（路由模式串）不变 ——
+                // 不换 key 的话 State 会被复用，编辑器里还停着上一封的正文。
+                // key 一变，State 重建、从草稿行重新装载。
+                GoRoute(
+                  path: Routes.compose,
+                  name: 'compose',
+                  builder: (context, state) {
+                    final query = state.uri.queryParameters;
+                    return ComposeEntry(
+                      key: ValueKey<String>(
+                        'compose:${query['draft'] ?? ''}:'
+                        '${query['email'] ?? ''}:${query['mode'] ?? ''}',
+                      ),
+                      mode: composeModeOf(query['mode']),
+                      profileId: query['profile'] ?? '',
+                      accountId: int.tryParse(query['account'] ?? '') ?? 0,
+                      draftId: int.tryParse(query['draft'] ?? '') ?? 0,
+                      emailId: int.tryParse(query['email'] ?? '') ?? 0,
+                      from: query[Routes.fromParam],
+                    );
+                  },
                 ),
                 // 附件缓存。
                 GoRoute(
@@ -890,3 +909,16 @@ class _NotFoundScreen extends StatelessWidget {
     );
   }
 }
+
+/// 地址是不是撰写页（`/compose`）。
+///
+/// 撰写页现在是「邮件」那一支里的根路由：窄屏要据它收起底部导航（那一页
+/// 是整屏的）、外壳要据它不挂写邮件 FAB（页内已经有发送按钮）。
+bool isComposeRoute(Uri uri) => uri.path == Routes.compose;
+
+/// 撰写页地址里选中的草稿 id（没有 / 不是数 → 0）。
+///
+/// 左侧「邮件撰写」的子项靠它判高亮：`/compose` 这一条路径是**所有**撰写页
+/// 共用的，不带 `draft` 就分不出开的是哪一页。
+int composeDraftIdOf(Uri uri) =>
+    int.tryParse(uri.queryParameters['draft'] ?? '') ?? 0;
