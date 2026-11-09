@@ -251,7 +251,18 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   /// saveDraftOnExit] 不返回 id），第二次的 `existing` 仍是 null，`saveDraft`
   /// 便又 `insert` 了一行。探针实测：空白页打字后点 `X`，库里两条一模一样的
   /// 记录（`V drafts=[1, 2]`）。系统返回手势那条路只跑一次回调，所以不受影响。
+  ///
+  /// 这个闸只管「程序化 pop 引起的二次回调」；「别让 [_leave] 重入」是另一件
+  /// 事，由独立的 [_leaving] 守（见那里的注释）。
   bool _leavingFromButton = false;
+
+  /// 「已经在走 [_leave] 了」——一次性入口闸，置上就不再复位（页面只剩退场
+  /// 这一条路，没有任何「留在这里继续写」的分支）。
+  ///
+  /// 与 [_leavingFromButton] 分开记，不是重复：那个表示「程序化 pop 马上要来
+  /// 一次回调，别把同一封信再存一遍」，在 [_goBack] 之前那一刻才成立；这个
+  /// 表示「[_leave] 已经进来过」，从入口起就成立。
+  bool _leaving = false;
 
   /// 上一次看过的 notify 序号，用来去重 SnackBar。
   String? _lastNotice;
@@ -482,7 +493,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     final closeButton = IconButton(
       icon: const Icon(Icons.close),
       tooltip: l10n.close_,
-      onPressed: state.busy ? null : () => _leave(context),
+      // `_leaving` 是「已经点过一次、正在退场」：禁用图标只是顺手（这一帧
+      // 不一定重建），真正的闸在 [_leave] 入口。
+      onPressed: state.busy || _leaving ? null : () => _leave(context),
     );
     final actions = _headerActions(
       context,
@@ -1253,14 +1266,26 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   /// 离开页面：先把草稿存下来（空信不存，见控制器），再 `go` 回进入前的地址。
   ///
-  /// 这是 `X` 按钮的出口。**系统返回手势不经过这里**，它走 `build()` 里那层
-  /// `PopScope` —— 两处都要 `_flushBody()` + `saveDraftOnExit()`，只是手势那
-  /// 一路不需要 `pop`（Navigator 已经在弹了）。
+  /// 生产（GoRouter 宿主）里三种出口都汇到这里：`X` 按钮与 `Esc` 直接调，
+  /// 系统返回手势经 `build()` 里那层 `PopScope` 的 `onPopInvokedWithResult`
+  /// 调（`canPop` 为 false，回调里再走本方法）。所以「落盘 → 通知扩展 → 退场」
+  /// 只有这一份实现。
+  ///
+  /// 例外是**非 GoRouter 宿主**（widget 测试直接装 `ComposeScreen`，或将来被
+  /// 别的容器嵌入）：`canPop` 放行，Navigator 自己弹页，`PopScope` 那一支只补
+  /// 一次 `_flushBody()` + `saveDraftOnExit()` —— 它不经过这里，也就**不通知
+  /// 扩展**（[`_notifyComposeClosed`] 只从本方法调）。
   ///
   /// 发送成功之后再 pop 也不会被重新存一遍空草稿：`_finishCompose` 已经把
   /// `dirty` 置回 false，而 [ComposeController.saveDraftOnExit] 第一行就是
   /// `if (!state.dirty) return`。
   Future<void> _leave(BuildContext context) async {
+    // **入口闸**：要把「重入」挡在第一次 await 之前。下面的落盘/删行/通知
+    // 每一段都要 await，那期间页面还在、`X` 与 `Esc` 都还点得动；第二次进来
+    // 会把同一封信再通知一遍。`draftUid` 相同的那两次扩展还能按 uid 幂等，
+    // `draftUid: null`（空信）的两次扩展侧没有任何键可去重。见 [_leaving]。
+    if (_leaving) return;
+    _leaving = true;
     // 先落一次盘再走：防抖没烧完就退出的话，`state.body` 还是旧的，
     // 用户最后那几秒打的字会既进不了草稿、也没有别的地方留着（见 [_flushBody]）。
     _flushBody();
@@ -1299,7 +1324,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   /// 兜住）。
   Future<void> _notifyComposeClosed() async {
     final state = _state;
-    final draftId = state.draftId;
+    // `state.draftId` 通常已经由 `_restoreDraft` / 保存器回写过了。极窄的情况下
+    // （保存器拿 `args.draftId` 建/写了行，`state` 还没回写）它仍是 null，而
+    // 这一页打开的那条草稿行是真实存在的 —— 用 `args.draftId` 兜底，别把一条
+    // 真草稿当成空信（`draftUid: null`）通知出去。
+    final draftId =
+        state.draftId ?? (widget.args.draftId > 0 ? widget.args.draftId : null);
     String? draftUid;
     if (draftId != null && draftId > 0) {
       try {

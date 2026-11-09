@@ -4,10 +4,10 @@
 //
 // 1. **有内容的信**：退出时最先落盘（保存器 flush），然后才通知扩展；扩展拿到的
 //    `draftUid` 必须**就是库里那条草稿**的 `uid`（v6 的跨设备稳定身份），不是
-//    随便一个新 UUID —— 否则 pro 的云草稿同步会把「这封信」对应到不存在（或
+//    随便一个新 UUID —— 否则扩展那一侧的同步层会把「这封信」对应到不存在（或
 //    另一封）云端记录上；
 // 2. **空信**：什么都没写就退出，库里不该落行，扩展也该被通知一次
-//    （`draftUid == null`）—— 不能因为「没草稿」就静默跳过，pro 需要这个事件
+//    （`draftUid == null`）—— 不能因为「没草稿」就静默跳过，扩展需要这个事件
 //    去取消/清掉临时状态；
 // 3. **单个扩展抛错不拖累其它扩展**：钩子是退出路径上的旁支，一个坏实现不能
 //    让另一个同步引擎收不到事件，更不能把页面卡住。
@@ -165,6 +165,40 @@ void main() {
       await db.select(db.drafts).get(),
       isEmpty,
       reason: '空信不该在草稿箱里留一条空记录',
+    );
+    await db.close();
+  });
+
+  testWidgets('生产分支的空信：草稿行先建后删，扩展仍收到 draftUid == null',
+      (tester) async {
+    final recorder = _Recorder('com.example.recorder');
+    AppExtensionRegistry.instance.registerAll(<AppExtension>[recorder]);
+
+    // 有草稿行的那条路（`args.draftId > 0`）：页面一进来就挂了保存器，
+    // 退出走 `flush` + `closeComposePage`，而不是控制器的 `saveDraftOnExit`。
+    final draftDb = AppDatabase.forTesting(NativeDatabase.memory());
+    final draftId = await draftDb.localDao.createComposeDraft(profileId: 'p1');
+    final db = await pumpCompose(
+      tester,
+      database: draftDb,
+      args: ComposeArgs(draftId: draftId),
+    );
+
+    // 一个字都不输入，直接退出：保存器没东西可写，`closeComposePage` 把这条
+    // 由 `createComposeDraft` 建出来的空行删掉。
+    await tapCloseAndSettle(tester);
+
+    expect(recorder.calls, hasLength(1), reason: '空信也要通知一次');
+    expect(recorder.calls.single.profileId, 'p1');
+    expect(
+      recorder.calls.single.draftUid,
+      isNull,
+      reason: '行已被删掉，扩展拿到的必须是 null（不能把已删行的 uid 发出去）',
+    );
+    expect(
+      await db.localDao.findDraft(draftId),
+      isNull,
+      reason: '空信的生产分支同样不留行',
     );
     await db.close();
   });

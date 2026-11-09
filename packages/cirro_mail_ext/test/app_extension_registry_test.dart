@@ -22,6 +22,8 @@ class _FakeExt extends AppExtension {
     this.autoLoad = false,
     this.rewrite,
     this.name,
+    this.closed,
+    this.closeFail = false,
   });
 
   @override
@@ -60,6 +62,12 @@ class _FakeExt extends AppExtension {
 
   /// 声明的产品名（`AppExtension.appDisplayName`），null = 不参与命名。
   final String? name;
+
+  /// 记录 `onComposeClosed` 收到的参数（null = 不关心，不记账）。
+  final List<({String profileId, String? draftUid})>? closed;
+
+  /// `onComposeClosed` 抛不抛 —— 用来验注册表吞异常、不影响后面的扩展。
+  final bool closeFail;
 
   @override
   String? get appDisplayName => name;
@@ -108,6 +116,15 @@ class _FakeExt extends AppExtension {
 
   @override
   Future<void> onBootstrap() async => onBoot?.call();
+
+  @override
+  Future<void> onComposeClosed({
+    required String profileId,
+    String? draftUid,
+  }) async {
+    closed?.add((profileId: profileId, draftUid: draftUid));
+    if (closeFail) throw StateError('$id 退出通知失败');
+  }
 
   @override
   Future<void> prepareNotificationPolicy() async {
@@ -503,6 +520,30 @@ void main() {
 
     test('空注册表时 prepare 是安全的空操作', () async {
       await AppExtensionRegistry.instance.prepareNotificationPolicies();
+    });
+  });
+
+  group('写信页退出通知', () {
+    /// 公开版（没装任何扩展）就是这个样子：调用方是 `unawaited`，
+    /// 这里必须是「立刻完成且什么都不做」，不能抛、也不能挂住。
+    test('空注册表：安全的空操作（公开版行为）', () async {
+      await AppExtensionRegistry.instance
+          .notifyComposeClosed(profileId: 'p1');
+    });
+
+    /// 退出路径上的钩子：前一个扩展炸了，后一个**仍要收到**，而且异常不能
+    /// 漏给调用方（核心那边是 `unawaited`，漏出去就是一条未捕获的 zone 错误）。
+    test('第一个扩展抛错：第二个仍收到同一事件，且不冒泡', () async {
+      final closed = <({String profileId, String? draftUid})>[];
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('boom', closeFail: true),
+        _FakeExt('ok', closed: closed),
+      ]);
+      await AppExtensionRegistry.instance
+          .notifyComposeClosed(profileId: 'p1', draftUid: 'uid-1');
+      expect(closed, hasLength(1), reason: '前一个抛错不能挡掉后一个');
+      expect(closed.single.profileId, 'p1');
+      expect(closed.single.draftUid, 'uid-1', reason: '参数要原样传下去');
     });
   });
 
