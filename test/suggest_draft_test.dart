@@ -8,6 +8,10 @@ import 'package:mail_app/features/suggest/suggest_draft.dart';
 const String _ossBase = 'https://oss.example.com';
 const String _wrote = '写道：';
 
+/// 中文界面的主题模板（`app_zh.arb` 的 `replySubject`）。真实调用点传的是
+/// `l10n.replySubject`，这里是纯函数测试。
+String zhReplySubject(String subject) => '答复 $subject';
+
 /// 一封别人发来的信：有完整正文（`replyQuote` 要它拼引用块）。
 MailRow original() => MailRow(
       emailId: 7,
@@ -137,9 +141,10 @@ void main() {
         aiText: '好的。\n',
         ossBase: _ossBase,
         wroteLabel: _wrote,
+        replySubjectTemplate: zhReplySubject,
       );
       expect(draft.recipientsJson, '["alice@example.com"]');
-      expect(draft.subject, 'Re: 上线时间');
+      expect(draft.subject, '答复 上线时间');
       expect(draft.accountEmail, 'me@example.com');
       expect(draft.content, replyBody('好的。\n'));
     });
@@ -157,8 +162,11 @@ void main() {
         aiText: '',
         ossBase: _ossBase,
         wroteLabel: _wrote,
+        replySubjectTemplate: zhReplySubject,
       );
-      expect(draft.subject, 'Re：上线时间');
+      // 「Re：上线时间」被归一化成「上线时间」再套模板 —— 已经有前缀的不重复
+      // 加，也**不保留**别人的前缀：中文界面里统一成「答复 xxx」。
+      expect(draft.subject, '答复 上线时间');
     });
 
     test('原信没有发件人地址时收件人是空串（不猜）', () {
@@ -173,6 +181,7 @@ void main() {
         aiText: '',
         ossBase: _ossBase,
         wroteLabel: _wrote,
+        replySubjectTemplate: zhReplySubject,
       );
       expect(draft.recipientsJson, '');
     });

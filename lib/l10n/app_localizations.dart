@@ -2024,6 +2024,12 @@ abstract class AppLocalizations {
   /// **'wrote:'**
   String get wrote;
 
+  /// compose: the subject of a reply. {subject} is the original subject with any existing reply prefix stripped
+  ///
+  /// In en, this message translates to:
+  /// **'Re: {subject}'**
+  String replySubject(String subject);
+
   /// No description provided for @composeFrom.
   ///
   /// In en, this message translates to:

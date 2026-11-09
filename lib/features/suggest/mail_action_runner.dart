@@ -65,6 +65,7 @@ abstract final class MailActionRunner {
             aiText: choice.replyDraft ?? '',
             ossBase: ref.read(ossBaseProvider(row.profileId)),
             wroteLabel: l10n.wrote,
+            replySubjectTemplate: l10n.replySubject,
           ),
         );
 

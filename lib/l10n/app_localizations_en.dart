@@ -1115,6 +1115,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get wrote => 'wrote:';
 
   @override
+  String replySubject(String subject) {
+    return 'Re: $subject';
+  }
+
+  @override
   String get composeFrom => 'From';
 
   @override

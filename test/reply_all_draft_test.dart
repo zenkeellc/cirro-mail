@@ -145,6 +145,7 @@ void main() {
           ComposeArgs(mode: mode, mail: mail),
           ossBase: '',
           wroteLabel: '写道：',
+          replySubjectTemplate: (subject) => '答复 $subject',
         );
 
     final reply = draftOf(ComposeMode.reply);

@@ -40,11 +40,15 @@ class SuggestDraft {
   final String accountEmail;
 
   /// 答复。
+  ///
+  /// [replySubjectTemplate] 是本地化的主题模板（「答复 {subject}」/「Re: {subject}」）
+  /// —— 与 [ComposeDraftFactory.of] 同一个口径，工厂不碰 `AppLocalizations`。
   static SuggestDraft reply({
     required MailRow row,
     required String aiText,
     required String ossBase,
     required String wroteLabel,
+    required String Function(String subject) replySubjectTemplate,
   }) =>
       SuggestDraft(
         // 收件人是**原发件人**；没有地址就留空（不猜一个出来）。
@@ -52,9 +56,12 @@ class SuggestDraft {
             encodeRecipientAddresses(row.sendEmail.trim().isEmpty
                 ? const <String>[]
                 : <String>[row.sendEmail.trim()]),
-        // 前缀规则复用 `ComposeDraftFactory` 那一份 —— 四种「已经是回复」的
-        // 写法在那边已经定死了，这里抄一遍迟早分叉。
-        subject: ComposeDraftFactory.replySubject(row.subject),
+        // 前缀规则复用 `ComposeDraftFactory` 那一份 —— 「已经是回复」的写法
+        // 与本地化模板在那边已经定死了，这里抄一遍迟早分叉。
+        subject: ComposeDraftFactory.replySubject(
+          row.subject,
+          replySubjectTemplate,
+        ),
         content: replyBody(
           row: row,
           aiText: aiText,

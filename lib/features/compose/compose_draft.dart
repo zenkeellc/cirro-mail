@@ -23,6 +23,7 @@ class ComposeArgs {
     this.draftId = 0,
     this.mode = ComposeMode.blank,
     this.mail,
+    this.freshPage = false,
   });
 
   /// 发信走哪个实例。null = 当前实例。
@@ -48,6 +49,16 @@ class ComposeArgs {
   /// 回复/转发的原邮件。
   final MailRow? mail;
 
+  /// 这一页的草稿行是不是**本页刚建出来的空行**（地址里没有 `draft`，
+  /// 由 `ComposeEntry._ensureDraft` 建好后把 id 递进来）。
+  ///
+  /// 控制器据此**跳过读回草稿**：那一行此刻是空的，读回来只会用空值盖掉
+  /// `ComposeController.build()` 里已经算好的预填（主题 / 收件人 / 引用块），
+  /// 还会把它标成「用户写过」—— 于是「一个字没敲就关掉 → 删掉这一行」的
+  /// 规矩也跟着破。AI 建议那条路（先存草稿再带 `draft=` 打开）不置它，
+  /// 照旧走恢复。
+  final bool freshPage;
+
   /// 实际使用的实例：显式指定的优先，否则是原邮件所属的实例。
   String resolveProfileId(String? current) =>
       profileId ?? _mailProfileId ?? current ?? '';
@@ -68,6 +79,7 @@ class ComposeArgs {
       other.accountId == accountId &&
       other.draftId == draftId &&
       other.mode == mode &&
+      other.freshPage == freshPage &&
       other.mail?.profileId == mail?.profileId &&
       other.mail?.emailId == mail?.emailId;
 
@@ -77,6 +89,7 @@ class ComposeArgs {
         accountId,
         draftId,
         mode,
+        freshPage,
         mail?.profileId,
         mail?.emailId,
       );
@@ -84,7 +97,8 @@ class ComposeArgs {
   @override
   String toString() =>
       'ComposeArgs(${profileId ?? 'current'}, box#$accountId, draft#$draftId, '
-      '${mode.name}, #${mail?.emailId ?? 0})';
+      '${mode.name}, #${mail?.emailId ?? 0}'
+      '${freshPage ? ', fresh' : ''})';
 }
 
 /// 打开写邮件页时要预填的东西。
@@ -124,10 +138,15 @@ abstract final class ComposeDraftFactory {
 
   /// [wroteLabel] 由调用方本地化（`wrote:` / `写道：`）——
   /// 这句在两种语言里语序不同，硬拼会出错。
+  ///
+  /// [replySubjectTemplate] 同理，是**本地化的主题模板**（`答复 {subject}` /
+  /// `Re: {subject}`）：中文与英文不只是前缀不同、语序也不同，而拼主题这件
+  /// 事必须和 [replySubject] 的归一化放在一起才幂等。
   static ComposeDraft of(
     ComposeArgs args, {
     required String ossBase,
     required String wroteLabel,
+    required String Function(String subject) replySubjectTemplate,
   }) {
     final mail = args.mail;
     if (mail == null) return const ComposeDraft.blank();
@@ -143,7 +162,7 @@ abstract final class ComposeDraftFactory {
           recipients: mail.sendEmail.isEmpty
               ? const <String>[]
               : <String>[mail.sendEmail],
-          subject: replySubject(mail.subject),
+          subject: replySubject(mail.subject, replySubjectTemplate),
           quoted: ComposeHtml.replyQuote(
             mail,
             ossBase: ossBase,
@@ -157,7 +176,7 @@ abstract final class ComposeDraftFactory {
         // 「只有收件人不一样」这件事一眼可见。
         return ComposeDraft(
           recipients: replyAllRecipients(mail),
-          subject: replySubject(mail.subject),
+          subject: replySubject(mail.subject, replySubjectTemplate),
           quoted: ComposeHtml.replyQuote(
             mail,
             ossBase: ossBase,
@@ -176,13 +195,67 @@ abstract final class ComposeDraftFactory {
     }
   }
 
-  /// 回复主题的前缀判定。与 Web 端同样的四种写法都算「已经是回复」。
-  static String replySubject(String original) {
-    final subject = original.trim();
-    if (subject.isEmpty) return 'Re: ';
-    const prefixes = <String>['Re:', 'Re：', '回复：', '回复:'];
-    return prefixes.any(subject.startsWith) ? subject : 'Re: $subject';
+  /// 回复 / 全部回复的主题：先剥掉已有前缀，再套**调用方给的本地化模板**。
+  ///
+  /// 为什么模板由调用方传（而不是在这里读 `AppLocalizations`）：这个类是一组
+  /// 纯函数，`test/compose_reply_draft_test.dart` 与 `test/suggest_draft_test.dart`
+  /// 都脱离 widget 直接调它；而「答复 xxx」与「Re: xxx」不只是前缀不同、
+  /// 语序也不同，在这里硬拼两份字符串迟早分叉（与 [of] 的 `wroteLabel` 同一个
+  /// 模式）。
+  ///
+  /// **必须幂等**：对同一封已经「答复 主题」的信再点一次答复，结果仍是
+  /// 「答复 主题」。所以不是「已经是回复就原样返回」，而是**剥掉见过的所有
+  /// 前缀再套一次模板** —— 否则我们的模板与 Web 端那套混用时，前缀会一层层
+  /// 滚下去（「答复 Re: 答复：主题」）。
+  ///
+  /// 空主题也套模板：中文得到 `答复 `、英文得到 `Re: ` —— 与改造前
+  /// （`Re: `）一致。
+  static String replySubject(
+    String original,
+    String Function(String subject) template,
+  ) {
+    var subject = original.trim();
+    var stripped = true;
+    while (stripped && subject.isNotEmpty) {
+      stripped = false;
+      final lower = subject.toLowerCase();
+      for (final prefix in _replyPrefixes) {
+        final lowerPrefix = prefix.toLowerCase();
+        if (lower.startsWith(lowerPrefix)) {
+          subject = subject.substring(prefix.length).trim();
+          stripped = true;
+          break;
+        }
+        // 模板作用在**空主题**上留下的、只剩前缀本身的形态（`答复` / `Re:`）
+        // 也算「已经是回复」：不认它的话，空主题答复两次会变成「答复 答复 」。
+        if (lower == lowerPrefix.trim()) {
+          subject = '';
+          stripped = true;
+          break;
+        }
+      }
+    }
+    return template(subject);
   }
+
+  /// 认作「已经是回复」的前缀。
+  ///
+  /// 前四个是 Web 端（`mail-vue` 的 `openReply`）那套写法；最后三个是我们
+  /// 自己的主题模板（`app_zh.arb` 的 `replySubject`）—— 漏掉它们的话，中文
+  /// 界面里每答复一次就会再叠一层前缀。[`答复 `] 带空格，避免把
+  /// 「答复期限是周五」这种正常主题截掉；带冒号的两种不受这个限制。
+  ///
+  /// 与语言无关：用户可能收到别人用别的语言写的「Re:」，也可能在中英之间
+  /// 切换界面 —— 前缀表取并集，不在运行时按 locale 分。
+  static const List<String> _replyPrefixes = <String>[
+    'Re:',
+    'Re：',
+    '回复：',
+    '回复:',
+    '答复：',
+    '答复:',
+    '答复 ',
+  ];
 
   /// 「全部回复」预填的收件人。
   ///

@@ -1047,6 +1047,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get wrote => '写道：';
 
   @override
+  String replySubject(String subject) {
+    return '答复 $subject';
+  }
+
+  @override
   String get composeFrom => '发件邮箱';
 
   @override

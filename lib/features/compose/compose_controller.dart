@@ -322,6 +322,9 @@ class ComposeController extends Notifier<ComposeState> {
       args,
       ossBase: ref.read(ossBaseProvider(_entryProfileId)),
       wroteLabel: l10n.wrote,
+      // 主题模板也由本地化决定（「答复 xxx」/「Re: xxx」）—— 与 `wroteLabel`
+      // 同一个模式，工厂本身是纯函数，不碰 `AppLocalizations`。
+      replySubjectTemplate: l10n.replySubject,
     );
 
     // 草稿与配额都要读库/打网络，推迟到帧后 —— `build()` 里不能 await。
@@ -416,6 +419,16 @@ class ComposeController extends Notifier<ComposeState> {
   Future<void> _restoreDraft() async {
     if (_restored || _entryProfileId.isEmpty || !args.hasDraftHint) return;
     _restored = true;
+    // 这一页的草稿行是**本页刚建出来的空行**（见 `ComposeEntry._ensureDraft`）：
+    // 它的内容就是 `build()` 里那份预填，没有可「恢复」的东西。真去读它反而
+    // 有害：空行的空主题/空正文会盖掉预填，还会把 `dirty` 置真 —— 于是
+    // 「回复页一个字没敲就关掉 → 删掉这一行、草稿箱不留空记录」这条契约就破了。
+    //
+    // 只把 id 记进 state：`closeComposePage` / 保存器都要靠它决定删行还是留行。
+    if (args.freshPage) {
+      state = state.copyWith(draftId: args.draftId);
+      return;
+    }
     try {
       final draft = await ref
           .read(databaseProvider)
@@ -1316,4 +1329,34 @@ final openDraftIdsProvider = Provider<Set<int>>(
   (ref) =>
       <int>{for (final draft in ref.watch(openDraftsProvider).value ?? const <DbDraft>[]) draft.id},
   name: 'openDraftIds',
+);
+
+/// 此刻**正在编辑**的那条草稿行 id（0 = 没有）。
+///
+/// 为什么不从地址推：地址里带 `draft=` 的页面才推得出来，而回复 / 转发页
+/// （以及「写邮件」）的地址里**没有** `draft` —— 草稿行是进页之后才建的。
+/// 更不能为了高亮去改地址：`router.dart` 里 compose 路由的 page key 含
+/// `draft`，地址一变页面 State 就整个重建（编辑器里写了一半的字会丢）。
+/// 所以由页面自己把「我在编辑哪一行」发布出来，左侧「邮件撰写」据此判高亮。
+class ActiveComposeDraft extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// 页面拿到自己的行 id 之后调用。
+  void publish(int draftId) {
+    if (draftId <= 0 || state == draftId) return;
+    state = draftId;
+  }
+
+  /// 页面销毁时调用。**只清自己那一条**：切页时新页面可能已经先发布了它的
+  /// id，无条件置 0 会把刚亮起来的那一项灭掉。
+  void clear(int draftId) {
+    if (state == draftId) state = 0;
+  }
+}
+
+final activeComposeDraftIdProvider =
+    NotifierProvider<ActiveComposeDraft, int>(
+  ActiveComposeDraft.new,
+  name: 'activeComposeDraftId',
 );

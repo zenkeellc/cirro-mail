@@ -33,7 +33,17 @@ class SidebarComposeGroup extends ConsumerWidget {
     final drafts =
         ref.watch(openDraftsProvider).value ?? const <DbDraft>[];
     final expanded = ref.watch(sidebarComposeExpandedProvider);
-    final selectedId = isComposeRoute(uri) ? composeDraftIdOf(uri) : 0;
+    // 高亮哪一条：地址里带了 `draft` 就听地址的（从草稿箱/侧栏点进来的那
+    // 几页）；没带的（回复、转发、写新邮件）听页面自己发布的那个 id ——
+    // 那些页面的草稿行是进页之后才建出来的，地址里没有可读的东西。
+    //
+    // 不能为了高亮去给地址补 `draft=`：`router.dart` 里 compose 路由的
+    // page key 含 `draft`，地址一变页面 State 就重建（写了一半的字会丢）。
+    final routeDraftId = composeDraftIdOf(uri);
+    final activeDraftId = ref.watch(activeComposeDraftIdProvider);
+    final selectedId = routeDraftId > 0
+        ? routeDraftId
+        : (isComposeRoute(uri) ? activeDraftId : 0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

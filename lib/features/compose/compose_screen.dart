@@ -100,7 +100,12 @@ import 'table/table_html_codec.dart';
 /// 防抖回写的一份副本（见 [_pushBody]）。反过来（每次 state 变化都重建一份
 /// Document）会把光标、选区和撤销栈一起丢掉。
 class ComposeScreen extends ConsumerStatefulWidget {
-  const ComposeScreen({super.key, this.args = const ComposeArgs(), this.from});
+  const ComposeScreen({
+    super.key,
+    this.args = const ComposeArgs(),
+    this.from,
+    this.freshPage = false,
+  });
 
   final ComposeArgs args;
 
@@ -108,6 +113,19 @@ class ComposeScreen extends ConsumerStatefulWidget {
   ///
   /// null / 空 = 回草稿箱：深链直接进撰写页、或那个「来的地方」已经不在了。
   final String? from;
+
+  /// 这一页的草稿行是**刚建出来的空行**（地址里没有 `draft`，由
+  /// `ComposeEntry._ensureDraft` 建好再把 id 递进来）。
+  ///
+  /// 只影响首帧那次「预填即落盘」（见 [_maybeMarkBaseline]）：正常打开已有
+  /// 草稿时，首帧的 state 要么是空的、要么马上被读回的草稿盖掉，拍基线就行；
+  /// 而新页的预填（主题/收件人/引用块/发件邮箱）**只在这里**，不落盘的话
+  /// 库里的草稿行一直是空的，左侧「邮件撰写」里那一项在用户敲字之前永远
+  /// 显示「（无主题）」。
+  ///
+  /// `ComposeArgs.freshPage` 是同一个事实的另一个出口（控制器用它决定跳过
+  /// 读草稿），`ComposeEntry` 两处一起置；这里取或，避免两处漏一个。
+  final bool freshPage;
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
@@ -282,6 +300,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   /// 这一页有没有可自动保存的草稿行。
   bool get _saverEnabled => widget.args.draftId > 0;
+
+  /// 草稿行是不是本页刚建出来的空行（见 [ComposeScreen.freshPage]）。
+  bool get _freshPage => widget.freshPage || widget.args.freshPage;
 
   /// 最近一次拍给保存器的快照：判「内容变没变」用，也是 dispose 收尾的底稿
   /// （收件人/附件/发件邮箱这些字段在 dispose 时已不能从 controller 读）。
@@ -754,12 +775,28 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     );
   }
 
-  String _title(AppLocalizations l10n, ComposeState state) => switch (state.args.mode) {
-        ComposeMode.reply => l10n.reply,
-        ComposeMode.replyAll => l10n.replyAll,
-        ComposeMode.forward => l10n.forward,
-        ComposeMode.blank => l10n.compose,
-      };
+  /// 顶栏标题。
+  ///
+  /// 答复页显示**主题本身**（「答复 xxx」）：顶栏是用户判断「我在回哪一封」
+  /// 的地方，一个静止的「回复」两个字给不了这个信息；主题又是现成的（就在下
+  /// 一行），再拼一遍「回复 主题」只会重复。主题为空（没拿到原邮件、或用户
+  /// 自己清空了）时退回「回复 / 全部回复」。
+  ///
+  /// 转发与写信不动：转发的主题原样等于原信，标题写「转发」才说明这是一次
+  /// 转发；写信页没有主题可显示。
+  String _title(AppLocalizations l10n, ComposeState state) {
+    final subject = state.subject.trim();
+    switch (state.args.mode) {
+      case ComposeMode.reply:
+        return subject.isEmpty ? l10n.reply : subject;
+      case ComposeMode.replyAll:
+        return subject.isEmpty ? l10n.replyAll : subject;
+      case ComposeMode.forward:
+        return l10n.forward;
+      case ComposeMode.blank:
+        return l10n.compose;
+    }
+  }
 
   /// 顶栏右侧的动作组（窄屏 `AppBar.actions` 与宽屏 `PaneHeader.actions`
   /// 共用同一份 —— 两处各写一遍，迟早有一边多一颗/少一颗）。
@@ -1207,13 +1244,39 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   /// 第一帧的 state 还是空壳，拿它当基线的话，草稿一到就会被当成「内容变了」
   /// 写回库 —— 正是要避免的那次写放大。判据是 `bodyRevision` 被控制在
   /// `_restoreDraft` 里 +1 了（见 `ComposeState.bodyRevision` 的注释）。
+  ///
+  /// **新页（[_freshPage]）例外，而且要反过来做**：那一行是本页刚插的空行、
+  /// 内容就是这份预填，没有「草稿到了会盖上来」这一刻（控制器也不会去读它，
+  /// 见 `ComposeController._restoreDraft`），所以要**立刻把预填落盘**。
+  /// 不落的话，用户在敲第一个字之前，左侧「邮件撰写」里那一项永远是
+  /// 「（无主题）」—— 只有切走/关页触发的保存才会刷新它。
+  ///
+  /// 落盘**不动 `dirty`**：预填是「我们」放进去的，不是用户写的。于是
+  /// 「回复页一个字没敲就关掉 → `closeComposePage` 删掉这一行」的契约不变
+  /// （见 `ComposeController.closeComposePage`）。
   void _maybeMarkBaseline(ComposeState state) {
     if (_baselineMarked || !_saverEnabled) return;
-    if (widget.args.hasDraftHint && state.bodyRevision == 0) return;
+    // 新页没有「等读草稿回来」这一步（它的 state 从第一帧起就是终态）。
+    if (!_freshPage && widget.args.hasDraftHint && state.bodyRevision == 0) {
+      return;
+    }
     _baselineMarked = true;
     final snapshot = _snapshotOf(state);
     _lastSnapshot = snapshot;
-    _saver.markSaved(snapshot);
+    if (!_freshPage || snapshot.isEmpty) {
+      // 已有草稿：只记基线，不写库。新页但预填是空的（「写邮件」）：
+      // 库里那行本来就是空的，也没有可写的。
+      _saver.markSaved(snapshot);
+      return;
+    }
+    // `build()` 期间不能写库（也不能 await）：排到帧后落一次盘。
+    // `_baselineMarked` 已经置上，所以只会落这一次；之后的变化仍走
+    // [_scheduleAutosave]，两边写的是同一份 `_lastSnapshot` 基准，不会打架。
+    _saver.schedule(snapshot);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_saver.flush());
+    });
   }
 
   void _scheduleAutosave(ComposeState state) {

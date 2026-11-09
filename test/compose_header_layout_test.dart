@@ -17,8 +17,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/core/db/database.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/core/storage/token_store.dart';
+import 'package:mail_app/data/models/mail_row.dart';
 import 'package:mail_app/data/models/mailbox_account.dart';
 import 'package:mail_app/data/models/profile.dart';
+import 'package:mail_app/features/compose/compose_draft.dart';
 import 'package:mail_app/features/compose/compose_field_row.dart';
 import 'package:mail_app/features/compose/compose_screen.dart';
 import 'package:mail_app/features/compose/editor/compose_toolbar.dart';
@@ -54,6 +56,19 @@ const MailboxAccount _boxA9 = MailboxAccount(
   name: '财务',
 );
 
+/// 被答复/转发的原信（回复预填要用它的主题与正文）。
+MailRow replyMail() => MailRow(
+      emailId: 7,
+      profileId: 'p1',
+      accountId: 3,
+      subject: '主题',
+      sendEmail: 'alice@example.com',
+      name: 'Alice',
+      mailboxEmail: 'me@a.example',
+      content: '<p>第一段</p>',
+      createTime: DateTime.utc(2026, 10, 10, 12),
+    );
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -64,7 +79,10 @@ void main() {
 
   /// 挂真的 `ComposeScreen`（表头三行是真的组件，单挂 `SenderField` 量不到
   /// 「三行之间对不对得齐」这件事本身）。
-  Future<void> pumpCompose(WidgetTester tester) async {
+  Future<void> pumpCompose(
+    WidgetTester tester, {
+    ComposeArgs args = const ComposeArgs(),
+  }) async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final prefs = PrefsStore(await SharedPreferences.getInstance());
@@ -95,7 +113,7 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           locale: const Locale('zh'),
-          home: const ComposeScreen(),
+          home: ComposeScreen(args: args),
         ),
       ),
     );
@@ -298,6 +316,56 @@ void main() {
     await tester.pump();
     final field = tester.widget<TextField>(f.subjectInput);
     expect(field.focusNode?.hasFocus, isTrue);
+  });
+
+  testWidgets('答复页顶栏标题 = 主题（「答复 xxx」），不是静止的「回复」',
+      (tester) async {
+    await pumpCompose(
+      tester,
+      args: ComposeArgs(mode: ComposeMode.reply, mail: replyMail()),
+    );
+
+    final header = find.byType(PaneHeader);
+    expect(header, findsOneWidget, reason: '800 宽走的是宽屏顶栏');
+    expect(
+      find.descendant(of: header, matching: find.text('答复 主题')),
+      findsOneWidget,
+      reason: '顶栏要回答「我在回哪一封」—— 显示主题本身，而不是「回复」两个字',
+    );
+    final l10n = AppLocalizations.of(tester.element(find.byType(ComposeScreen)));
+    expect(
+      find.descendant(of: header, matching: find.text(l10n.reply)),
+      findsNothing,
+    );
+
+    // 标题读的就是 `state.subject`：用户改主题要跟着变。
+    await tester.enterText(
+      find.byKey(const ValueKey('compose-subject')),
+      '答复 会议改期',
+    );
+    await tester.pump();
+    expect(
+      find.descendant(of: header, matching: find.text('答复 会议改期')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('转发页顶栏标题仍是「转发」：主题原样，标题不该跟着变', (tester) async {
+    await pumpCompose(
+      tester,
+      args: ComposeArgs(mode: ComposeMode.forward, mail: replyMail()),
+    );
+
+    final header = find.byType(PaneHeader);
+    expect(
+      find.descendant(of: header, matching: find.text('转发')),
+      findsOneWidget,
+      reason: '转发的主题就是原信主题，标题写「转发」才说明这是一次转发',
+    );
+    expect(
+      find.descendant(of: header, matching: find.text('主题')),
+      findsNothing,
+    );
   });
 
   testWidgets('800 宽：发送按钮带文字（不窄屏时形状不变）', (tester) async {

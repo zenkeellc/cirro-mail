@@ -41,7 +41,7 @@ void main() {
 
   /// `openDraftsProvider` 的替身：数据源已按「最后编辑时间倒序」排好
   /// （`watchOpenDrafts` 的 `ORDER BY` 由 DAO 用例钉住）。
-  Future<GoRouter> pump(
+  Future<(GoRouter, ProviderContainer)> pump(
     WidgetTester tester,
     List<DbDraft> drafts,
   ) async {
@@ -51,31 +51,55 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final prefs = PrefsStore(await SharedPreferences.getInstance());
 
+    final container = ProviderContainer.test(
+      overrides: [
+        prefsStoreProvider.overrideWithValue(prefs),
+        openDraftsProvider.overrideWith(
+          (ref) => Stream<List<DbDraft>>.value(drafts),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    // 侧栏挂在外壳（`ShellRoute`）里、而不是每个页面自己装一份：正式 App
+    // 里它**跨页常驻**，高亮/计数才是「切页面时不变」的。顺带让「切到撰写页
+    // 之后侧栏还在」这件事在用例里成立。
     final router = GoRouter(
       initialLocation: '/mail/p1',
       routes: <RouteBase>[
-        GoRoute(
-          path: '/mail/:profileId',
-          builder: (context, state) =>
-              Scaffold(body: SidebarComposeGroup(uri: state.uri)),
-        ),
-        GoRoute(
-          path: '/compose',
-          builder: (context, state) =>
-              Scaffold(body: Text('compose:${state.uri}')),
+        ShellRoute(
+          builder: (context, state, child) => Scaffold(
+            body: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SizedBox(
+                  width: 240,
+                  child: SidebarComposeGroup(uri: state.uri),
+                ),
+                Expanded(child: child),
+              ],
+            ),
+          ),
+          routes: <RouteBase>[
+            GoRoute(
+              path: '/mail/:profileId',
+              builder: (context, state) =>
+                  const Scaffold(body: Text('mail-page')),
+            ),
+            GoRoute(
+              path: '/compose',
+              builder: (context, state) =>
+                  Scaffold(body: Text('compose:${state.uri}')),
+            ),
+          ],
         ),
       ],
     );
     addTearDown(router.dispose);
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          prefsStoreProvider.overrideWithValue(prefs),
-          openDraftsProvider.overrideWith(
-            (ref) => Stream<List<DbDraft>>.value(drafts),
-          ),
-        ],
+      UncontrolledProviderScope(
+        container: container,
         child: MaterialApp.router(
           routerConfig: router,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -85,8 +109,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    return router;
+    return (router, container);
   }
+
+  /// 子项的「高亮」= 字重 `w600`（见 `_ComposePageRow` 的 `selected`）。
+  FontWeight? itemWeight(WidgetTester tester, String text) =>
+      tester.widget<Text>(find.text(text)).style?.fontWeight;
 
   testWidgets('默认展开：父项 + 全部打开中的页面，顺序与数据源一致', (tester) async {
     await pump(tester, <DbDraft>[
@@ -149,5 +177,59 @@ void main() {
   testWidgets('主题为空的页面显示「（无主题）」', (tester) async {
     await pump(tester, <DbDraft>[draft(id: 1, subject: '  ')]);
     expect(find.text('（无主题）'), findsOneWidget);
+  });
+
+  group('高亮跟随当前编辑页', () {
+    testWidgets('地址里没有 draft（回复/转发/新邮件）：用页面发布的活动 id', (tester) async {
+      final (router, container) = await pump(tester, <DbDraft>[
+        draft(id: 7, subject: '答复 主题'),
+        draft(id: 9, subject: '另一封'),
+      ]);
+
+      // 页面在「建好草稿行」之后发布（见 `ComposeEntry._ensureDraft`）；
+      // 这里直接模拟那一刻。地址里没有 `draft`，侧栏从地址上推不出来。
+      container.read(activeComposeDraftIdProvider.notifier).publish(7);
+      router.go('/compose?profile=p1&mode=reply');
+      await tester.pumpAndSettle();
+
+      expect(itemWeight(tester, '答复 主题'), FontWeight.w600,
+          reason: '正在编辑的这一项要高亮');
+      expect(itemWeight(tester, '另一封'), FontWeight.w400);
+    });
+
+    testWidgets('地址里带了 draft：以地址为准，活动 id 不抢', (tester) async {
+      final (router, container) = await pump(tester, <DbDraft>[
+        draft(id: 7, subject: '答复 主题'),
+        draft(id: 9, subject: '另一封'),
+      ]);
+
+      container.read(activeComposeDraftIdProvider.notifier).publish(9);
+      router.go('/compose?draft=7');
+      await tester.pumpAndSettle();
+
+      expect(itemWeight(tester, '答复 主题'), FontWeight.w600);
+      expect(itemWeight(tester, '另一封'), FontWeight.w400,
+          reason: '地址里有 draft 时只有那一项高亮');
+    });
+
+    test('clear 只清自己那一条：切页时旧页面不能灭掉新页面', () {
+      final container = ProviderContainer.test();
+      addTearDown(container.dispose);
+      final active = container.read(activeComposeDraftIdProvider.notifier);
+
+      active.publish(7);
+      expect(container.read(activeComposeDraftIdProvider), 7);
+
+      // 旧页面（7）先销毁、新页面（9）已经发布 —— 旧页面必须假装没看见。
+      active.publish(9);
+      active.clear(7);
+      expect(container.read(activeComposeDraftIdProvider), 9);
+
+      active.clear(9);
+      expect(container.read(activeComposeDraftIdProvider), 0);
+      // 0 / 负数不是合法行 id，忽略（建行失败时页面可能拿到 0）。
+      active.publish(0);
+      expect(container.read(activeComposeDraftIdProvider), 0);
+    });
   });
 }

@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/mail_providers.dart';
 import '../../providers/profile_providers.dart';
+import 'compose_controller.dart';
 import 'compose_draft.dart';
 import 'compose_screen.dart';
 
@@ -74,12 +75,22 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
   /// 至少这一封还能发出去；只是它不会出现在撰写列表里。
   bool _draftFailed = false;
 
+  /// 左侧「邮件撰写」高亮用的「当前编辑的是哪一行」。
+  ///
+  /// 在 [initState] 里就抓住 notifier（而不是在 [dispose] 里 `ref.read`）：
+  /// Riverpod 3 的 `ref` 依赖 `BuildContext`，元素 unmount 之后（`State.dispose`
+  /// 正是那时）再读会抛 `Using "ref" when a widget is about to or has been
+  /// unmounted is unsafe`。notifier 本身与页面生命周期无关，抓住它才能在
+  /// `dispose` 里清掉自己发布的那一条。
+  late final ActiveComposeDraft _activeDraft;
+
   MailRef get _ref =>
       MailRef(profileId: widget.profileId, emailId: widget.emailId);
 
   @override
   void initState() {
     super.initState();
+    _activeDraft = ref.read(activeComposeDraftIdProvider.notifier);
     _row = widget.initial;
     _draftId = widget.draftId > 0 ? widget.draftId : null;
     if (widget.draftId > 0) {
@@ -101,6 +112,9 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
   Future<void> _markOpen() async {
     final id = _draftId;
     if (id == null || id <= 0) return;
+    // 这一页就是「此刻正在编辑的那一行」—— 与写不写得进打开标记无关，
+    // 所以先发布（左侧高亮不该因为一次本地库写失败就消失）。
+    _activeDraft.publish(id);
     try {
       await ref.read(databaseProvider).localDao.markComposeOpen(id);
     } catch (_) {
@@ -135,6 +149,9 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
         return;
       }
       setState(() => _draftId = id);
+      // 行建好了，页面正式成为「正在编辑的这一页」：左侧「邮件撰写」里
+      // 刚出现的那一项要立刻亮起来（地址里没有 draft，侧栏推不出来）。
+      _activeDraft.publish(id);
     } catch (_) {
       if (!mounted) return;
       setState(() => _draftFailed = true);
@@ -159,6 +176,29 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
         _failed = true;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    final id = _draftId;
+    if (id != null && id > 0) {
+      // **不能在 dispose 里直接改 provider**：此时 widget 树正在拆，Riverpod 会
+      // 抛 `Tried to modify a provider while the widget tree was building`。
+      // 排到这一帧收尾之后再清。
+      //
+      // 只清**自己那一条**：切到另一封撰写页时，新页面可能已经先把它自己的
+      // id 发布出来了，无条件置 0 会把刚亮起来的那一项灭掉。
+      final active = _activeDraft;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          active.clear(id);
+        } catch (_) {
+          // 整棵树/容器已经没了（退出 App、测试收尾）：一个纯 UI 状态没清掉
+          // 没有任何后果，不该在这里抛。
+        }
+      });
+    }
+    super.dispose();
   }
 
   @override
@@ -196,12 +236,17 @@ class _ComposeEntryState extends ConsumerState<ComposeEntry> {
 
     return ComposeScreen(
       from: widget.from,
+      // 本页的草稿行是「刚建出来的空行」：预填只在控制器内存里，首帧要把它
+      // 落一次盘（见 `ComposeScreen._maybeMarkBaseline`），并且不要去读回
+      // 那一行空草稿（见 `ComposeController._restoreDraft`）。
+      freshPage: widget.draftId <= 0,
       args: ComposeArgs(
         profileId: widget.profileId.isEmpty ? null : widget.profileId,
         accountId: widget.accountId,
         draftId: _draftId ?? 0,
         mode: widget.mode,
         mail: _row,
+        freshPage: widget.draftId <= 0,
       ),
     );
   }

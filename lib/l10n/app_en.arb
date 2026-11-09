@@ -598,6 +598,15 @@
   "reply": "Reply",
   "forward": "Forward",
   "wrote": "wrote:",
+  "replySubject": "Re: {subject}",
+  "@replySubject": {
+    "description": "compose: the subject of a reply. {subject} is the original subject with any existing reply prefix stripped",
+    "placeholders": {
+      "subject": {
+        "type": "String"
+      }
+    }
+  },
   "composeFrom": "From",
   "composeSenderSearch": "Search sender",
   "composeSenderNoMatch": "No matching mailbox",

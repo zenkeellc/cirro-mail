@@ -2,6 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/data/models/mail_row.dart';
 import 'package:mail_app/features/compose/compose_draft.dart';
 
+/// 真实调用点从 `l10n.replySubject` 取（`app_zh.arb` 的 `replySubject`）；
+/// 这里是纯函数测试，不装 widget，直接用同一份模板的字面量。
+String zhReplySubject(String subject) => '答复 $subject';
+
 void main() {
   // `ComposeArgs` 的构造函数是 `const`，但 `mail:` 传的是 `_row()` 的返回值
   // （内含 `DateTime.parse`）—— 整个表达式不是常量，所以这里**不能**写
@@ -13,9 +17,10 @@ void main() {
       args,
       ossBase: '',
       wroteLabel: '写道：',
+      replySubjectTemplate: zhReplySubject,
     );
     expect(draft.recipients, <String>['alice@example.com']);
-    expect(draft.subject, 'Re: 主题');
+    expect(draft.subject, '答复 主题');
     // 引用块现在在 `quoted` 里，而它最终会变成**正文的初值**。
     expect(draft.quoted, contains('写道：'));
     expect(draft.quoted.trimLeft().startsWith('['), isTrue);
@@ -28,6 +33,7 @@ void main() {
       const ComposeArgs(),
       ossBase: '',
       wroteLabel: '写道：',
+      replySubjectTemplate: zhReplySubject,
     );
     // `ComposeDraft.quoted` 为空串时，页面用 `DocumentCodec.empty()` 兜底；
     // 这里只断言「预填没东西」。
@@ -40,6 +46,7 @@ void main() {
       ComposeArgs(mode: ComposeMode.forward, mail: _row()),
       ossBase: '',
       wroteLabel: '写道：',
+      replySubjectTemplate: zhReplySubject,
     );
     expect(draft.subject, '主题');
     expect(draft.recipients, isEmpty);

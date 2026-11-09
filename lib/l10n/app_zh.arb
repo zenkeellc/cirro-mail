@@ -598,6 +598,15 @@
   "reply": "回复",
   "forward": "转发",
   "wrote": "写道：",
+  "replySubject": "答复 {subject}",
+  "@replySubject": {
+    "description": "compose: the subject of a reply. {subject} is the original subject with any existing reply prefix stripped",
+    "placeholders": {
+      "subject": {
+        "type": "String"
+      }
+    }
+  },
   "composeFrom": "发件邮箱",
   "composeSenderSearch": "搜索发件邮箱",
   "composeSenderNoMatch": "没有匹配的邮箱",
