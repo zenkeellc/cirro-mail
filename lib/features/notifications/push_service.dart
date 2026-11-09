@@ -781,13 +781,16 @@ class PushService {
   /// 一个 `instanceId`，但两个 profile 指向同一台服务器时它们共用同一个位 ——
   /// 分开登记会把同一批邮箱重复上报。
   ///
-  /// ## 绑定未就绪时**跳过**这一轮
+  /// ## 托管推送下绑定未就绪时**跳过**这一轮
   ///
   /// `/register` 在中转端是 UPSERT：不带 license 的一次登记会把这台设备的
   /// `license_id` 覆盖成 null（= 从云草稿的跨设备路由里被摘掉），而请求本身
-  /// 回 200，失败完全不可见。所以「装了扩展、却这一轮读不到绑定」时不发这
-  /// 一轮（见函数里的守卫）：保留中转端既有绑定，等下一轮再登记。公开版没有
-  /// 扩展，照旧登记，行为逐字不变。
+  /// 回 200，失败完全不可见。所以**正在用托管推送**（注册表这一轮给出了
+  /// [ManagedPushConfig]）却读不到绑定时，不发这一轮（见函数里的守卫）：
+  /// 保留中转端既有绑定，等下一轮再登记。
+  ///
+  /// 没有托管配置时（公开版、或者商业版用户自填中转地址）null 不说明任何
+  /// 事：照旧登记、请求体不带 license 字段 —— 与加这条接缝之前逐字相同。
   Future<PushSyncResult> syncAll({String reason = ''}) async {
     await refreshManagedConfig();
     if (!available) return const PushSyncResult(ok: false, message: '这个平台用不了系统推送');
@@ -800,15 +803,17 @@ class PushService {
     // 邮箱带的都该是同一份身份，而且钩子契约要求它只查内存、必须快。
     final binding = AppExtensionRegistry.instance.pushLicenseBinding;
 
-    // **绑定未就绪时不要发这一轮登记。** 装了扩展就说明这条接缝有人要用；
-    // 此时读不到绑定，多半是实现还没解好（典型：启动时 `onBootstrap` 里的
-    // 取回还没回来），而不是「这台设备没有订阅」。照常发的话，一次不带
-    // license 的 UPSERT 会把中转端既有的 `license_id` 冲掉 —— 用户从此收不到
-    // 云草稿的跨设备事件，且没有任何报错。宁可不发，等下一轮。
+    // **托管推送下绑定未就绪时不要发这一轮登记。** 正在用托管推送就说明这条
+    // 接缝有人要用；此时读不到绑定，多半是实现还没解好（典型：启动时
+    // `onBootstrap` 里的取回还没回来），而不是「这台设备没有订阅」。照常发
+    // 的话，一次不带 license 的 UPSERT 会把中转端既有的 `license_id` 冲掉
+    // —— 用户从此收不到云草稿的跨设备事件，且没有任何报错。宁可不发，等下一轮。
     //
-    // 公开版（空注册表）没有东西会给出绑定，照旧登记 —— 行为与加这条接缝
-    // 之前逐字相同。
-    if (AppExtensionRegistry.instance.extensions.isNotEmpty && binding == null) {
+    // 判据只在**有托管配置**时成立：公开版（空注册表）与「商业版但用户自填
+    // 中转地址、没开托管推送」这两类用户本来就没有 license，null 是常态 ——
+    // 拿它当「未就绪」会让整轮登记永远不发生。那些情况照旧登记，请求体不带
+    // license 字段即可。
+    if (managedConfig != null && binding == null) {
       debugPrint('推送：设备绑定未就绪，跳过本轮登记（保留中转端既有绑定）');
       return const PushSyncResult(ok: false, message: '设备绑定未就绪，已跳过本轮登记');
     }

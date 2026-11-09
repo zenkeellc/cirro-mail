@@ -114,12 +114,38 @@ class _BindingExt extends AppExtension {
       (licenseId: licenseId, licenseDeviceId: licenseDeviceId);
 }
 
-/// 装了扩展、但这一轮拿不到绑定（= 「实现还没就绪」）。
+/// 装了扩展、但这一轮拿不到绑定，而且**没有托管推送配置** —— 这正是
+/// 「商业版里没订阅、用自填中转地址」的那类用户：绑定为 null 是常态，
+/// 不能因此跳过登记。
 class _NotReadyExt extends AppExtension {
   const _NotReadyExt();
 
   @override
   String get id => 'not-ready-ext';
+}
+
+/// 一份托管推送配置（三条值都齐）。测试里用它代表「核心确实在用托管推送」。
+const ManagedPushConfig _managed = ManagedPushConfig(
+  relayUrl: 'https://push.example.com',
+  instanceId: 'inst-1',
+  deviceCode: 'device-code-1',
+);
+
+/// 给出托管配置的扩展；[binding] 可选（null = 托管已配置但绑定还没就绪）。
+class _ManagedExt extends AppExtension {
+  const _ManagedExt({this.binding});
+
+  final ({String licenseId, String licenseDeviceId})? binding;
+
+  @override
+  String get id => 'managed-ext';
+
+  @override
+  Future<ManagedPushConfig?> managedPushConfig() async => _managed;
+
+  @override
+  ({String licenseId, String licenseDeviceId})? get pushLicenseBinding =>
+      binding;
 }
 
 Profile _profile() => const Profile(
@@ -251,11 +277,19 @@ void main() {
   });
 
   /// 上面那组只验到 `RelayClient.register` 的入参透传；这一组补的是
-  /// **`syncAll → RelayClient.register` 那一跳** —— 注册表读到的绑定有没有
-  /// 被真的送进请求体，以及「绑定未就绪时不许发」那道守卫。之前这一跳没有
-  /// 任何测试（FCM token 在 `flutter test` 里拿不到，循环根本走不到）。
+  /// **`syncAll → RelayClient.register` 那一跳** —— 注册表读到的托管配置 /
+  /// 绑定有没有被真的用进请求体。守卫有三个分支，全部在这里钉住：
+  ///
+  /// - 有扩展 + **没有托管配置** + 绑定 null → 照常登记（自填中转地址 /
+  ///   公开版：null 是常态，不能让它把整轮登记永远挡掉）；
+  /// - 有扩展 + **有托管配置** + 绑定 null → 跳过（不带 license 的 UPSERT
+  ///   会冲掉中转端既有绑定）；
+  /// - 有托管配置 + 绑定非空 → 透传两个字段。
+  ///
+  /// 之前这一跳没有任何测试（FCM token 在 `flutter test` 里拿不到，循环根本
+  /// 走不到）。
   group('syncAll → /register 的 license 绑定透传', () {
-    test('扩展给了绑定：body 原样带两个字段，既有六项一个不少', () async {
+    test('扩展给了绑定（无托管配置）：body 原样带两个字段，既有六项一个不少', () async {
       AppExtensionRegistry.instance.registerAll(<AppExtension>[
         const _BindingExt(licenseId: 'CM-1234', licenseDeviceId: 'dev-1'),
       ]);
@@ -277,12 +311,33 @@ void main() {
       expect(request.body['token'], 'fcm-token-1');
     });
 
-    /// 装了扩展却读不到绑定 → **一条都不发**。`/register` 是 UPSERT，不带
-    /// license 的那次会把中转端既有的 `license_id` 冲掉，本机于是从云草稿的
-    /// 跨设备路由里被摘掉，而且请求回 200、没有任何错误可见。
-    test('装了扩展但绑定为 null：跳过本轮登记，不碰中转端', () async {
+    /// 商业版里**没订阅、用自填中转地址**的用户：pro 扩展永远注册，但托管
+    /// 配置为 null、绑定也为 null。这时跳过登记会让公开版的自由推送向导在
+    /// 商业版里彻底失效 —— 必须照旧登记，只是不带 license 字段。
+    test('有扩展但没有托管配置且绑定为 null：照常登记，body 不带 license 字段',
+        () async {
       AppExtensionRegistry.instance.registerAll(<AppExtension>[
         const _NotReadyExt(),
+      ]);
+      final adapter = _RecordingAdapter();
+      final push = await _push(adapter);
+
+      final result = await push.syncAll();
+
+      expect(result.ok, isTrue, reason: result.message);
+      final body = adapter.requests.single.body;
+      expect(body['instanceId'], 'inst-1');
+      expect(body['mailboxEmail'], 'a@b.com');
+      expect(body.containsKey('licenseId'), isFalse);
+      expect(body.containsKey('licenseDeviceId'), isFalse);
+    });
+
+    /// 正在用托管推送却读不到绑定 → **一条都不发**。`/register` 是 UPSERT，
+    /// 不带 license 的那次会把中转端既有的 `license_id` 冲掉，本机于是从云
+    /// 草稿的跨设备路由里被摘掉，而且请求回 200、没有任何错误可见。
+    test('有托管配置但绑定为 null：跳过本轮登记，不碰中转端', () async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        const _ManagedExt(),
       ]);
       final adapter = _RecordingAdapter();
       final push = await _push(adapter);
@@ -292,6 +347,25 @@ void main() {
       expect(result.ok, isFalse);
       expect(result.message, contains('跳过本轮登记'));
       expect(adapter.requests, isEmpty, reason: '不带 license 的 UPSERT 会清掉既有绑定');
+    });
+
+    test('有托管配置且绑定非空：body 原样带两个字段', () async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        const _ManagedExt(
+          binding: (licenseId: 'CM-1234', licenseDeviceId: 'dev-1'),
+        ),
+      ]);
+      final adapter = _RecordingAdapter();
+      final push = await _push(adapter);
+
+      final result = await push.syncAll();
+
+      expect(result.ok, isTrue, reason: result.message);
+      final request = adapter.requests.single;
+      expect(request.path, '/register');
+      expect(request.body['licenseId'], 'CM-1234');
+      expect(request.body['licenseDeviceId'], 'dev-1');
+      expect(request.body['mailboxEmail'], 'a@b.com');
     });
 
     /// 公开版（空注册表）没有任何东西会给出绑定 —— 必须**照旧登记**，
