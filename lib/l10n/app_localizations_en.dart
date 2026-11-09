@@ -1587,6 +1587,63 @@ class AppLocalizationsEn extends AppLocalizations {
       'Text from your message is sent to the provider you configure. The key is stored in this device\'s keychain and never leaves it except in requests to that provider.';
 
   @override
+  String get aiSourceSection => 'AI source';
+
+  @override
+  String get aiSourceDesc => 'Both work — switch anytime.';
+
+  @override
+  String get aiSourceChannelHint =>
+      'Provided by the channel — no address or key to fill in';
+
+  @override
+  String get aiSourceByokTitle => 'Your own AI';
+
+  @override
+  String get aiSourceByokHint => 'Use your own API address, model and key';
+
+  @override
+  String aiSourceByokReady(String model) {
+    return 'Configured · $model';
+  }
+
+  @override
+  String get aiSourceByokIncomplete => 'Not fully configured';
+
+  @override
+  String get aiSourceInUse => 'In use';
+
+  @override
+  String get aiByokSection => 'Your own AI';
+
+  @override
+  String get aiByokActiveHint => 'The settings below are in use right now.';
+
+  @override
+  String get aiByokInactiveHint =>
+      'These are your own AI settings — pick “Your own AI” above to use them.';
+
+  @override
+  String get aiByokNotReadyHint =>
+      'Your own AI is not set up yet — fill in the API address and key first.';
+
+  @override
+  String get aiSourceSwitchToByok => 'Use my own AI';
+
+  @override
+  String get aiSourceSwitchToChannel => 'Use the channel';
+
+  @override
+  String get aiSourceSwitchedToByok => 'Switched to your own AI';
+
+  @override
+  String get aiSourceSwitchedToChannel => 'Switched to the channel';
+
+  @override
+  String get aiChannelUnusableHint =>
+      'The channel is unavailable right now — you can use your own AI instead.';
+
+  @override
   String get aiProviderSection => 'Provider';
 
   @override

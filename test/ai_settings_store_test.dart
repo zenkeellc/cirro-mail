@@ -426,6 +426,81 @@ void main() {
     });
   });
 
+  group('AI 来源偏好（cm_ai_source）', () {
+    // 来源**单独一个键**、不并进 `cm_ai_settings`：`AiService` 每次调用前要
+    // **同步**读它路由，不能为此读一次钥匙串（见 `prefs_store.dart` 里
+    // `aiSourceCode` 的注释）。这一组钉住三条：缺省、往返、老配置兼容。
+
+    test('没存过 → preferredSource 与 load() 都是 managed', () async {
+      final p = await prefs();
+      final store = AiSettingsStore(prefs: p);
+      expect(p.aiSourceCode, isNull, reason: '从没选过时这个键根本不存在');
+      expect(store.preferredSource, AiSource.managed);
+      expect((await store.load()).aiSource, AiSource.managed);
+    });
+
+    test('save(byok) 之后 preferredSource 与 load() 都是 byok', () async {
+      final p = await prefs();
+      final store = AiSettingsStore(prefs: p);
+      await store.save(const AiSettings(aiSource: AiSource.byok));
+
+      expect(store.preferredSource, AiSource.byok,
+          reason: '同步读，与 load() 无关');
+      expect((await store.load()).aiSource, AiSource.byok);
+    });
+
+    test('prefs 里的键名与值：cm_ai_source = "byok"', () async {
+      final p = await prefs();
+      await AiSettingsStore(prefs: p)
+          .save(const AiSettings(aiSource: AiSource.byok));
+
+      expect(p.aiSourceCode, 'byok');
+      final raw = await SharedPreferences.getInstance();
+      expect(raw.getString('cm_ai_source'), 'byok',
+          reason: '键名是对外约定：AI 设置页与 AiService 共用同一格');
+    });
+
+    test('老配置（有 cm_ai_settings、没有 cm_ai_source）→ managed', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'cm_ai_settings': jsonEncode(<String, dynamic>{
+          'apiFormat': 'openai',
+          'model': 'gpt-4o',
+        }),
+      });
+      final store = AiSettingsStore(prefs: await prefs());
+      expect(store.preferredSource, AiSource.managed);
+      final loaded = await store.load();
+      expect(loaded.aiSource, AiSource.managed);
+      expect(loaded.model, 'gpt-4o', reason: '老设置照旧读，来源只是缺省');
+    });
+
+    test('来源不并进 cm_ai_settings 的 JSON（避免两份真相）', () async {
+      final p = await prefs();
+      await AiSettingsStore(prefs: p)
+          .save(const AiSettings(aiSource: AiSource.byok));
+
+      final json = p.aiSettingsJson!;
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      expect(map.containsKey('aiSource'), isFalse);
+      expect(map.containsKey('source'), isFalse);
+      expect(json, isNot(contains('byok')));
+      expect(json, isNot(contains('managed')));
+      // 直接看编码器也同一结论：这个类型装「来源」的概念不在 JSON 里。
+      expect(AiSettingsCodec.encode(const AiSettings(aiSource: AiSource.byok)),
+          isNot(contains('aiSource')));
+    });
+
+    test('preferredSource 不碰钥匙串（坏钥匙串也照样路由）', () async {
+      final p = await prefs();
+      final store = AiSettingsStore(prefs: p);
+      await store.save(const AiSettings(aiSource: AiSource.byok));
+      // 换成坏钥匙串：load() 会降级，但路由这一次同步读不该触发任何平台调用。
+      FlutterSecureStoragePlatform.instance = _BrokenKeychain();
+      expect(store.preferredSource, AiSource.byok);
+      expect(store.isKeychainDegraded, isFalse, reason: '同步路由不读钥匙串');
+    });
+  });
+
   group('AiUsageCounter（每日软上限）', () {
     /// 一个可以拨的钟 —— 跨天这件事不能靠真的等到明天。
     DateTime at(int day, {int hour = 10}) => DateTime(2026, 10, day, hour);

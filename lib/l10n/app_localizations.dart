@@ -2786,6 +2786,108 @@ abstract class AppLocalizations {
   /// **'Text from your message is sent to the provider you configure. The key is stored in this device\'s keychain and never leaves it except in requests to that provider.'**
   String get aiPrivacyNotice;
 
+  /// settings → AI: group title that picks where AI comes from
+  ///
+  /// In en, this message translates to:
+  /// **'AI source'**
+  String get aiSourceSection;
+
+  /// settings → AI: one line under the AI source group title
+  ///
+  /// In en, this message translates to:
+  /// **'Both work — switch anytime.'**
+  String get aiSourceDesc;
+
+  /// settings → AI: subtitle of the managed-channel source option (no commercial terms in public ARB)
+  ///
+  /// In en, this message translates to:
+  /// **'Provided by the channel — no address or key to fill in'**
+  String get aiSourceChannelHint;
+
+  /// settings → AI: title of the user-provided AI source option
+  ///
+  /// In en, this message translates to:
+  /// **'Your own AI'**
+  String get aiSourceByokTitle;
+
+  /// settings → AI: subtitle of the user-provided AI source option
+  ///
+  /// In en, this message translates to:
+  /// **'Use your own API address, model and key'**
+  String get aiSourceByokHint;
+
+  /// settings → AI: user-provided AI is configured
+  ///
+  /// In en, this message translates to:
+  /// **'Configured · {model}'**
+  String aiSourceByokReady(String model);
+
+  /// settings → AI: user-provided AI is not fully configured
+  ///
+  /// In en, this message translates to:
+  /// **'Not fully configured'**
+  String get aiSourceByokIncomplete;
+
+  /// settings → AI: small chip marking the source currently in use
+  ///
+  /// In en, this message translates to:
+  /// **'In use'**
+  String get aiSourceInUse;
+
+  /// settings → AI: section header above the user-provided AI settings
+  ///
+  /// In en, this message translates to:
+  /// **'Your own AI'**
+  String get aiByokSection;
+
+  /// settings → AI: user-provided AI settings are active
+  ///
+  /// In en, this message translates to:
+  /// **'The settings below are in use right now.'**
+  String get aiByokActiveHint;
+
+  /// settings → AI: user-provided AI settings are not active
+  ///
+  /// In en, this message translates to:
+  /// **'These are your own AI settings — pick “Your own AI” above to use them.'**
+  String get aiByokInactiveHint;
+
+  /// settings → AI: user-provided AI is selected but incomplete
+  ///
+  /// In en, this message translates to:
+  /// **'Your own AI is not set up yet — fill in the API address and key first.'**
+  String get aiByokNotReadyHint;
+
+  /// settings → AI: action button to switch to user-provided AI
+  ///
+  /// In en, this message translates to:
+  /// **'Use my own AI'**
+  String get aiSourceSwitchToByok;
+
+  /// settings → AI: action button to switch to the managed channel
+  ///
+  /// In en, this message translates to:
+  /// **'Use the channel'**
+  String get aiSourceSwitchToChannel;
+
+  /// settings → AI: snackbar after switching to user-provided AI
+  ///
+  /// In en, this message translates to:
+  /// **'Switched to your own AI'**
+  String get aiSourceSwitchedToByok;
+
+  /// settings → AI: snackbar after switching to the managed channel
+  ///
+  /// In en, this message translates to:
+  /// **'Switched to the channel'**
+  String get aiSourceSwitchedToChannel;
+
+  /// settings → AI: hint beside the button that switches to user-provided AI when the managed channel is unusable
+  ///
+  /// In en, this message translates to:
+  /// **'The channel is unavailable right now — you can use your own AI instead.'**
+  String get aiChannelUnusableHint;
+
   /// No description provided for @aiProviderSection.
   ///
   /// In en, this message translates to:

@@ -933,6 +933,79 @@
   "aiTitle": "AI",
   "aiSubtitle": "Bring your own key",
   "aiPrivacyNotice": "Text from your message is sent to the provider you configure. The key is stored in this device's keychain and never leaves it except in requests to that provider.",
+  "aiSourceSection": "AI source",
+  "@aiSourceSection": {
+    "description": "settings → AI: group title that picks where AI comes from"
+  },
+  "aiSourceDesc": "Both work — switch anytime.",
+  "@aiSourceDesc": {
+    "description": "settings → AI: one line under the AI source group title"
+  },
+  "aiSourceChannelHint": "Provided by the channel — no address or key to fill in",
+  "@aiSourceChannelHint": {
+    "description": "settings → AI: subtitle of the managed-channel source option (no commercial terms in public ARB)"
+  },
+  "aiSourceByokTitle": "Your own AI",
+  "@aiSourceByokTitle": {
+    "description": "settings → AI: title of the user-provided AI source option"
+  },
+  "aiSourceByokHint": "Use your own API address, model and key",
+  "@aiSourceByokHint": {
+    "description": "settings → AI: subtitle of the user-provided AI source option"
+  },
+  "aiSourceByokReady": "Configured · {model}",
+  "@aiSourceByokReady": {
+    "description": "settings → AI: user-provided AI is configured",
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "aiSourceByokIncomplete": "Not fully configured",
+  "@aiSourceByokIncomplete": {
+    "description": "settings → AI: user-provided AI is not fully configured"
+  },
+  "aiSourceInUse": "In use",
+  "@aiSourceInUse": {
+    "description": "settings → AI: small chip marking the source currently in use"
+  },
+  "aiByokSection": "Your own AI",
+  "@aiByokSection": {
+    "description": "settings → AI: section header above the user-provided AI settings"
+  },
+  "aiByokActiveHint": "The settings below are in use right now.",
+  "@aiByokActiveHint": {
+    "description": "settings → AI: user-provided AI settings are active"
+  },
+  "aiByokInactiveHint": "These are your own AI settings — pick “Your own AI” above to use them.",
+  "@aiByokInactiveHint": {
+    "description": "settings → AI: user-provided AI settings are not active"
+  },
+  "aiByokNotReadyHint": "Your own AI is not set up yet — fill in the API address and key first.",
+  "@aiByokNotReadyHint": {
+    "description": "settings → AI: user-provided AI is selected but incomplete"
+  },
+  "aiSourceSwitchToByok": "Use my own AI",
+  "@aiSourceSwitchToByok": {
+    "description": "settings → AI: action button to switch to user-provided AI"
+  },
+  "aiSourceSwitchToChannel": "Use the channel",
+  "@aiSourceSwitchToChannel": {
+    "description": "settings → AI: action button to switch to the managed channel"
+  },
+  "aiSourceSwitchedToByok": "Switched to your own AI",
+  "@aiSourceSwitchedToByok": {
+    "description": "settings → AI: snackbar after switching to user-provided AI"
+  },
+  "aiSourceSwitchedToChannel": "Switched to the channel",
+  "@aiSourceSwitchedToChannel": {
+    "description": "settings → AI: snackbar after switching to the managed channel"
+  },
+  "aiChannelUnusableHint": "The channel is unavailable right now — you can use your own AI instead.",
+  "@aiChannelUnusableHint": {
+    "description": "settings → AI: hint beside the button that switches to user-provided AI when the managed channel is unusable"
+  },
   "aiProviderSection": "Provider",
   "aiChannelSection": "Channel",
   "aiChannelChecking": "Checking…",

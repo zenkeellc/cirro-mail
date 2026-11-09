@@ -23,6 +23,11 @@ import '../../../providers/ai_providers.dart';
 /// Key / 三个开关 / 每日上限。分成四页的结果是「幽灵文本的开关在哪一页」都要
 /// 想一下。
 ///
+/// 近一版起这一页还要交代另一件事：**AI 从哪儿来**。托管通道（扩展提供）与
+/// 自己填的端点 + Key 是**两套并列的设置**，不是同一份配置的两个字段 —— 所以
+/// 有通道时页面顶部先给一组「AI 来源」，下面再把两套配置各自标明「算不算数」；
+/// 没有通道时「来源」是个假问题，整组不出现、版面与从前逐字相同。
+///
 /// 外壳（`AppBar` / 分类栏 / 窄屏那一页）由 `SettingsScreen` 给 —— 它在
 /// 宽屏把这一块内嵌进右栏、窄屏在一个分类页里显示。所以这里返回的是一个
 /// `ListView`，不是 `Scaffold`。
@@ -79,6 +84,14 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
   String? _modelsNotice;
   String? _testError;
   int? _testChars;
+
+  /// 通道卡最近一次报上来的状态（见 [_onChannelState]）。
+  ///
+  /// 只在注册了托管通道时才有值。它决定两条**就地换来源**的引导出不出：
+  /// 通道不可用 → 引导改用自己配的 AI；自己的 AI 没配好 → 引导先用通道。
+  /// 两条都建立在一个**异步**结论上（`AiTransport.state()` 可能是一次网络
+  /// 往返），所以只能由通道卡在帧尾回报，不能由这一页在 `build` 里问。
+  AiChannelState? _channelState;
 
   /// 地址栏里**正在敲、还没失焦**的内容。与模型栏那个控制器同一个理由：按钮的
   /// 可用性要跟着打字变，而 `settings.baseUrl` 要等提交/失焦才更新。
@@ -233,8 +246,9 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
     // 所以「三样」在界面上是两条输入 + 一个下拉。
     final fieldsReady = urlValid && keyPresent;
 
-    // 托管通道。公开版恒为 null —— 「通道」那一段与「隐藏 BYOK 区」的整支
-    // 都不会出现，这一页与从前逐字节相同（`ai_transport_gate_test.dart` 钉着）。
+    // 托管通道。公开版恒为 null —— 「AI 来源」与「通道」两段都不会出现，
+    // 剩下 BYOK 那几组的版面与从前逐字节相同（`ai_transport_gate_test.dart`
+    // 空注册表那组钉着）。
     final transport = ref.watch(aiTransportProvider);
 
     // 扩展（商业版）往页顶插的**通道卡**（设计稿 §5.1 / 接缝 S6）。落点固定在
@@ -245,6 +259,56 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
         AppExtensionRegistry.instance.aiChannelCard(context);
 
     final scheme = Theme.of(context).colorScheme;
+    // 选的是通道 = 那一条**现在**在生效。没有通道时这个判断没意义（那一组
+    // 根本不出现），所以只在这里算一次。
+    final usingChannel =
+        transport != null && settings.aiSource == AiSource.managed;
+    // 「自己的 AI」那一区的状态行：让用户一眼看出**眼下**这些字段算不算数。
+    // 三种情形各一句，颜色只做区分、话本身说完整（色盲用户只读字）。
+    final List<Widget> byokStatus = <Widget>[];
+    if (transport != null) {
+      if (settings.aiSource == AiSource.byok && settings.isUsable) {
+        byokStatus.add(
+          SettingsHint(
+            l10n.aiByokActiveHint,
+            icon: Icons.check_circle_outline,
+            color: scheme.primary,
+          ),
+        );
+      } else if (settings.aiSource == AiSource.byok) {
+        byokStatus.add(
+          SettingsHint(
+            l10n.aiByokNotReadyHint,
+            icon: Icons.info_outline,
+            color: scheme.error,
+          ),
+        );
+        // 自己的 AI 还没配好、通道又是能用的：给一条**现在就能用**的回头路，
+        // 而不是让用户对着半页填了一半的字段干瞪眼。
+        if (_channelState?.usable == true) {
+          byokStatus.add(
+            _switchRow(
+              // 这一行说的是「为什么可以先用通道」：它不要求填地址与 Key。
+              // 不重复上面那句「自己的 AI 还没配好」—— 那句已经在状态行里。
+              hint: l10n.aiSourceChannelHint,
+              icon: Icons.hub_outlined,
+              buttonKey: const ValueKey('ai-switch-to-channel'),
+              buttonLabel: l10n.aiSourceSwitchToChannel,
+              onPressed: () => _switchSource(settings, AiSource.managed),
+            ),
+          );
+        }
+      } else {
+        // 选的是通道：这些字段照常可编辑，只是**现在**不生效 —— 用户得能
+        // 先配好、再切过去（反过来「先切过去再配」会留一段用不了的空白）。
+        byokStatus.add(
+          SettingsHint(
+            l10n.aiByokInactiveHint,
+            icon: Icons.info_outline,
+          ),
+        );
+      }
+    }
     return SettingsPage(
       children: <Widget>[
         // 隐私声明摆**最上面**，不藏在底部：spec §4.4 要求它出现在这一页，
@@ -267,9 +331,9 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
             icon: Icons.info_outline,
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
           ),
-        // 托管模式下不显示「钥匙串存不住 Key」：那条提示关心的是 BYOK 的
-        // Key，而这一页在托管模式下连 Key 输入框都没有。
-        if (transport == null &&
+        // 「钥匙串存不住 Key」这条只在**用到自己的 AI** 时说：选的是通道时
+        // 那句提示关心的是 BYOK 的 Key，而用户的调用根本不经过它。
+        if ((transport == null || settings.aiSource == AiSource.byok) &&
             ref.watch(aiSettingsStoreProvider).isKeychainDegraded)
           SettingsHint(
             l10n.aiKeyDegraded,
@@ -278,24 +342,98 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
           ),
 
-        // 托管通道（商业版注册了 `AppExtension.aiTransport`）：「通道」一行
-        // 就是这整页在托管模式下的全部内容 —— 地址 / Key / 模型 / 拉取 /
-        // 测试连接整段隐藏（可用性由 `state()` 表达，不跑 BYOK 那套探测）。
-        // 公开版 `transport` 恒为 null，走的仍是下面那支，界面一个像素不变。
-        if (transport != null)
+        // 托管通道（商业版注册了 `AppExtension.aiTransport`）。**有没有通道
+        // 只决定「AI 来源」这一组出不出现，不再决定 BYOK 区藏不藏** —— 装了
+        // 扩展的人照样能配、能用自己的 AI，只是得先在来源里选上。上一版把整页
+        // 切成「要么通道、要么 BYOK」两支，看起来像同一份设置的两个互斥形态，
+        // 用户读不出「这是两套并列的东西」，也就换不了。公开版 `transport`
+        // 恒为 null：这一整段不出现，下面 BYOK 那几组与从前逐字相同。
+        if (transport != null) ...<Widget>[
+          SettingsGroup(
+            title: l10n.aiSourceSection,
+            icon: Icons.alt_route,
+            description: l10n.aiSourceDesc,
+            children: <Widget>[
+              // 两个选项**同时**摆着：这就是「有通道也能用自己的 AI」在版面上
+              // 的落点。用 `RadioGroup` 统一管选中而不是给两个 `RadioListTile`
+              // 各挂 `groupValue/onChanged` —— 后者已废弃，`flutter analyze`
+              // 会把那条 info 判成失败。
+              RadioGroup<AiSource>(
+                groupValue: settings.aiSource,
+                onChanged: (value) {
+                  if (value == null) return;
+                  _switchSource(settings, value);
+                },
+                child: Column(
+                  children: <Widget>[
+                    RadioListTile<AiSource>(
+                      key: const ValueKey('ai-source-managed'),
+                      value: AiSource.managed,
+                      title: Text(transport.channelLabel),
+                      subtitle: Text(l10n.aiSourceChannelHint),
+                    ),
+                    RadioListTile<AiSource>(
+                      key: const ValueKey('ai-source-byok'),
+                      value: AiSource.byok,
+                      title: Text(l10n.aiSourceByokTitle),
+                      // 副标题说的是**这条来源眼下能不能直接用**：配好了就把
+                      // 模型名带上（用户能确认「就是我配的那份」），没配好就
+                      // 直说还差一截 —— 比一句中性的介绍更能帮人做决定。
+                      subtitle: Text(
+                        settings.isUsable
+                            ? l10n.aiSourceByokReady(settings.model.trim())
+                            : l10n.aiSourceByokIncomplete,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           SettingsGroup(
             title: l10n.aiChannelSection,
             icon: Icons.hub_outlined,
+            // 选的是通道就在标题行标「使用中」：用户不必回到上面那组去找
+            // 哪个圆点被点亮。
+            trailing: usingChannel
+                ? _ChannelChip(
+                    key: const ValueKey('ai-source-in-use-channel'),
+                    label: l10n.aiSourceInUse,
+                    tone: AiChannelTone.positive,
+                  )
+                : null,
             children: <Widget>[
               _ChannelCard(
                 transport: transport,
                 checking: l10n.aiChannelChecking,
                 ready: l10n.aiChannelReady,
                 unavailable: l10n.aiChannelUnavailable,
+                onState: _onChannelState,
               ),
             ],
-          )
-        else ...[
+          ),
+          // 通道说不可用、用户却正选着它：就地给一条回头路。通道**为什么**
+          // 不可用由它自己的 `detail` 说，这里只说下一步能干什么。
+          if (usingChannel && _channelState != null && !_channelState!.usable)
+            _switchRow(
+              hint: l10n.aiChannelUnusableHint,
+              icon: Icons.vpn_key_outlined,
+              buttonKey: const ValueKey('ai-switch-to-byok'),
+              buttonLabel: l10n.aiSourceSwitchToByok,
+              onPressed: () => _switchSource(settings, AiSource.byok),
+            ),
+          // 「自己的 AI」独立成区：组标题与上面「通道」并列，让用户一眼看出
+          // 这是**两套**设置。字段在两种来源下都照常可编辑 —— 选着通道时只是
+          // 不生效（状态行会说明），用户得能先配好、再切过去。
+          SettingsSectionHeader(
+            title: l10n.aiByokSection,
+            icon: Icons.vpn_key_outlined,
+          ),
+          ...byokStatus,
+        ],
+        // BYOK 的三组（服务商 / Key / 模型）在两种来源下都摆出来：选着通道时
+        // 它们照样可编辑，只是不生效（上面那条状态行负责说明）。
+        ...<Widget>[
           // 「服务商」这一段就是「三样齐了才能拉取/测试」在版面上的落点：
           // 地址 → 格式，顺序即填的顺序，缺哪样下面那行小字就说哪样。
           SettingsGroup(
@@ -600,6 +738,73 @@ class _AiSettingsSectionState extends ConsumerState<AiSettingsSection> {
     messenger.hideCurrentSnackBar();
   }
 
+  /// 切换 AI 来源：**落盘 + 当场生效** + 弹一句确认。
+  ///
+  /// 刻意不走「重启后生效」：`AiService` 每次调用前同步读 `preferredSource`
+  /// （那只是 prefs 里的一个键），所以 `save()` 一完成，下一次调用就换了路。
+  /// 让用户重启才生效，等于把「选一下」变成「改完还得猜有没有生效」。
+  Future<void> _switchSource(AiSettings settings, AiSource next) async {
+    if (settings.aiSource == next) return;
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    await _save(settings.copyWith(aiSource: next));
+    if (!mounted) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            next == AiSource.byok
+                ? l10n.aiSourceSwitchedToByok
+                : l10n.aiSourceSwitchedToChannel,
+          ),
+        ),
+      );
+  }
+
+  /// 通道卡的状态落地回调（由它在帧尾调过来，见 [_ChannelCardState._load]）。
+  ///
+  /// 只存不算：这一页拿它决定「通道不可用时要不要给一条改用自己 AI 的引导」，
+  /// 以及「自己的 AI 没配好时能不能切回通道」。两条都只是**引导**的显示条件，
+  /// 真正走哪条路由 `AiService` 按落盘的来源决定，这里不参与。
+  void _onChannelState(AiChannelState state) {
+    if (!mounted) return;
+    setState(() => _channelState = state);
+  }
+
+  /// 「一句话 + 一颗就地切换按钮」的一行。
+  ///
+  /// 两处共用：通道不可用时引导改用自己配的 AI、自己的 AI 没配好时引导先用
+  /// 通道。两处只差文案与落点，版面必须是同一个形状 —— 它们回答的是同一个
+  /// 问题：「现在这条不能用，我可以换到哪条」。
+  Widget _switchRow({
+    required String hint,
+    required IconData icon,
+    required Key buttonKey,
+    required String buttonLabel,
+    required VoidCallback onPressed,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: SettingsHint(
+                hint,
+                icon: icon,
+                padding: EdgeInsets.zero,
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              key: buttonKey,
+              onPressed: onPressed,
+              child: Text(buttonLabel),
+            ),
+          ],
+        ),
+      );
+
   Future<void> _saveKey() async {
     final raw = _key.text;
     final error = AiProvider.validateApiKey(raw);
@@ -763,6 +968,7 @@ class _ChannelCard extends StatefulWidget {
     required this.checking,
     required this.ready,
     required this.unavailable,
+    this.onState,
   });
 
   final AiTransport transport;
@@ -775,6 +981,14 @@ class _ChannelCard extends StatefulWidget {
 
   /// `detail` 为空、且 `usable == false` 时的兜底。
   final String unavailable;
+
+  /// 状态**落地之后**回报给父级（只在帧尾调一次）。
+  ///
+  /// 父级要用这个异步结论来决定两件事：通道不可用时是否给一条「改用自
+  /// 己的 AI」的就地引导；自己的 AI 没配好时是否给一条切回通道的回头路。
+  /// 状态住在这一张卡里（见下面「为什么是 `FutureBuilder`」），父级不该为了
+  /// 这两条引导自己再问一次 `state()` —— 那会是同一实现方的第二次请求。
+  final ValueChanged<AiChannelState>? onState;
 
   @override
   State<_ChannelCard> createState() => _ChannelCardState();
@@ -791,11 +1005,21 @@ class _ChannelCardState extends State<_ChannelCard> {
   /// 实现方也不该毁掉设置页）。异常按「不可用、没有说明」处理 —— 文案由
   /// [widget.unavailable] 兜底。
   Future<AiChannelState> _load() async {
+    AiChannelState state;
     try {
-      return await widget.transport.state();
+      state = await widget.transport.state();
     } catch (_) {
-      return const AiChannelState(usable: false, detail: '');
+      state = const AiChannelState(usable: false, detail: '');
     }
+    // 结论落地后回报父级。**必须挂到帧尾**：这个 future 很可能在父级
+    // `build` 期间就完成，那一刻直接回调父级 `setState` 会撞
+    // 「setState() called during build」。换实现方时 `didUpdateWidget` 会再
+    // 走一次这里，所以「换人 → 重新回报」也是通的。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onState?.call(state);
+    });
+    return state;
   }
 
   @override
@@ -951,7 +1175,7 @@ IconData _toneIcon(AiChannelTone tone) {
 ///
 /// 高度用**最小**约束而不是写死 20：200% 字号下文字撑高时胶囊跟着长。
 class _ChannelChip extends StatelessWidget {
-  const _ChannelChip({required this.label, required this.tone});
+  const _ChannelChip({super.key, required this.label, required this.tone});
 
   /// 胶囊文字。必须**自成一句话**（色盲用户只读字）。
   final String label;

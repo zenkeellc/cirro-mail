@@ -5,18 +5,27 @@
 //    **一个像素都不变** —— 不出现 chip、标题还是从前那颗 `Text`；
 // 2. `sourceLabel != null`（托管）时，抬头右侧出现那颗 `[hub] …` chip；
 // 3. 建议面板的 chip **done 态也保留**：结果态渲染的是两列内容、不经过
-//    `AiStreamView`，抬头是唯一跨阶段都在的位置（设计稿 §5.3 第 1 条）。
+//    `AiStreamView`，抬头是唯一跨阶段都在的位置（设计稿 §5.3 第 1 条）；
+// 4. **署名跟着实际来源走**（`AiService.sourceLabel` 单测）：注册了通道但用户
+//    选了「自己的 AI」时恒为 null —— 输出出自用户自己的端点，没有第三方要
+//    署名；只有真的走托管通道才拿实现方的 label。
 //
-// 面板只认 `AiRun`、不认 `AiService`，所以这里全部直接构造面板、传一个
-// 不会真的被调用的 `start`（chip 画不画与有没有生成无关）。
+// 面板只认 `AiRun`、不认 `AiService`，所以前几组全部直接构造面板、传一个
+// 不会真的被调用的 `start`（chip 画不画与有没有生成无关）；最后一组直接构造
+// 一个 `AiService`，只读那个同步 getter。
 import 'dart:async';
 
+import 'package:cirro_mail_ext/cirro_mail_ext.dart' as ext;
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/data/models/mail_row.dart';
 import 'package:mail_app/features/ai/ai_client.dart';
 import 'package:mail_app/features/ai/ai_run.dart';
 import 'package:mail_app/features/ai/ai_service.dart';
+import 'package:mail_app/features/ai/ai_settings.dart';
+import 'package:mail_app/features/ai/ai_settings_store.dart';
 import 'package:mail_app/features/ai/ai_stream_view.dart';
 import 'package:mail_app/features/ai/preflight.dart';
 import 'package:mail_app/features/compose/ai/ai_draft_sheet.dart';
@@ -26,6 +35,49 @@ import 'package:mail_app/features/compose/ai/ai_reply_sheet.dart';
 import 'package:mail_app/features/compose/ai/ai_rewrite_sheet.dart';
 import 'package:mail_app/features/suggest/suggest_panel.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// 最简托管通道：这几条只问 `AiService.sourceLabel`，不发请求、也不问状态。
+/// 记 `stateCalls` 是为了钉住「署名是同步读，不该触发一次状态查询」。
+class _LabeledTransport implements ext.AiTransport {
+  _LabeledTransport(this.source);
+
+  final String? source;
+  int stateCalls = 0;
+
+  @override
+  String get channelLabel => '示例通道';
+
+  @override
+  String? get sourceLabel => source;
+
+  @override
+  Future<ext.AiChannelState> state() async {
+    stateCalls++;
+    return const ext.AiChannelState(usable: true, detail: '');
+  }
+
+  @override
+  Stream<String> run(ext.AiCall call) => const Stream<String>.empty();
+}
+
+/// 建一个只用来读 [AiService.sourceLabel] 的服务：来源落进 prefs
+/// （`save` 会写 `cm_ai_source`），不需要真的配 Key。
+Future<AiService> _serviceWith({
+  ext.AiTransport? transport,
+  AiSource source = AiSource.managed,
+}) async {
+  SharedPreferences.setMockInitialValues(<String, Object>{});
+  FlutterSecureStorage.setMockInitialValues(<String, String>{});
+  final p = PrefsStore(await SharedPreferences.getInstance());
+  final store = AiSettingsStore(prefs: p);
+  await store.save(AiSettings(aiSource: source));
+  return AiService(
+    store: store,
+    usage: AiUsageCounter(prefs: p),
+    transport: transport,
+  );
+}
 
 /// 面板的 `start` 至少要交出同一个类型的东西；这里永远返回「没开始」的 run
 /// —— 用例只关心抬头，不点生成。
@@ -135,6 +187,8 @@ Future<void> pumpDock(
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   // 五个撰写面板：标题文案 + 各自的构造参数。`start` 都不会被调用。
   final panels = <String, Widget Function(String?)>{
     '润色': (label) => AiPolishSheet(
@@ -239,6 +293,43 @@ void main() {
       // `ai-suggest-again` 只在 done 态画 —— 用它确认面板真的进了结果态。
       expect(find.byKey(const ValueKey('ai-suggest-again')), findsOneWidget);
       expect(find.byType(AiSourceChip), findsOneWidget);
+    });
+  });
+
+  // `AiService.sourceLabel` 是五个撰写面板 + 建议面板抬头的**唯一来源**。
+  // 它必须跟着「这次真的走哪条路」走，而不是「有没有注册通道」：
+  // 注册了通道、用户却选了「自己的 AI」时，输出出自用户自己的端点，不该再
+  // 挂一个实现方的名字。
+  group('AiService.sourceLabel：署名跟着实际来源走', () {
+    test('managed + 注册了通道 → 实现方给的 label', () async {
+      final transport = _LabeledTransport('订阅通道');
+      final ai = await _serviceWith(transport: transport);
+      expect(ai.sourceLabel, '订阅通道');
+      expect(transport.stateCalls, 0,
+          reason: '署名是同步 getter：面板 build 里就要拿到，不能等一次 state()');
+    });
+
+    test('byok + 注册了通道 → null（自己的 AI 不署名）', () async {
+      final transport = _LabeledTransport('订阅通道');
+      final ai =
+          await _serviceWith(transport: transport, source: AiSource.byok);
+      expect(ai.sourceLabel, isNull);
+      expect(transport.stateCalls, 0);
+    });
+
+    test('没有通道（公开版 / 未订阅）→ null', () async {
+      final ai = await _serviceWith();
+      expect(ai.sourceLabel, isNull);
+    });
+
+    test('没有通道 + 显式 byok → null', () async {
+      final ai = await _serviceWith(source: AiSource.byok);
+      expect(ai.sourceLabel, isNull);
+    });
+
+    test('实现方自己没给 label（null）→ null，不会兜底成通道名', () async {
+      final ai = await _serviceWith(transport: _LabeledTransport(null));
+      expect(ai.sourceLabel, isNull);
     });
   });
 }

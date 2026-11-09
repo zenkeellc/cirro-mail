@@ -1,5 +1,23 @@
 import 'ai_provider.dart';
 
+/// AI 能力**从哪儿来**：扩展注册的托管通道，还是用户自己的端点与 Key。
+///
+/// 两种来源可以同时存在：装了商业扩展的用户既有订阅通道、也保留自己那份
+/// BYOK 配置，主开关就是设置页「AI 来源」那一组（落盘在 `PrefsStore` 的
+/// `cm_ai_source`，**不在** [AiSettings] 的 JSON 里 —— `AiService` 要能同步
+/// 读到它，不能为此等钥匙串）。
+///
+/// 默认 [managed]：**没有通道时它会自动退回 [byok]**（`AiService` 只在
+/// `transport != null` 且选了 managed 时才走通道），所以这个默认值既不会让
+/// 公开版「用不了 AI」，也不会让从没配过 Key 的订阅用户每次启动都落到空配置。
+enum AiSource {
+  /// 扩展注册的托管通道（订阅提供的能力）。
+  managed,
+
+  /// 用户自己填的接口地址、模型与 Key（BYOK）。
+  byok,
+}
+
 /// 用户的 AI 配置。**API Key 不在这个对象里** —— 它单独走 secure storage，
 /// 这个对象只带「有没有配过 Key」这个布尔，于是它可以用 `==` 比较、可以进
 /// Riverpod 状态、可以被打进诊断日志而不泄漏任何东西。
@@ -12,6 +30,7 @@ class AiSettings {
     this.model = '',
     this.baseUrl = openaiDefaultBase,
     this.hasApiKey = false,
+    this.aiSource = AiSource.managed,
     this.inlineContinuationEnabled = false,
     this.preflightEnabled = true,
     this.subjectSuggestEnabled = true,
@@ -27,6 +46,14 @@ class AiSettings {
   final String baseUrl;
 
   final bool hasApiKey;
+
+  /// 这次调用走哪条来源。见 [AiSource]。
+  ///
+  /// 它是**用户的选择**，不是「哪条真的可用」：选了 [AiSource.managed] 而
+  /// 扩展没注册通道时，[AiService] 会安静退回 BYOK；选了 [AiSource.byok]
+  /// 而自己的配置不完整时，[AiService] 会回「还没配置 AI」而**不会**偷偷改用
+  /// 通道 —— 用户选的来源是一种承诺，不能替他换。
+  final AiSource aiSource;
 
   /// 行内续写默认**关**：它每次停笔都花钱，且误触有代价（spec §4.3③）。
   final bool inlineContinuationEnabled;
@@ -90,6 +117,7 @@ class AiSettings {
     String? model,
     String? baseUrl,
     bool? hasApiKey,
+    AiSource? aiSource,
     bool? inlineContinuationEnabled,
     bool? preflightEnabled,
     bool? subjectSuggestEnabled,
@@ -102,6 +130,7 @@ class AiSettings {
         model: model ?? this.model,
         baseUrl: baseUrl ?? this.baseUrl,
         hasApiKey: hasApiKey ?? this.hasApiKey,
+        aiSource: aiSource ?? this.aiSource,
         inlineContinuationEnabled:
             inlineContinuationEnabled ?? this.inlineContinuationEnabled,
         preflightEnabled: preflightEnabled ?? this.preflightEnabled,
@@ -118,6 +147,7 @@ class AiSettings {
       other.model == model &&
       other.baseUrl == baseUrl &&
       other.hasApiKey == hasApiKey &&
+      other.aiSource == aiSource &&
       other.inlineContinuationEnabled == inlineContinuationEnabled &&
       other.preflightEnabled == preflightEnabled &&
       other.subjectSuggestEnabled == subjectSuggestEnabled &&
@@ -131,6 +161,7 @@ class AiSettings {
       model,
       baseUrl,
       hasApiKey,
+      aiSource,
       inlineContinuationEnabled,
       preflightEnabled,
       subjectSuggestEnabled,
@@ -142,7 +173,8 @@ class AiSettings {
   @override
   String toString() =>
       'AiSettings(${apiFormat.name}, model=$model, baseUrl=$baseUrl, '
-      'hasKey=$hasApiKey, inline=$inlineContinuationEnabled, '
+      'hasKey=$hasApiKey, source=${aiSource.name}, '
+      'inline=$inlineContinuationEnabled, '
       'preflight=$preflightEnabled, subject=$subjectSuggestEnabled, '
       'polish=$polishEnabled, '
       'suggest=$mailSuggestEnabled)';

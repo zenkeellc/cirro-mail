@@ -43,6 +43,10 @@ class _ByokTransport implements AiTransport {
   String? lastUrl;
   Map<String, dynamic>? lastBody;
 
+  /// 最近一次 `request()`（非流式）的方法与响应 —— 「拉取 / 测试连接」走它。
+  String? lastMethod;
+  String requestResponse = '{}';
+
   @override
   Future<void> send({
     required String url,
@@ -63,8 +67,11 @@ class _ByokTransport implements AiTransport {
     required Map<String, String> headers,
     Map<String, dynamic>? body,
     CancelToken? cancelToken,
-  }) async =>
-      '{}';
+  }) async {
+    lastMethod = method;
+    lastUrl = url;
+    return requestResponse;
+  }
 }
 
 /// 假的托管通道：记录收到的 `AiCall`，吐固定增量，可配置各种失败。
@@ -303,29 +310,58 @@ void main() {
     });
   });
 
-  group('注册之后：走托管通道', () {
-    testWidgets('设置页多一行「通道」，名字取实现方，BYOK 区隐藏', (tester) async {
+  group('注册之后：两套设置同时在页面上，路由按来源切换', () {
+    testWidgets('设置页：来源单选 + 通道卡 + BYOK 字段同时出现，默认来源是通道',
+        (tester) async {
       final transport = _FakeAiTransport();
       ext.AppExtensionRegistry.instance
           .registerAll(<ext.AppExtension>[_ExtWithTransport(transport)]);
       await pumpAiSection(tester);
       final l10n = l10nOf(tester);
 
+      // 「AI 来源」：两个选项**同时**摆着 —— 有通道也能配自己的 AI，这就是
+      // 来源分离之后这一页的形态（从前这里只画通道、BYOK 整段藏掉）。
+      expect(find.text(l10n.aiSourceSection), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-source-managed')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-source-byok')), findsOneWidget);
+
+      // 通道卡：三个既有 key 保留，名字与状态都来自实现方。
       expect(find.text(l10n.aiChannelSection), findsOneWidget);
       expect(find.byKey(const ValueKey('ai-channel')), findsOneWidget);
-      expect(find.text('示例通道'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-channel-label')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-channel-detail')), findsOneWidget);
+      // 名字现在同时出现在来源选项（`transport.channelLabel`）与通道卡上 ——
+      // 用 descendant 限定在卡内，断言「卡里画的是实现方的名字」这件事本身。
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-channel')),
+          matching: find.text('示例通道'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('余额 100'), findsOneWidget);
       expect(transport.stateCalls, 1);
 
-      // 托管通道的可用性由 `state()` 表达：BYOK 那套探测全都不该出现。
-      expect(find.byKey(const ValueKey('ai-base-url')), findsNothing);
-      expect(find.byKey(const ValueKey('ai-api-format')), findsNothing);
-      expect(find.byKey(const ValueKey('ai-key')), findsNothing);
-      expect(find.byKey(const ValueKey('ai-model')), findsNothing);
-      expect(find.byKey(const ValueKey('ai-models-fetch')), findsNothing);
-      expect(find.byKey(const ValueKey('ai-test-connection')), findsNothing);
-      // 与 BYOK 配置有关的那句「还没配置 AI」也不该出现。
+      // 默认来源 = managed：通道分组标题行标「使用中」。
+      expect(find.byKey(const ValueKey('ai-source-in-use-channel')),
+          findsOneWidget);
+
+      // BYOK 字段**不再隐藏**：与通道并列出现，可编辑、只是还不生效。
+      expect(find.byKey(const ValueKey('ai-base-url')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-api-format')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-key')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-model')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-models-fetch')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-test-connection')), findsOneWidget);
+      // 分组小标题也说明这是**两套**设置。同一句话出现两次是刻意的：
+      // 来源选项的标题（`aiSourceByokTitle`）与 BYOK 分组小标题（`aiByokSection`）
+      // 用同一个词，用户扫一眼就知道它们说的是同一样东西。
+      expect(find.text(l10n.aiByokSection), findsNWidgets(2));
+
+      // 「还没配置 AI」属于「没有通道也没有 Key」：这里既有通道、只是自己的
+      // AI 还没填，页面该说的是那一句，不是这句。
       expect(find.text(l10n.aiUnavailable), findsNothing);
+      expect(find.text(l10n.aiSourceByokIncomplete), findsOneWidget);
     });
 
     testWidgets('通道卡：三个 key 保留、胶囊按 tone 上色、动作点了弹实现方那句话', (tester) async {
@@ -355,13 +391,27 @@ void main() {
       expect(find.byKey(const ValueKey('ai-channel')), findsOneWidget);
       expect(find.byKey(const ValueKey('ai-channel-label')), findsOneWidget);
       expect(find.byKey(const ValueKey('ai-channel-detail')), findsOneWidget);
-      expect(find.text('示例通道'), findsOneWidget);
+      // 通道名在来源选项里也有一份，所以限定在卡内断言。
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-channel')),
+          matching: find.text('示例通道'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('订阅通道可用 · 余额 100 积分 · 到期 2027-01-10'),
           findsOneWidget);
 
-      // 胶囊：primitive 的词（公开 ARB）、positive 的图标。
+      // 胶囊：primitive 的词（公开 ARB）、positive 的图标。限定在卡内：
+      // 分组标题上那颗「使用中」胶囊也是 positive，是全页第二颗对勾。
       expect(find.text(l10n.aiChannelReady), findsOneWidget);
-      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-channel')),
+          matching: find.byIcon(Icons.check_circle_outline),
+        ),
+        findsOneWidget,
+      );
 
       // 动作按钮：实现方给了才画；点了弹它返回的那句话。
       final action = find.byKey(const ValueKey('ai-channel-action'));
@@ -509,6 +559,95 @@ void main() {
 
       expect(byok.lastBody, isNull, reason: '托管模式下不该碰 BYOK 的端点');
       expect(ai.usedToday, 1, reason: '两条路共用调用计数');
+    });
+
+    test('来源选了 byok + BYOK 配好：走 BYOK，托管通道一次都不碰', () async {
+      final transport = _FakeAiTransport();
+      final byok = _ByokTransport();
+      final ai = await service(
+        transport: transport,
+        byok: byok,
+        settings: const AiSettings(
+          apiFormat: AiApiFormat.openai,
+          model: 'gpt-4o-mini',
+          aiSource: AiSource.byok,
+        ),
+      );
+
+      final start = await ai.rewrite(
+        selection: '原文',
+        tone: RewriteTone.polish,
+      );
+      expect(start, isA<AiStarted>());
+      final stream = (start as AiStarted).stream;
+      expect(await stream.text.join(), '你好');
+      expect(await stream.done, '你好');
+
+      expect(byok.lastBody, isNotNull, reason: '用户选的来源是 BYOK，必须发到自己的端点');
+      expect(transport.calls, isEmpty, reason: '用户选了自己的 AI 时不许偷偷用通道');
+      expect(transport.stateCalls, 0, reason: '连通道的状态都不该问一次');
+      expect(ai.usedToday, 1, reason: '两条路共用调用计数');
+    });
+
+    test('来源选了 byok + 没配 Key：回「还没配置」而不是偷偷改用通道', () async {
+      final transport = _FakeAiTransport();
+      final byok = _ByokTransport();
+      final ai = await service(
+        transport: transport,
+        byok: byok,
+        configured: false,
+        settings: const AiSettings(aiSource: AiSource.byok),
+      );
+
+      final start = await ai.rewrite(
+        selection: '原文',
+        tone: RewriteTone.polish,
+      );
+      expect(start, isA<AiNotStarted>());
+      expect((start as AiNotStarted).reason, AiService.notConfiguredMessage);
+      expect(byok.lastBody, isNull);
+      expect(transport.calls, isEmpty, reason: '来源是用户的承诺，不能替他换');
+      expect(ai.usedToday, 0);
+    });
+
+    test('来源是 managed（缺省）+ 注册了通道：仍然走托管（既有语义不变）',
+        () async {
+      final transport = _FakeAiTransport();
+      final byok = _ByokTransport();
+      // `service()` 里 save 的是默认设置，`aiSource` 缺省即 managed。
+      final ai = await service(transport: transport, byok: byok);
+
+      final start = await ai.rewrite(
+        selection: '原文',
+        tone: RewriteTone.polish,
+      );
+      expect(start, isA<AiStarted>());
+      await (start as AiStarted).stream.done;
+      expect(transport.calls, hasLength(1));
+      expect(byok.lastBody, isNull);
+    });
+
+    test('拉取模型 / 测试连接仍是 BYOK 表单的按钮：注册了通道也打自己的端点',
+        () async {
+      final transport = _FakeAiTransport();
+      final byok = _ByokTransport()
+        ..requestResponse = '{"choices":[{"message":{"content":"pong"}}]}';
+      final ai = await service(transport: transport, byok: byok);
+
+      // 默认来源是通道 —— 但这两颗按钮问的是「自己的 AI 配得对不对」，
+      // 与这次调用走哪条来源无关（设置页里它们就长在 BYOK 表单里）。
+      final models = await ai.listModels();
+      expect(models, isA<AiModelsOk>());
+      expect(byok.lastMethod, 'GET');
+      expect(byok.lastUrl, 'https://api.openai.com/v1/models');
+
+      final probe = await ai.testConnection();
+      expect(probe, isA<AiTestOk>());
+      expect(byok.lastMethod, 'POST');
+      expect(byok.lastUrl, 'https://api.openai.com/v1/chat/completions');
+
+      expect(transport.stateCalls, 0, reason: '不该为此问一次通道状态');
+      expect(transport.calls, isEmpty, reason: '托管通道不参与配置探测');
     });
 
     test('state() 说不可用：不发调用、不计数，提示就是实现方那句话', () async {

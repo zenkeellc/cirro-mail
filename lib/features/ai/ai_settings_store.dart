@@ -224,18 +224,36 @@ class AiSettingsStore {
   /// 密钥库不可用（读 Key 失败）。UI 据此提示「重启要重填」。
   bool get isKeychainDegraded => _keys.isDegraded;
 
-  /// 读设置：prefs 那半 + 钥匙串那半。
+  /// 读设置：prefs 那半 + 钥匙串那半 + 来源偏好那半。
+  ///
+  /// 来源单独存（`cm_ai_source`，见 [PrefsStore.aiSourceCode]），所以这里
+  /// 把它并回对象；[AiSettingsCodec] 里**没有**它，别在那边再加一遍。
   Future<AiSettings> load() async {
     final stored = AiSettingsCodec.decode(_prefs.aiSettingsJson);
     final key = await _keys.read();
-    return stored.copyWith(hasApiKey: key != null);
+    return stored.copyWith(
+      hasApiKey: key != null,
+      aiSource: preferredSource,
+    );
   }
 
-  /// 写设置。**只落非敏感部分**。
+  /// 这次调用该走哪条来源。**同步、不碰钥匙串** —— [AiService] 每次调用前
+  /// 都要问它一次，托管模式下它不该为了路由去读一次平台密钥库。
+  ///
+  /// 缺省 `managed`：没有注册通道时 `AiService` 会自己退回 BYOK，所以
+  /// 公开版 / 未订阅用户不会因为缺省值而「用不了 AI」。
+  AiSource get preferredSource =>
+      _prefs.aiSourceCode == AiSource.byok.name
+          ? AiSource.byok
+          : AiSource.managed;
+
+  /// 写设置。**只落非敏感部分**（来源偏好单独一个键，理由见
+  /// [prefs_store.dart] 里 `aiSourceCode` 的注释）。
   Future<void> save(AiSettings settings) async {
     await _prefs.setAiSettingsJson(
       jsonEncode(AiSettingsCodec.encode(settings)),
     );
+    await _prefs.setAiSourceCode(settings.aiSource.name);
   }
 
   /// 当前 Key（发请求时用）。**调用方用完即弃，不许写进任何日志或状态**。

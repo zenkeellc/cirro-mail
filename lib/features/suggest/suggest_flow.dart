@@ -75,10 +75,14 @@ abstract final class SuggestFlow {
   /// `AiSettingsController` 里那段 `_hasKey` 三态注释同一个口径：还没读到
   /// 就**别说能用**。
   ///
-  /// [channelAvailable] 是**托管通道就绪**（见 [channelConfigured]）：真订阅
+  /// [channelAvailable] 是**托管通道可走**（见 [channelConfigured]）：真订阅
   /// 用户可能从没配过 Key，那时 `settings.isUsable` 恒为 false —— 只看它的话
   /// 订阅通道的七个 AI 入口一个都画不出来（审计 D1）。带上这一位之后，
   /// 「有通道」与「有自带 Key」是**并列**的两条路，任一成立即可见。
+  ///
+  /// **入口可见性跟着来源走**：`channelAvailable` 现在只在「用户选的来源就是
+  /// 通道」时为真。选了「自己的 AI」却还没配好时，通道虽然注册着也不算可用
+  /// —— 不能让入口假装能用、点下去又是「还没配置 AI」。
   static bool visible(
     MailRow row,
     AiSettings? settings, {
@@ -98,19 +102,32 @@ abstract final class SuggestFlow {
     return settings.mailSuggestEnabled;
   }
 
-  /// **托管通道就绪**：注册了实现方，或者实现方要求入口常驻（S8）。
+  /// **托管通道可走**：注册了实现方 **且** 用户选的来源是通道；或者实现方
+  /// 要求入口常驻（S8）。
   ///
   /// 与 `compose_screen` 的 `channelConfigured` 是同一个口径的两半：
   /// 那边还要并上 `settings.isUsable`（BYOK 那条路），而 [visible] 自己就在
   /// 判 BYOK，所以这里只报「通道那一半」。
   ///
+  /// **注册了通道 ≠ 通道在生效**：来源是用户的选择（`AiSettings.aiSource`），
+  /// 选了自己的 AI 时托管通道只是页面上的另一个选项，不算「可走」—— 否则
+  /// 「选了自带 Key 但没配好」的入口会假装可用，点下去只回一句「还没配置」。
+  /// 读 `aiSettingsProvider` 的 `.value`（还没读到就按缺省的 `managed` 算）：
+  /// 首读在飞时偏向「照旧显示」，读到 byok 后这一帧的重建会把它收回去。
+  ///
   /// `aiEntryAlwaysVisible` 为真时**入口不藏**：商业版的规矩是「先让用户点到，
   /// 点下去再说明原因并给自救路径」—— 它有真正的下一步（登录 / 订阅）。公开版
   /// 返回 false，仍然按 BYOK 判据藏（沿用「不该出现一个点了只回一句『去设置』
   /// 的图标」那条理由）。
-  static bool channelConfigured(WidgetRef ref) =>
-      ref.read(aiTransportProvider) != null ||
-      ext.AppExtensionRegistry.instance.aiEntryAlwaysVisible;
+  static bool channelConfigured(WidgetRef ref) {
+    final always = ext.AppExtensionRegistry.instance.aiEntryAlwaysVisible;
+    final transport = ref.read(aiTransportProvider);
+    if (transport == null) return always;
+    // 只有「有通道」这一半还不够：来源选了 byok 时通道不参与路由。
+    final source =
+        ref.read(aiSettingsProvider).value?.aiSource ?? AiSource.managed;
+    return source == AiSource.managed || always;
+  }
 
   /// 组装 [SuggestDeps]（补正文 / 起请求 / 星标能力）。纯读，不导航。
   static SuggestDeps deps(WidgetRef ref, MailRow row) {
@@ -138,8 +155,8 @@ abstract final class SuggestFlow {
       // 池子由会话按当前状态算（`suggestActionPool`），面板与这里都不再算第二遍。
       launch: (input, actionIds) =>
           ref.read(aiServiceProvider).suggest(input: input, actionIds: actionIds),
-      // 输出处的来源署名（设计稿 §7.5）：同步读，不发网络。公开版恒为 null
-      // → 面板抬头不画那颗 chip。
+      // 输出处的来源署名（设计稿 §7.5）：同步读，不发网络。公开版与「用户选了
+      // 自己的 AI」两种情形恒为 null → 面板抬头不画那颗 chip。
       sourceLabel: ref.read(aiServiceProvider).sourceLabel,
     );
   }

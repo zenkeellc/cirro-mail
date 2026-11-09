@@ -903,6 +903,79 @@
   "aiTitle": "AI",
   "aiSubtitle": "使用你自己的 Key",
   "aiPrivacyNotice": "你正文里的片段会被发送到你配置的服务商。Key 存在这台设备的钥匙串里，除发给该服务商的请求之外不会离开它。",
+  "aiSourceSection": "AI 来源",
+  "@aiSourceSection": {
+    "description": "settings → AI: group title that picks where AI comes from"
+  },
+  "aiSourceDesc": "两种方式都可以用，随时切换。",
+  "@aiSourceDesc": {
+    "description": "settings → AI: one line under the AI source group title"
+  },
+  "aiSourceChannelHint": "由通道提供，不用自己填地址与 Key",
+  "@aiSourceChannelHint": {
+    "description": "settings → AI: subtitle of the managed-channel source option (no commercial terms in public ARB)"
+  },
+  "aiSourceByokTitle": "自己的 AI",
+  "@aiSourceByokTitle": {
+    "description": "settings → AI: title of the user-provided AI source option"
+  },
+  "aiSourceByokHint": "使用你自己填写的接口地址、模型与 Key",
+  "@aiSourceByokHint": {
+    "description": "settings → AI: subtitle of the user-provided AI source option"
+  },
+  "aiSourceByokReady": "已配置 · {model}",
+  "@aiSourceByokReady": {
+    "description": "settings → AI: user-provided AI is configured",
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "aiSourceByokIncomplete": "还没配置完整",
+  "@aiSourceByokIncomplete": {
+    "description": "settings → AI: user-provided AI is not fully configured"
+  },
+  "aiSourceInUse": "使用中",
+  "@aiSourceInUse": {
+    "description": "settings → AI: small chip marking the source currently in use"
+  },
+  "aiByokSection": "自己的 AI",
+  "@aiByokSection": {
+    "description": "settings → AI: section header above the user-provided AI settings"
+  },
+  "aiByokActiveHint": "下面这些配置现在就生效。",
+  "@aiByokActiveHint": {
+    "description": "settings → AI: user-provided AI settings are active"
+  },
+  "aiByokInactiveHint": "下面这些是你自己的 AI 配置 —— 在「AI 来源」里选上它才会生效。",
+  "@aiByokInactiveHint": {
+    "description": "settings → AI: user-provided AI settings are not active"
+  },
+  "aiByokNotReadyHint": "自己的 AI 还没配好：填好接口地址与 API Key 之后才会生效。",
+  "@aiByokNotReadyHint": {
+    "description": "settings → AI: user-provided AI is selected but incomplete"
+  },
+  "aiSourceSwitchToByok": "改用我自己的 AI",
+  "@aiSourceSwitchToByok": {
+    "description": "settings → AI: action button to switch to user-provided AI"
+  },
+  "aiSourceSwitchToChannel": "先用通道",
+  "@aiSourceSwitchToChannel": {
+    "description": "settings → AI: action button to switch to the managed channel"
+  },
+  "aiSourceSwitchedToByok": "已切换到「自己的 AI」",
+  "@aiSourceSwitchedToByok": {
+    "description": "settings → AI: snackbar after switching to user-provided AI"
+  },
+  "aiSourceSwitchedToChannel": "已切换到通道",
+  "@aiSourceSwitchedToChannel": {
+    "description": "settings → AI: snackbar after switching to the managed channel"
+  },
+  "aiChannelUnusableHint": "通道现在不可用 —— 也可以改用自己的 AI。",
+  "@aiChannelUnusableHint": {
+    "description": "settings → AI: hint beside the button that switches to user-provided AI when the managed channel is unusable"
+  },
   "aiProviderSection": "服务商",
   "aiChannelSection": "通道",
   "aiChannelChecking": "正在检查…",

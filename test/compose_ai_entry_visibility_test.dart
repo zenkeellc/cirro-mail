@@ -7,11 +7,18 @@
 // 说的正是这条：判据只看 BYOK 的 `isUsable` 时，七个 AI 入口一个都不出现。
 //
 // 三条判据（`compose_screen` 里合成一个 `aiUsable`）：
-//   ① 托管通道注册了（`AppExtension.aiTransport != null`）；
+//   ① 托管通道**可走**：注册了 `AppExtension.aiTransport`，**且** 用户在
+//      「设置 → AI」里选的来源就是通道（`cm_ai_source == 'managed'`）；
 //   ② BYOK 配好了（`settings.isUsable`，要 Key + 地址 + 模型）；
 //   ③ 实现方要求入口常驻（`AppExtension.aiEntryAlwaysVisible`）。
 // 公开版（空注册表 + 没配 Key）必须**藏**：一个点了只回一句「去设置」的图标
 // 比没有更糟；商业版敢常驻是因为它点下去有真正的下一步（登录 / 订阅）。
+//
+// **入口可见性跟着来源走**（2026-11-09，`docs/ai-settings-source-separation.md`
+// §2）：注册了通道不等于通道在生效。用户显式选了「自己的 AI」而配置不完整
+// 时，三个入口都不出现 —— 以前这里只看「注册了没有」，会造出一个点了只回
+// 「还没配置 AI」的入口。`aiEntryAlwaysVisible` 是唯一的例外（它自己就是
+// 一条「先让用户点到」的产品决定）。
 //
 // 三个入口都钉，缺一个就等于允许「工具栏出现了、斜杠菜单里没有」这种半残状态：
 //   - 常驻工具栏的 `ct-ai`（AI 改写下拉）；
@@ -162,5 +169,20 @@ void main() {
         .registerAll(<ext.AppExtension>[_ExtAlwaysVisible()]);
     await pumpCompose(tester);
     await expectAiEntriesVisible(tester);
+  });
+
+  testWidgets('④ 注册了通道，但来源选了「自己的 AI」且没配好：三个入口都不出现',
+      (tester) async {
+    ext.AppExtensionRegistry.instance
+        .registerAll(<ext.AppExtension>[_ExtWithTransport()]);
+    // 用户显式选了「自己的 AI」（落盘在 `cm_ai_source`），但没配 Key ——
+    // 这正是以前会「因为通道注册了就出现」的那一组。对照组就是上面 ②：
+    // 同一份注册、来源缺省（managed）时入口照常出现，所以这里藏掉不是因为
+    // 页面没加载完。
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'cm_ai_source': 'byok',
+    });
+    await pumpCompose(tester);
+    await expectAiEntriesHidden(tester);
   });
 }

@@ -1487,6 +1487,59 @@ class AppLocalizationsZh extends AppLocalizations {
       '你正文里的片段会被发送到你配置的服务商。Key 存在这台设备的钥匙串里，除发给该服务商的请求之外不会离开它。';
 
   @override
+  String get aiSourceSection => 'AI 来源';
+
+  @override
+  String get aiSourceDesc => '两种方式都可以用，随时切换。';
+
+  @override
+  String get aiSourceChannelHint => '由通道提供，不用自己填地址与 Key';
+
+  @override
+  String get aiSourceByokTitle => '自己的 AI';
+
+  @override
+  String get aiSourceByokHint => '使用你自己填写的接口地址、模型与 Key';
+
+  @override
+  String aiSourceByokReady(String model) {
+    return '已配置 · $model';
+  }
+
+  @override
+  String get aiSourceByokIncomplete => '还没配置完整';
+
+  @override
+  String get aiSourceInUse => '使用中';
+
+  @override
+  String get aiByokSection => '自己的 AI';
+
+  @override
+  String get aiByokActiveHint => '下面这些配置现在就生效。';
+
+  @override
+  String get aiByokInactiveHint => '下面这些是你自己的 AI 配置 —— 在「AI 来源」里选上它才会生效。';
+
+  @override
+  String get aiByokNotReadyHint => '自己的 AI 还没配好：填好接口地址与 API Key 之后才会生效。';
+
+  @override
+  String get aiSourceSwitchToByok => '改用我自己的 AI';
+
+  @override
+  String get aiSourceSwitchToChannel => '先用通道';
+
+  @override
+  String get aiSourceSwitchedToByok => '已切换到「自己的 AI」';
+
+  @override
+  String get aiSourceSwitchedToChannel => '已切换到通道';
+
+  @override
+  String get aiChannelUnusableHint => '通道现在不可用 —— 也可以改用自己的 AI。';
+
+  @override
   String get aiProviderSection => '服务商';
 
   @override

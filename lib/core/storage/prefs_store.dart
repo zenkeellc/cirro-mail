@@ -56,6 +56,7 @@ class PrefsStore {
   /// 单独收起的那些实例 id（默认展开，所以只在偏离默认时才写）。
   static const String _kSidebarCollapsed = 'cm_sidebar_collapsed_instances';
   static const String _kAiSettings = 'cm_ai_settings';
+  static const String _kAiSource = 'cm_ai_source';
   static const String _kAiUsage = 'cm_ai_usage';
   /// 外联资源的域名白名单（支持 `*` 通配，见 `external_allowlist.dart`）。
   static const String _kExternalAllowedHosts = 'cm_external_allowed_hosts';
@@ -484,6 +485,22 @@ class PrefsStore {
       await _prefs.remove(_kAiSettings);
     } else {
       await _prefs.setString(_kAiSettings, json);
+    }
+  }
+
+  /// AI 来源偏好：`'managed'`（扩展注册的托管通道）或 `'byok'`（用户自己的
+  /// 配置）。null = 从没选过，按 `managed` 处理。
+  ///
+  /// **单独一个键、不并进 [aiSettingsJson]**：`AiService` 每次调用前要**同步**
+  /// 读它来决定走哪条路（见 `AiSettingsStore.preferredSource`），而 JSON 那
+  /// 份是给设置页的完整对象。放一起就得先反序列化整份配置才能路由。
+  String? get aiSourceCode => _prefs.getString(_kAiSource);
+
+  Future<void> setAiSourceCode(String? code) async {
+    if (code == null || code.isEmpty) {
+      await _prefs.remove(_kAiSource);
+    } else {
+      await _prefs.setString(_kAiSource, code);
     }
   }
 

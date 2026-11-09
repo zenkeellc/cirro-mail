@@ -73,13 +73,16 @@ class AiTestFailed extends AiTestResult {
 /// 全部可单测：注入假传输，断言「发出去的请求体里有该有的东西、没有不该有的
 /// 东西」。
 ///
-/// ## 两种通道，同一套状态机
+/// ## 两种来源，同一套状态机
 ///
-/// [transport] 非 null 时（商业版注册了 `AppExtension.aiTransport`），七项能力
-/// 改走**托管通道**：入参由 `AiTask` 翻成 `AiCall` 交过去，拿回一段文本增量，
-/// 就绪判断交给 `state()`。为 null 时（公开版）走原有的 BYOK 路径，**一字
-/// 不变**。两条路共用「每日调用计数」与上层 `AiRun` 的 UI 状态机 —— 界面完全
-/// 不需要知道自己接的是哪一条。
+/// 扩展注册了 [transport]（`AppExtension.aiTransport`）只说明**通道存在**，
+/// 真正走哪条由用户选的 `AiSource` 决定（落盘在 prefs，同步读法见
+/// `AiSettingsStore.preferredSource`）：只有「有通道 **且** 用户选的是
+/// [AiSource.managed]」才把入参由 `AiTask` 翻成 `AiCall` 交过去；其余一律走
+/// BYOK —— 用户选了自己的 AI 时绝不被通道截走，配置不完整就回
+/// [notConfiguredMessage]；而公开版 / 没通道时 `managed` 自动退回 BYOK，
+/// 缺省值不会让人「用不了 AI」。两条路共用「每日调用计数」与上层 `AiRun` 的
+/// UI 状态机 —— 界面完全不需要知道自己接的是哪一条。
 class AiService {
   // 计划原文的字段名是私有的 `_store`/`_usage`，而构造参数名必须是公开的
   // （测试按名字传参）—— 两者不能合并成 `this._store` 这个 initializing
@@ -102,7 +105,8 @@ class AiService {
   final AiUsageCounter _usage;
   final AiClient _client;
 
-  /// 托管通道（见 [AiTransport]）。null = 公开版的 BYOK 路径。
+  /// 托管通道（见 [AiTransport]）。null = 公开版的 BYOK 路径；非 null 也只是
+  /// **可选项**，真走哪条还看用户选的来源（[AiSettingsStore.preferredSource]）。
   final ext.AiTransport? _transport;
 
   /// 没配好时那句给人看的话。**四处引用共用同一句话**（`_start` 里两处：可用性
@@ -117,10 +121,10 @@ class AiService {
   /// （具体的出口由实现方给）。它只在两种劣化情形出现：`state()` 抛了异常，
   /// 或者返回了 `usable: false` 却一个字都没说。措辞刻意保持**中性、可操作**
   /// —— 公开仓库的代码里不写实现方那边的商业概念（§6.1：公开 ARB 不出现
-  /// 「订阅」「积分」这类词），用户至少知道「这里现在不能用，还有自带 Key 这
-  /// 条路」。
+  /// 「订阅」「积分」这类词），用户至少知道「这里现在不能用，还有『自己的
+  /// AI』这条路」（那句话在公开 ARB 里有，见 `aiSourceByokTitle`）。
   static const String channelUnavailableMessage =
-      'AI 通道暂不可用，可在「设置 → AI」里改用自带 Key';
+      'AI 通道暂不可用，可在「设置 → AI」里改用「自己的 AI」';
 
   /// 其余几项能力的**输出上限**（请求体里的 `max_tokens`）。
   ///
@@ -174,11 +178,18 @@ class AiService {
 
   /// 输出处的**来源署名**（设计稿 §7.5 / 接缝 S5）。
   ///
-  /// 同步读已注册的实现方 `sourceLabel` —— 面板抬头在 `build` 里要立刻拿到
-  /// 它，不能等一次 `state()`（那是 async、实现方还可能联网）。公开版
-  /// （`_transport == null`，BYOK）恒为 null，五处抬头因此一个像素都不变；
-  /// 只有托管模式才画那颗 chip。
-  String? get sourceLabel => _transport?.sourceLabel;
+  /// 只有在**实际走托管通道**时才非 null：注册了实现方，并且用户选的来源是
+  /// [AiSource.managed]。同步读实现方 `sourceLabel` 与落盘的来源偏好（一个
+  /// prefs 键，不碰钥匙串）—— 面板抬头在 `build` 里要立刻拿到它，不能等一次
+  /// `state()`（那是 async、实现方还可能联网）。公开版（`_transport == null`）
+  /// 与「用户选了自己的 AI」两种情形恒为 null：既然这段输出出自用户自己的
+  /// 端点，就没有第三方要署名，五处抬头一个像素都不变。
+  String? get sourceLabel {
+    final transport = _transport;
+    if (transport == null) return null;
+    if (_store.preferredSource != AiSource.managed) return null;
+    return transport.sourceLabel;
+  }
 
   /// ① 选中即改（也是「整篇润色」走的那一条 —— 它只是选区等于全文）。
   Future<AiStart> rewrite({
@@ -441,9 +452,9 @@ class AiService {
   ///    这一次就不计数了，而钱是真花了；
   /// 4. `maxTokens` 与温度由各能力给，不放在 prompt 里。
   ///
-  /// **[managed] 只在有托管通道时才被读**（`build` 是 BYOK 那半的 prompt，
-  /// 托管那半不拼 prompt）。两支在 `_start` 的第一行就分开，所以 BYOK 路径
-  /// 连「多调一次 `managed()`」都不会发生。
+  /// **[managed] 只在真的走托管通道时才被读**（`build` 是 BYOK 那半的 prompt，
+  /// 托管那半不拼 prompt）。路由在 `_start` 开头就定了，所以 BYOK 路径连
+  /// 「多调一次 `managed()`」都不会发生。
   Future<AiStart> _start({
     required int maxTokens,
     required String Function(AiSettings settings) build,
@@ -454,10 +465,17 @@ class AiService {
     /// 而 `_system` 那句「不要任何寒暄与说明」对 JSON 不够（模型仍会包围栏）。
     String system = _system,
   }) async {
-    // 托管通道优先：注册了实现方，就**完全**不碰设置与钥匙串（那两样在托管
-    // 模式下没有意义，设置页也把它们藏起来了）。
+    // 路由：**用户选的来源优先**。注册了通道不等于要用它 —— 只有「有通道
+    // 且用户选的是 managed」才走托管；其余（包括用户明确选了 byok）一律走
+    // BYOK，配置不全就回 `notConfiguredMessage`，绝不静默换路。
+    //
+    // `preferredSource` 是同步读 prefs 的一个键（`cm_ai_source`），**不是**
+    // `load()` —— 后者要读钥匙串，托管模式下那半没有意义，也不该为一次路由
+    // 付一次平台通道往返。
     final transport = _transport;
-    if (transport != null) return _startManaged(transport, managed);
+    if (transport != null && _store.preferredSource == AiSource.managed) {
+      return _startManaged(transport, managed);
+    }
 
     final settings = await _store.load();
     if (!settings.isUsable) {
