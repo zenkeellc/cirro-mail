@@ -14,13 +14,9 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_app/core/db/database.dart';
 
-/// v5（未加 uid/rev）的 `drafts`，外加 v5 就有的 `compose_pages`：列与默认值
-/// 照当时 drift 生成的 DDL 抄。
-///
-/// `compose_pages` 必须一起建：`deleteDraft` 在同一个事务里删「打开中」标记，
-/// 少了这张表，这条用例测到的是「表不存在」而不是迁移结果。别的表不建 ——
-/// `from < 6` 这一段只碰这两张表，多建会把「迁移只做了自己该做的事」变糊。
-const String _v5DraftsDdl = '''
+/// v1 就有的 `drafts`：v2..v5 都没动这张表，所以 v5 也长这样（缺 v6 的
+/// `uid` / `rev`）。列与默认值照当时 drift 生成的 DDL 抄。
+const String _draftsDdl = '''
 CREATE TABLE drafts (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   profile_id TEXT NOT NULL,
@@ -31,10 +27,68 @@ CREATE TABLE drafts (
   attachment_paths_json TEXT NOT NULL DEFAULT '[]',
   updated_at INTEGER NOT NULL
 );
+''';
+
+/// v5 才建的 `compose_pages`（打开中的撰写页）。
+const String _composePagesDdl = '''
 CREATE TABLE compose_pages (
   draft_id INTEGER NOT NULL,
   opened_at INTEGER NOT NULL,
   PRIMARY KEY (draft_id)
+);
+''';
+
+/// v5（未加 uid/rev）的 `drafts`，外加 v5 就有的 `compose_pages`。
+///
+/// `compose_pages` 必须一起建：`deleteDraft` 在同一个事务里删「打开中」标记，
+/// 少了这张表，这条用例测到的是「表不存在」而不是迁移结果。别的表不建 ——
+/// `from < 6` 这一段只碰这两张表，多建会把「迁移只做了自己该做的事」变糊。
+const String _v5DraftsDdl = '$_draftsDdl\n$_composePagesDdl';
+
+/// v2 加的 `outbox_entries.scheduled_at` 已经在了（`addColumn` 把列追加在
+/// 表尾，所以它排在最后一条）。
+const String _v2OutboxDdl = '''
+CREATE TABLE outbox_entries (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  profile_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at INTEGER NOT NULL,
+  last_attempt_at INTEGER,
+  scheduled_at INTEGER
+);
+''';
+
+/// v1 的 `sync_states`：v2 的 `remote_total` / `backfill_done`、v4 的
+/// `remote_total_at` 都还没有。
+const String _v1SyncStatesDdl = '''
+CREATE TABLE sync_states (
+  profile_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  cursor_email_id INTEGER NOT NULL DEFAULT 0,
+  oldest_email_id INTEGER NOT NULL DEFAULT 0,
+  last_sync_at INTEGER,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  PRIMARY KEY (profile_id, scope)
+);
+''';
+
+/// v2 跑完、v4 还没跑的 `sync_states`：v2 的两列在，`remote_total_at` 不在。
+const String _v2SyncStatesDdl = '''
+CREATE TABLE sync_states (
+  profile_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  cursor_email_id INTEGER NOT NULL DEFAULT 0,
+  oldest_email_id INTEGER NOT NULL DEFAULT 0,
+  last_sync_at INTEGER,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  remote_total INTEGER NOT NULL DEFAULT 0,
+  backfill_done INTEGER NOT NULL DEFAULT 0 CHECK ("backfill_done" IN (0, 1)),
+  PRIMARY KEY (profile_id, scope)
 );
 ''';
 
@@ -506,6 +560,130 @@ void main() {
       expect(rows.every((r) => r.rev == 1), isTrue);
       // 唯一索引仍然只有一条（`CREATE ... IF NOT EXISTS`）。
       expect(await _indexShape(db, 'drafts_uid_unique'), <Object?>[1, 1]);
+    });
+  });
+
+  // v2 / v4 段同样是裸 `addColumn`：DDL 做完、`user_version` 还停在 1 / 3
+  // 时被杀，重跑必须跳过已有的列。以前这里会抛 `duplicate column name`，
+  // 用户每次启动都卡在 StartupFailureScreen。
+  group('中断后重试（v2 / v4 可重入）', () {
+    test('v2 三列都已在、user_version 仍是 1：打开不抛，数据原样', () async {
+      final db = AppDatabase.forTesting(
+        NativeDatabase.memory(
+          setup: (raw) {
+            raw.execute(_draftsDdl);
+            raw.execute(_v2OutboxDdl);
+            raw.execute(_v2SyncStatesDdl);
+            // 上次三条 ADD COLUMN 都做完了，就差写 `user_version`。
+            raw.execute(
+              'INSERT INTO outbox_entries '
+              '(profile_id, payload_json, status, scheduled_at, created_at) '
+              'VALUES (?, ?, ?, ?, ?)',
+              ['p1', '{"subject":"排队中"}', 'pending', 1762650123, 1762650000],
+            );
+            raw.execute(
+              'INSERT INTO sync_states '
+              '(profile_id, scope, remote_total, backfill_done) '
+              'VALUES (?, ?, ?, ?)',
+              ['p1', 'mailbox:12:type:0', 7, 1],
+            );
+            raw.execute(
+              _insertV5DraftSql,
+              ['p1', 'me@example.com', '旧草稿甲', 'x', 1762650000],
+            );
+            raw.execute('PRAGMA user_version = 1');
+          },
+        ),
+      );
+      addTearDown(db.close);
+
+      // 能打开就说明三处 addColumn 都被跳过了（否则是
+      // `duplicate column name: scheduled_at`）。
+      final outbox = (await db.select(db.outboxEntries).get()).single;
+      expect(outbox.payloadJson, contains('排队中'));
+      expect(outbox.scheduledAt, isNotNull, reason: '已有的 scheduled_at 数据不能丢');
+
+      final sync = (await db.select(db.syncStates).get()).single;
+      expect(sync.remoteTotal, 7);
+      expect(sync.backfillDone, isTrue);
+      expect(sync.remoteTotalAt, isNull, reason: 'v4 那列这次才补上，旧行是 null');
+
+      // 后面的段照常跑：v3 / v5 建表、v6 给草稿补身份。
+      final draft = (await db.select(db.drafts).get()).single;
+      expect(draft.uid, isNotEmpty);
+      expect(draft.rev, 1);
+      expect(await _tableExists(db, 'reminders'), isTrue);
+      expect(await _tableExists(db, 'compose_pages'), isTrue);
+    });
+
+    test('v2 只差 sync_states 两列、user_version 仍是 1：跳过已有的、补上缺的', () async {
+      final db = AppDatabase.forTesting(
+        NativeDatabase.memory(
+          setup: (raw) {
+            raw.execute(_draftsDdl);
+            // 上次死在第一条 ADD COLUMN 之后：outbox 那列有了，sync 两列还没有。
+            raw.execute(_v2OutboxDdl);
+            raw.execute(_v1SyncStatesDdl);
+            raw.execute(
+              'INSERT INTO outbox_entries '
+              '(profile_id, payload_json, status, scheduled_at, created_at) '
+              'VALUES (?, ?, ?, ?, ?)',
+              ['p1', '{"subject":"排队中"}', 'pending', 1762650123, 1762650000],
+            );
+            raw.execute(
+              'INSERT INTO sync_states (profile_id, scope) VALUES (?, ?)',
+              ['p1', 'mailbox:12:type:0'],
+            );
+            raw.execute('PRAGMA user_version = 1');
+          },
+        ),
+      );
+      addTearDown(db.close);
+
+      final outbox = (await db.select(db.outboxEntries).get()).single;
+      expect(outbox.scheduledAt, isNotNull, reason: '这一列已在，跳过不能把数据弄丢');
+
+      final sync = (await db.select(db.syncStates).get()).single;
+      expect(sync.remoteTotal, 0, reason: '补上的列走默认值');
+      expect(sync.backfillDone, isFalse);
+      expect(sync.remoteTotalAt, isNull, reason: 'v4 段接着补，旧行是 null');
+    });
+
+    test('v4 段 remote_total_at 已在、user_version 仍是 3：打开不抛，数据原样', () async {
+      final db = AppDatabase.forTesting(
+        NativeDatabase.memory(
+          setup: (raw) {
+            raw.execute(_draftsDdl);
+            raw.execute(_v2OutboxDdl);
+            raw.execute(_v2SyncStatesDdl);
+            // 上次 v4 的 ADD COLUMN 做完了，`user_version` 还停在 3。
+            raw.execute('ALTER TABLE sync_states ADD COLUMN remote_total_at INTEGER');
+            raw.execute(
+              'INSERT INTO sync_states '
+              '(profile_id, scope, remote_total, backfill_done, remote_total_at) '
+              'VALUES (?, ?, ?, ?, ?)',
+              ['p1', 'mailbox:12:type:0', 42, 0, 1762650000],
+            );
+            raw.execute(
+              _insertV5DraftSql,
+              ['p1', 'me@example.com', '旧草稿甲', 'x', 1762650000],
+            );
+            raw.execute('PRAGMA user_version = 3');
+          },
+        ),
+      );
+      addTearDown(db.close);
+
+      // 不抛就说明 v4 的 addColumn 被跳过（否则 duplicate column name）。
+      final sync = (await db.select(db.syncStates).get()).single;
+      expect(sync.remoteTotal, 42);
+      expect(sync.remoteTotalAt, isNotNull, reason: '已有的探测时刻不能丢');
+
+      // v5 / v6 段照常跑。
+      expect(await _tableExists(db, 'compose_pages'), isTrue);
+      final draft = (await db.select(db.drafts).get()).single;
+      expect(draft.uid, isNotEmpty);
+      expect(draft.rev, 1);
     });
   });
 }

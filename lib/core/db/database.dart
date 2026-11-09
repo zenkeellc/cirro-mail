@@ -112,31 +112,51 @@ class AppDatabase extends _$AppDatabase {
             // - `sync_states.remote_total`：0 = 还不知道服务端有多少封；
             // - `sync_states.backfill_done`：false = 更旧的方向还没翻到底。
             //
-            // 这段代码会被**两个 isolate** 各跑一次（UI 与 Android 后台任务
-            // 共开一个库文件，见类注释）。它们由 SQLite 的 `user_version` 串行化：
-            // 谁先拿到写锁谁执行 ALTER，另一个打开时已经看到 `from == to == 2`。
-            // 因此这里只能放「快且可重复」的语句 —— 单条 ADD COLUMN 没问题，
-            // 但**不要**在这里塞表重写（那会把 5 秒的 busy_timeout 撑爆）。
-            await m.addColumn(outboxEntries, outboxEntries.scheduledAt);
-            await m.addColumn(syncStates, syncStates.remoteTotal);
-            await m.addColumn(syncStates, syncStates.backfillDone);
+            // **这一段必须可重入**（理由与下面 `from < 6` 那段相同）：
+            // drift 的 `onUpgrade` 不在事务里，`user_version` 要等整个迁移
+            // 成功后才写 —— 中途被杀（或两个 isolate 里先跑的那个死在半路）
+            // 库里只留下一部分 DDL，`user_version` 仍是 1，下次启动会从本段
+            // 开头重跑；裸 `addColumn` 第二次就撞 `duplicate column name`，
+            // 而且**每次启动**都撞，库永远打不开。
+            // 所以先查 `PRAGMA table_info`，列已在就跳过。
+            //
+            // 语句仍然要快：UI 与 Android 后台任务共开一个库文件（见类注释），
+            // 写锁只保证「同一时刻一个写」，不保证「这段只跑一次」。
+            // 单条 ADD COLUMN 没问题，但**不要**在这里塞表重写
+            // （那会把 5 秒的 busy_timeout 撑爆）。
+            final outboxColumns = await _columnsOf('outbox_entries');
+            if (!outboxColumns.contains('scheduled_at')) {
+              await m.addColumn(outboxEntries, outboxEntries.scheduledAt);
+            }
+            final syncColumns = await _columnsOf('sync_states');
+            if (!syncColumns.contains('remote_total')) {
+              await m.addColumn(syncStates, syncStates.remoteTotal);
+            }
+            if (!syncColumns.contains('backfill_done')) {
+              await m.addColumn(syncStates, syncStates.backfillDone);
+            }
           }
           if (from < 3) {
             // 只建表。**不加索引、不重写别表** —— 两个 isolate 会各跑一次，
-            // 靠 SQLite 的 user_version 串行化，语句必须快且可重复
-            // （上面那段注释说的「不要在这里塞表重写」就是这条）。
+            // 语句必须快且可重复；`createTable` 自己带 `IF NOT EXISTS`，
+            // 重复执行是安全的（但别在这里塞表重写，理由见 v2 那段）。
             await m.createTable(reminders);
           }
           if (from < 4) {
             // `sync_states.remote_total_at`：null = 还没探过这个邮箱的总数，
             // 与 v3 之前的显示完全一致（侧栏右侧只有未读数）。同样是一条
-            // **ADD COLUMN**，没有任何回填 —— 两个 isolate 各跑一次也安全。
-            await m.addColumn(syncStates, syncStates.remoteTotalAt);
+            // **ADD COLUMN**、没有任何回填 —— 但和 v2 一样要先判列存在：
+            // 迁移中途被杀会从本段开头重跑，裸 `addColumn` 第二次就是
+            // `duplicate column name: remote_total_at`。
+            final syncColumns = await _columnsOf('sync_states');
+            if (!syncColumns.contains('remote_total_at')) {
+              await m.addColumn(syncStates, syncStates.remoteTotalAt);
+            }
           }
           if (from < 5) {
             // 只建表 `compose_pages`（打开中的撰写页）。理由与 v3 那条一样：
-            // 两个 isolate 会各跑一次，靠 SQLite 的 user_version 串行化，
-            // 语句必须快且可重复；这里没有回填，旧库升级后就是「一页都没开」。
+            // `createTable` 是 `IF NOT EXISTS`，重复执行安全；这里没有回填，
+            // 旧库升级后就是「一页都没开」。
             await m.createTable(composePages);
           }
           if (from < 6) {
