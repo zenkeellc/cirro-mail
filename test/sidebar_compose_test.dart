@@ -34,6 +34,9 @@ void main() {
         content: '',
         attachmentPathsJson: '[]',
         updatedAt: DateTime.parse(updatedAt),
+        // v6 的跨设备身份：这一组用例只看渲染，uid/rev 给固定值即可。
+        uid: 'uid-$id',
+        rev: 1,
       );
 
   /// `openDraftsProvider` 的替身：数据源已按「最后编辑时间倒序」排好

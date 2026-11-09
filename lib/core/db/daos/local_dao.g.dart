@@ -6,6 +6,7 @@ part of 'local_dao.dart';
 mixin _$LocalDaoMixin on DatabaseAccessor<AppDatabase> {
   $OutboxEntriesTable get outboxEntries => attachedDatabase.outboxEntries;
   $DraftsTable get drafts => attachedDatabase.drafts;
+  $DraftTombstonesTable get draftTombstones => attachedDatabase.draftTombstones;
   $ComposePagesTable get composePages => attachedDatabase.composePages;
   $RecipientsHistoryTable get recipientsHistory =>
       attachedDatabase.recipientsHistory;
@@ -19,6 +20,11 @@ class LocalDaoManager {
       $$OutboxEntriesTableTableManager(_db.attachedDatabase, _db.outboxEntries);
   $$DraftsTableTableManager get drafts =>
       $$DraftsTableTableManager(_db.attachedDatabase, _db.drafts);
+  $$DraftTombstonesTableTableManager get draftTombstones =>
+      $$DraftTombstonesTableTableManager(
+        _db.attachedDatabase,
+        _db.draftTombstones,
+      );
   $$ComposePagesTableTableManager get composePages =>
       $$ComposePagesTableTableManager(_db.attachedDatabase, _db.composePages);
   $$RecipientsHistoryTableTableManager get recipientsHistory =>

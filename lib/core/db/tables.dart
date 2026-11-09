@@ -264,6 +264,41 @@ class Drafts extends Table {
   /// 附件只存路径，不存内容。
   TextColumn get attachmentPathsJson => text().withDefault(const Constant('[]'))();
   DateTimeColumn get updatedAt => dateTime()();
+
+  /// 跨设备稳定身份（UUIDv4）。v6 起本地生成，永不变。
+  ///
+  /// 为什么不能拿自增 [id] 当身份：`id` 是**本机**的，换设备、重装、两个
+  /// 设备各写一条同名草稿时它毫无意义。云端按 `uid` 认同一份草稿，`id`
+  /// 只在本机内部用。空串是「迁移还没回填」的旧行，唯一索引因此带
+  /// `WHERE uid != ''`（见 `AppDatabase.migration`）。
+  TextColumn get uid => text().withDefault(const Constant(''))();
+
+  /// 本地版本：每次内容变化 +1。云端 CAS 依据。
+  ///
+  /// 插入时是 1；之后每次落库（整行 `saveDraft` 或按列
+  /// `updateDraftFields`）都 +1。**只增不减**：云端用它判断「我手里的
+  /// 这份是不是基于我上次看到的那一版」。
+  IntColumn get rev => integer().withDefault(const Constant(1))();
+}
+
+/// 本地删除墓碑：草稿被删掉之后，`(profileId, uid)` 这条事实要留着。
+///
+/// 只删 [Drafts] 行是不够的：同步层需要知道「这一条是被用户删了」，
+/// 而不是「这台设备还没见过它」—— 两者的处理完全相反（前者要把删除推到
+/// 云端，后者要拉下来）。所以删除动作在同一事务里落一行墓碑，带
+/// `rev = 草稿删除前的 rev + 1`（服务端 CAS 用它判断删除是否基于最新版）。
+///
+/// **不是草稿**：没有正文、不进草稿箱、不参与「打开中」。清空一个实例的
+/// 本地数据时连同墓碑一起清（`ProfileDao._clearDataOf`）。
+@DataClassName('DbDraftTombstone')
+class DraftTombstones extends Table {
+  TextColumn get profileId => text()();
+  TextColumn get uid => text()();
+  IntColumn get rev => integer()();
+  DateTimeColumn get deletedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {profileId, uid};
 }
 
 /// 「打开中」的撰写页。**本机 UI 状态，不是草稿内容**。

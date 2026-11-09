@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:uuid/uuid.dart';
 
 import '../database.dart';
 import '../mappers.dart';
@@ -10,7 +11,15 @@ part 'local_dao.g.dart';
 ///
 /// 这三张表的共同点：**纯本地**，服务端没有对应实体（Web 端的草稿在浏览器
 /// IndexedDB 里，App 读不到，两边不互通，UI 要说明）。
-@DriftAccessor(tables: [OutboxEntries, Drafts, ComposePages, RecipientsHistory])
+///
+/// 例外是 v6 起的草稿身份：`drafts.uid` / `drafts.rev` 与
+/// [DraftTombstones] 是给云端同步准备的本机锚点（云端实体在服务端，
+/// 这里只负责「换设备还认得同一份草稿」）。
+@DriftAccessor(
+  tables: [
+    OutboxEntries, Drafts, DraftTombstones, ComposePages, RecipientsHistory,
+  ],
+)
 class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
   LocalDao(super.db);
 
@@ -232,6 +241,16 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
 
   // -------------------------------------------------------------- 草稿
 
+  /// 本机生成草稿 `uid`。UUIDv4，全局唯一，写入后**永不变**（换设备认同一份
+  /// 草稿靠的就是它，见 [Drafts.uid]）。
+  static const Uuid _uuid = Uuid();
+
+  /// 落一条草稿。`id == null` 是新建，否则在原行上更新。
+  ///
+  /// v6 起每次落库都要维护 `rev`：新建是 1，更新是「当前 rev + 1」。
+  /// **读-改-写在一个事务里**：`rev` 是云端 CAS 的依据，跳号或倒退都会让
+  /// 同步层把新版本当成旧版本。更新路径上如果行已经不在了（发出去的瞬间
+  /// 迟到的保存），照旧写 0 行、返回 `id`，**绝不 INSERT 复活**。
   Future<int> saveDraft({
     required String profileId,
     required String accountEmail,
@@ -243,6 +262,10 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
   }) {
     final companion = DraftsCompanion.insert(
       profileId: profileId,
+      // 只在新建时生效；更新分支会用 `copyWith` 换回原行的 uid（见下）——
+      // 身份永不变，整行重写也不能把它刷掉。
+      uid: Value(_uuid.v4()),
+      rev: const Value(1),
       accountEmail: Value(accountEmail),
       recipientsJson: Value(recipientsJson),
       subject: Value(subject),
@@ -251,15 +274,47 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
       updatedAt: DateTime.now().toUtc(),
     );
     if (id != null) {
-      return (update(drafts)..where((t) => t.id.equals(id)))
-          .write(companion)
-          .then((_) => id);
+      return transaction(() async {
+        final current =
+            await (select(drafts)..where((t) => t.id.equals(id)))
+                .getSingleOrNull();
+        // 行不在了：仍然走 UPDATE（写 0 行），保持「迟到保存不复活」的语义。
+        final rev = (current?.rev ?? 0) + 1;
+        // uid 为空只可能是迁移没回填的脏行：顺手补一个（否则这一行永远
+        // 进不了同步），正常路径永远是「原样写回」。
+        final uid = (current == null || current.uid.isEmpty)
+            ? _uuid.v4()
+            : current.uid;
+        await (update(drafts)..where((t) => t.id.equals(id))).write(
+          companion.copyWith(uid: Value(uid), rev: Value(rev)),
+        );
+        return id;
+      });
     }
     return into(drafts).insert(companion);
   }
 
   Future<DbDraft?> findDraft(int id) =>
       (select(drafts)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  /// 按跨设备身份找草稿（同步层用）。[uid] 全局唯一，仍带 `profileId` 是
+  /// 为了**防御性收窄**：冲突副本/远端应用都只会落在同一个实例里。
+  Future<DbDraft?> findDraftByUid(String profileId, String uid) =>
+      (select(drafts)
+            ..where((t) => t.profileId.equals(profileId) & t.uid.equals(uid)))
+          .getSingleOrNull();
+
+  /// 全部草稿，**跨实例**，按最近修改倒序。
+  ///
+  /// 供同步层首轮全量推送用（`listAll()`）：这里不按 `profileId` 过滤，
+  /// 因为一次推送要覆盖所有已登录实例。同毫秒时用自增 `id` 兜底，保证
+  /// 两次查询顺序稳定。
+  Future<List<DbDraft>> listAllDrafts() => (select(drafts)
+        ..orderBy([
+          (t) => OrderingTerm(expression: t.updatedAt, mode: OrderingMode.desc),
+          (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+        ]))
+      .get();
 
   /// 新建一条「正在编辑」的草稿（撰写页的空白底稿）。
   ///
@@ -283,6 +338,9 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
       final id = await into(drafts).insert(
         DraftsCompanion.insert(
           profileId: profileId,
+          // 与 `saveDraft` 同一套身份规则：新行一定要有 uid、rev 从 1 起。
+          uid: Value(_uuid.v4()),
+          rev: const Value(1),
           accountEmail: Value(accountEmail),
           recipientsJson: Value(recipientsJson),
           subject: Value(subject),
@@ -351,6 +409,11 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
   /// 这一步会写到 0 行 —— 这正是「迟到的防抖保存绝不能复活已删草稿」的实现，
   /// 不靠任何内存里的标记，也不怕进程换个 isolate。
   ///
+  /// v6：除了改列，`rev` 也要 +1（这也是「内容变过」的唯一可靠计数 ——
+  /// 保存器只写变了的列，没写的列不代表内容没变）。为了不出现「读了旧 rev
+  /// 又覆盖回去」，读-改-写放在同一个事务里；行不在就提前返回 0，保持
+  /// 上面的 UPDATE-only 语义。
+  ///
   /// 返回值是影响行数，调用方据此判定「行已不在」。
   Future<int> updateDraftFields(
     int id, {
@@ -373,7 +436,13 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
           : Value(encodeAttachmentPaths(attachmentPaths)),
       updatedAt: Value(DateTime.now().toUtc()),
     );
-    return (update(drafts)..where((t) => t.id.equals(id))).write(companion);
+    return transaction(() async {
+      final current = await (select(drafts)..where((t) => t.id.equals(id)))
+          .getSingleOrNull();
+      if (current == null) return 0;
+      return (update(drafts)..where((t) => t.id.equals(id)))
+          .write(companion.copyWith(rev: Value(current.rev + 1)));
+    });
   }
 
   /// 启动清理：删掉指向**已经不存在的草稿**的「打开中」标记。
@@ -403,14 +472,48 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
         .watch();
   }
 
-  /// 删草稿：**连同它的「打开中」标记一起删**，一个事务。
+  /// 删草稿：**连同它的「打开中」标记一起删**，一个事务；并在同一个事务里
+  /// 落一条墓碑 [DraftTombstones]。
   ///
   /// 这个方法是草稿本地删除的**唯一**入口（发送成功、放弃草稿、草稿箱删除都
   /// 走它）—— 在这里收口，就不会在某条路径上漏删标记、留下一条永远点不开的
-  /// 侧栏行。
-  Future<void> deleteDraft(int id) => transaction(() async {
+  /// 侧栏行；也不会漏写墓碑、让同步层把「本机删了」当成「还没见过」。
+  ///
+  /// 墓碑的 `rev = 草稿删除前的 rev + 1`（删除本身是一次内容变更）。
+  /// 返回值给同步层发云端墓碑用；**调用方忽略返回值不影响**本地行为，所以
+  /// UI 那几处 `await dao.deleteDraft(id)` 不用改。
+  ///
+  /// 行不存在返回 null（幂等：重复删除、或行已被发送链路删掉）。
+  Future<DbDraftTombstone?> deleteDraft(int id) => transaction(() async {
+        final row =
+            await (select(drafts)..where((t) => t.id.equals(id)))
+                .getSingleOrNull();
         await (delete(composePages)..where((t) => t.draftId.equals(id))).go();
+        if (row == null) return null;
+        // 只给「有身份」的草稿写墓碑：uid 为空的是迁移没回填的脏行，
+        // 拿空串写墓碑会让同一个 profile 的所有空 uid 草稿共用一条墓碑
+        // （主键是 profileId + uid）。
+        if (row.uid.isEmpty) {
+          await (delete(drafts)..where((t) => t.id.equals(id))).go();
+          return null;
+        }
+        final now = DateTime.now().toUtc();
+        final tombstone = DraftTombstonesCompanion.insert(
+          profileId: row.profileId,
+          uid: row.uid,
+          rev: row.rev + 1,
+          deletedAt: now,
+        );
+        // 同一 (profileId, uid) 可能已有墓碑：（删除 → 远端/冲突副本又把同一
+        // uid 写回来 → 再删）。用 upsert 保留最新一次删除的 rev 与时间。
+        await into(draftTombstones).insertOnConflictUpdate(tombstone);
         await (delete(drafts)..where((t) => t.id.equals(id))).go();
+        return DbDraftTombstone(
+          profileId: row.profileId,
+          uid: row.uid,
+          rev: row.rev + 1,
+          deletedAt: now,
+        );
       });
 
   // --------------------------------------------------------- 收件人历史
@@ -490,6 +593,9 @@ class LocalDao extends DatabaseAccessor<AppDatabase> with _$LocalDaoMixin {
     await (delete(outboxEntries)..where((t) => t.profileId.equals(profileId)))
         .go();
     await (delete(drafts)..where((t) => t.profileId.equals(profileId))).go();
+    await (delete(draftTombstones)
+          ..where((t) => t.profileId.equals(profileId)))
+        .go();
     await (delete(recipientsHistory)
           ..where((t) => t.profileId.equals(profileId)))
         .go();

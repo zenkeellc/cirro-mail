@@ -127,6 +127,10 @@ class ProfileDao extends DatabaseAccessor<AppDatabase> with _$ProfileDaoMixin {
     await (delete(db.recipientsHistory)..where((t) => t.profileId.equals(id)))
         .go();
     await (delete(db.drafts)..where((t) => t.profileId.equals(id))).go();
+    // 墓碑是「本机删过哪些草稿」的本地账本，跟着实例一起清；不清的话退出
+    // 登录再登回来会把这些旧删除当成待推送的变更。
+    await (delete(db.draftTombstones)..where((t) => t.profileId.equals(id)))
+        .go();
     await (delete(db.reminders)..where((t) => t.profileId.equals(id))).go();
     await (delete(capabilities)..where((t) => t.profileId.equals(id))).go();
   }

@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import 'daos/local_dao.dart';
 import 'daos/mail_dao.dart';
@@ -22,7 +23,8 @@ part 'database.g.dart';
 @DriftDatabase(
   tables: [
     Profiles, Capabilities, Mailboxes, Mails, Attachments, SyncStates,
-    OutboxEntries, RecipientsHistory, Drafts, ComposePages, Reminders,
+    OutboxEntries, RecipientsHistory, Drafts, DraftTombstones, ComposePages,
+    Reminders,
   ],
   daos: [ProfileDao, MailDao, LocalDao, ReminderDao],
 )
@@ -60,7 +62,7 @@ class AppDatabase extends _$AppDatabase {
   static const String _dbName = 'cloud_mail';
 
   @override
-  int get schemaVersion => 5;   // 4 → 5：compose_pages（打开中的撰写页）
+  int get schemaVersion => 6;   // 4 → 5：compose_pages；5 → 6：草稿 uid/rev + 墓碑
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -92,6 +94,13 @@ class AppDatabase extends _$AppDatabase {
           await customStatement(
             'CREATE INDEX IF NOT EXISTS idx_attachments_local '
             'ON attachments (local_path)',
+          );
+          // 草稿的跨设备稳定身份（v6）。**与 `onUpgrade` 的 `from < 6` 那段
+          // 逐字一致** —— 新库与升级库必须同结构，否则「只在老用户机器上
+          // 才有的索引」这种 bug 本地永远复现不出来。
+          await customStatement(
+            'CREATE UNIQUE INDEX IF NOT EXISTS drafts_uid_unique '
+            "ON drafts (uid) WHERE uid != ''",
           );
         },
         onUpgrade: (m, from, to) async {
@@ -129,6 +138,46 @@ class AppDatabase extends _$AppDatabase {
             // 两个 isolate 会各跑一次，靠 SQLite 的 user_version 串行化，
             // 语句必须快且可重复；这里没有回填，旧库升级后就是「一页都没开」。
             await m.createTable(composePages);
+          }
+          if (from < 6) {
+            // v5 → v6：草稿的跨设备稳定身份 + 删除墓碑。
+            //
+            // 与前几条不同，这一段**有回填**：既有草稿行没有 `uid`，而云端
+            // 认草稿全靠它，空串推上去会让所有设备都当成同一份。回填在一个
+            // `user_version` 保护的升级里只做一次（两个 isolate 只有一个能
+            // 拿到写锁执行）；草稿行通常只有几十条，逐行生成 UUID 也远在
+            // 5 秒的 busy_timeout 之内，不会撑爆。
+            //
+            // 回填用 `customSelect`/`customUpdate` 而不是 `select(drafts)`：
+            // 迁移代码不该依赖**当前** `Drafts` 的表定义（以后再加列时，
+            // 生成的行类会去读升级前还不存在的列）。
+            await m.addColumn(drafts, drafts.uid);
+            await m.addColumn(drafts, drafts.rev);
+            await m.createTable(draftTombstones);
+            const uuid = Uuid();
+            final legacy = await customSelect(
+              'SELECT id FROM drafts WHERE uid = ?',
+              variables: [Variable.withString('')],
+              readsFrom: {drafts},
+            ).get();
+            for (final row in legacy) {
+              await customUpdate(
+                'UPDATE drafts SET uid = ?, rev = 1 WHERE id = ?',
+                variables: [
+                  Variable.withString(uuid.v4()),
+                  Variable.withInt(row.read<int>('id')),
+                ],
+                updates: {drafts},
+              );
+            }
+            // 唯一索引与 `onCreate` 里的那条必须**逐字一致**：新库与升级库
+            // 的结构要一模一样，否则本地测试与用户机器上的查询计划会不同。
+            // 部分索引（`WHERE uid != ''`）是给上面那种「还没回填」的旧行
+            // 留的：空串可以有任意多条，非空 uid 只能有一条。
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS drafts_uid_unique '
+              "ON drafts (uid) WHERE uid != ''",
+            );
           }
         },
         beforeOpen: (details) async {

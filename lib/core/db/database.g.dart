@@ -5534,6 +5534,26 @@ class $DraftsTable extends Drafts with TableInfo<$DraftsTable, DbDraft> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _uidMeta = const VerificationMeta('uid');
+  @override
+  late final GeneratedColumn<String> uid = GeneratedColumn<String>(
+    'uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _revMeta = const VerificationMeta('rev');
+  @override
+  late final GeneratedColumn<int> rev = GeneratedColumn<int>(
+    'rev',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -5544,6 +5564,8 @@ class $DraftsTable extends Drafts with TableInfo<$DraftsTable, DbDraft> {
     content,
     attachmentPathsJson,
     updatedAt,
+    uid,
+    rev,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -5615,6 +5637,18 @@ class $DraftsTable extends Drafts with TableInfo<$DraftsTable, DbDraft> {
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('uid')) {
+      context.handle(
+        _uidMeta,
+        uid.isAcceptableOrUnknown(data['uid']!, _uidMeta),
+      );
+    }
+    if (data.containsKey('rev')) {
+      context.handle(
+        _revMeta,
+        rev.isAcceptableOrUnknown(data['rev']!, _revMeta),
+      );
+    }
     return context;
   }
 
@@ -5656,6 +5690,14 @@ class $DraftsTable extends Drafts with TableInfo<$DraftsTable, DbDraft> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      uid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}uid'],
+      )!,
+      rev: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rev'],
+      )!,
     );
   }
 
@@ -5676,6 +5718,21 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
   /// 附件只存路径，不存内容。
   final String attachmentPathsJson;
   final DateTime updatedAt;
+
+  /// 跨设备稳定身份（UUIDv4）。v6 起本地生成，永不变。
+  ///
+  /// 为什么不能拿自增 [id] 当身份：`id` 是**本机**的，换设备、重装、两个
+  /// 设备各写一条同名草稿时它毫无意义。云端按 `uid` 认同一份草稿，`id`
+  /// 只在本机内部用。空串是「迁移还没回填」的旧行，唯一索引因此带
+  /// `WHERE uid != ''`（见 `AppDatabase.migration`）。
+  final String uid;
+
+  /// 本地版本：每次内容变化 +1。云端 CAS 依据。
+  ///
+  /// 插入时是 1；之后每次落库（整行 `saveDraft` 或按列
+  /// `updateDraftFields`）都 +1。**只增不减**：云端用它判断「我手里的
+  /// 这份是不是基于我上次看到的那一版」。
+  final int rev;
   const DbDraft({
     required this.id,
     required this.profileId,
@@ -5685,6 +5742,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
     required this.content,
     required this.attachmentPathsJson,
     required this.updatedAt,
+    required this.uid,
+    required this.rev,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5697,6 +5756,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
     map['content'] = Variable<String>(content);
     map['attachment_paths_json'] = Variable<String>(attachmentPathsJson);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['uid'] = Variable<String>(uid);
+    map['rev'] = Variable<int>(rev);
     return map;
   }
 
@@ -5710,6 +5771,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
       content: Value(content),
       attachmentPathsJson: Value(attachmentPathsJson),
       updatedAt: Value(updatedAt),
+      uid: Value(uid),
+      rev: Value(rev),
     );
   }
 
@@ -5729,6 +5792,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
         json['attachmentPathsJson'],
       ),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      uid: serializer.fromJson<String>(json['uid']),
+      rev: serializer.fromJson<int>(json['rev']),
     );
   }
   @override
@@ -5743,6 +5808,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
       'content': serializer.toJson<String>(content),
       'attachmentPathsJson': serializer.toJson<String>(attachmentPathsJson),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'uid': serializer.toJson<String>(uid),
+      'rev': serializer.toJson<int>(rev),
     };
   }
 
@@ -5755,6 +5822,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
     String? content,
     String? attachmentPathsJson,
     DateTime? updatedAt,
+    String? uid,
+    int? rev,
   }) => DbDraft(
     id: id ?? this.id,
     profileId: profileId ?? this.profileId,
@@ -5764,6 +5833,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
     content: content ?? this.content,
     attachmentPathsJson: attachmentPathsJson ?? this.attachmentPathsJson,
     updatedAt: updatedAt ?? this.updatedAt,
+    uid: uid ?? this.uid,
+    rev: rev ?? this.rev,
   );
   DbDraft copyWithCompanion(DraftsCompanion data) {
     return DbDraft(
@@ -5781,6 +5852,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
           ? data.attachmentPathsJson.value
           : this.attachmentPathsJson,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      uid: data.uid.present ? data.uid.value : this.uid,
+      rev: data.rev.present ? data.rev.value : this.rev,
     );
   }
 
@@ -5794,7 +5867,9 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
           ..write('subject: $subject, ')
           ..write('content: $content, ')
           ..write('attachmentPathsJson: $attachmentPathsJson, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('uid: $uid, ')
+          ..write('rev: $rev')
           ..write(')'))
         .toString();
   }
@@ -5809,6 +5884,8 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
     content,
     attachmentPathsJson,
     updatedAt,
+    uid,
+    rev,
   );
   @override
   bool operator ==(Object other) =>
@@ -5821,7 +5898,9 @@ class DbDraft extends DataClass implements Insertable<DbDraft> {
           other.subject == this.subject &&
           other.content == this.content &&
           other.attachmentPathsJson == this.attachmentPathsJson &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.uid == this.uid &&
+          other.rev == this.rev);
 }
 
 class DraftsCompanion extends UpdateCompanion<DbDraft> {
@@ -5833,6 +5912,8 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
   final Value<String> content;
   final Value<String> attachmentPathsJson;
   final Value<DateTime> updatedAt;
+  final Value<String> uid;
+  final Value<int> rev;
   const DraftsCompanion({
     this.id = const Value.absent(),
     this.profileId = const Value.absent(),
@@ -5842,6 +5923,8 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
     this.content = const Value.absent(),
     this.attachmentPathsJson = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.uid = const Value.absent(),
+    this.rev = const Value.absent(),
   });
   DraftsCompanion.insert({
     this.id = const Value.absent(),
@@ -5852,6 +5935,8 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
     this.content = const Value.absent(),
     this.attachmentPathsJson = const Value.absent(),
     required DateTime updatedAt,
+    this.uid = const Value.absent(),
+    this.rev = const Value.absent(),
   }) : profileId = Value(profileId),
        updatedAt = Value(updatedAt);
   static Insertable<DbDraft> custom({
@@ -5863,6 +5948,8 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
     Expression<String>? content,
     Expression<String>? attachmentPathsJson,
     Expression<DateTime>? updatedAt,
+    Expression<String>? uid,
+    Expression<int>? rev,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -5874,6 +5961,8 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
       if (attachmentPathsJson != null)
         'attachment_paths_json': attachmentPathsJson,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (uid != null) 'uid': uid,
+      if (rev != null) 'rev': rev,
     });
   }
 
@@ -5886,6 +5975,8 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
     Value<String>? content,
     Value<String>? attachmentPathsJson,
     Value<DateTime>? updatedAt,
+    Value<String>? uid,
+    Value<int>? rev,
   }) {
     return DraftsCompanion(
       id: id ?? this.id,
@@ -5896,6 +5987,8 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
       content: content ?? this.content,
       attachmentPathsJson: attachmentPathsJson ?? this.attachmentPathsJson,
       updatedAt: updatedAt ?? this.updatedAt,
+      uid: uid ?? this.uid,
+      rev: rev ?? this.rev,
     );
   }
 
@@ -5928,6 +6021,12 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (uid.present) {
+      map['uid'] = Variable<String>(uid.value);
+    }
+    if (rev.present) {
+      map['rev'] = Variable<int>(rev.value);
+    }
     return map;
   }
 
@@ -5941,7 +6040,321 @@ class DraftsCompanion extends UpdateCompanion<DbDraft> {
           ..write('subject: $subject, ')
           ..write('content: $content, ')
           ..write('attachmentPathsJson: $attachmentPathsJson, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('uid: $uid, ')
+          ..write('rev: $rev')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DraftTombstonesTable extends DraftTombstones
+    with TableInfo<$DraftTombstonesTable, DbDraftTombstone> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DraftTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _profileIdMeta = const VerificationMeta(
+    'profileId',
+  );
+  @override
+  late final GeneratedColumn<String> profileId = GeneratedColumn<String>(
+    'profile_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _uidMeta = const VerificationMeta('uid');
+  @override
+  late final GeneratedColumn<String> uid = GeneratedColumn<String>(
+    'uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _revMeta = const VerificationMeta('rev');
+  @override
+  late final GeneratedColumn<int> rev = GeneratedColumn<int>(
+    'rev',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [profileId, uid, rev, deletedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'draft_tombstones';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DbDraftTombstone> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('profile_id')) {
+      context.handle(
+        _profileIdMeta,
+        profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileIdMeta);
+    }
+    if (data.containsKey('uid')) {
+      context.handle(
+        _uidMeta,
+        uid.isAcceptableOrUnknown(data['uid']!, _uidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_uidMeta);
+    }
+    if (data.containsKey('rev')) {
+      context.handle(
+        _revMeta,
+        rev.isAcceptableOrUnknown(data['rev']!, _revMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_revMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deletedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {profileId, uid};
+  @override
+  DbDraftTombstone map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DbDraftTombstone(
+      profileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_id'],
+      )!,
+      uid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}uid'],
+      )!,
+      rev: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rev'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DraftTombstonesTable createAlias(String alias) {
+    return $DraftTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class DbDraftTombstone extends DataClass
+    implements Insertable<DbDraftTombstone> {
+  final String profileId;
+  final String uid;
+  final int rev;
+  final DateTime deletedAt;
+  const DbDraftTombstone({
+    required this.profileId,
+    required this.uid,
+    required this.rev,
+    required this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['profile_id'] = Variable<String>(profileId);
+    map['uid'] = Variable<String>(uid);
+    map['rev'] = Variable<int>(rev);
+    map['deleted_at'] = Variable<DateTime>(deletedAt);
+    return map;
+  }
+
+  DraftTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return DraftTombstonesCompanion(
+      profileId: Value(profileId),
+      uid: Value(uid),
+      rev: Value(rev),
+      deletedAt: Value(deletedAt),
+    );
+  }
+
+  factory DbDraftTombstone.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DbDraftTombstone(
+      profileId: serializer.fromJson<String>(json['profileId']),
+      uid: serializer.fromJson<String>(json['uid']),
+      rev: serializer.fromJson<int>(json['rev']),
+      deletedAt: serializer.fromJson<DateTime>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'profileId': serializer.toJson<String>(profileId),
+      'uid': serializer.toJson<String>(uid),
+      'rev': serializer.toJson<int>(rev),
+      'deletedAt': serializer.toJson<DateTime>(deletedAt),
+    };
+  }
+
+  DbDraftTombstone copyWith({
+    String? profileId,
+    String? uid,
+    int? rev,
+    DateTime? deletedAt,
+  }) => DbDraftTombstone(
+    profileId: profileId ?? this.profileId,
+    uid: uid ?? this.uid,
+    rev: rev ?? this.rev,
+    deletedAt: deletedAt ?? this.deletedAt,
+  );
+  DbDraftTombstone copyWithCompanion(DraftTombstonesCompanion data) {
+    return DbDraftTombstone(
+      profileId: data.profileId.present ? data.profileId.value : this.profileId,
+      uid: data.uid.present ? data.uid.value : this.uid,
+      rev: data.rev.present ? data.rev.value : this.rev,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbDraftTombstone(')
+          ..write('profileId: $profileId, ')
+          ..write('uid: $uid, ')
+          ..write('rev: $rev, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(profileId, uid, rev, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DbDraftTombstone &&
+          other.profileId == this.profileId &&
+          other.uid == this.uid &&
+          other.rev == this.rev &&
+          other.deletedAt == this.deletedAt);
+}
+
+class DraftTombstonesCompanion extends UpdateCompanion<DbDraftTombstone> {
+  final Value<String> profileId;
+  final Value<String> uid;
+  final Value<int> rev;
+  final Value<DateTime> deletedAt;
+  final Value<int> rowid;
+  const DraftTombstonesCompanion({
+    this.profileId = const Value.absent(),
+    this.uid = const Value.absent(),
+    this.rev = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DraftTombstonesCompanion.insert({
+    required String profileId,
+    required String uid,
+    required int rev,
+    required DateTime deletedAt,
+    this.rowid = const Value.absent(),
+  }) : profileId = Value(profileId),
+       uid = Value(uid),
+       rev = Value(rev),
+       deletedAt = Value(deletedAt);
+  static Insertable<DbDraftTombstone> custom({
+    Expression<String>? profileId,
+    Expression<String>? uid,
+    Expression<int>? rev,
+    Expression<DateTime>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (profileId != null) 'profile_id': profileId,
+      if (uid != null) 'uid': uid,
+      if (rev != null) 'rev': rev,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DraftTombstonesCompanion copyWith({
+    Value<String>? profileId,
+    Value<String>? uid,
+    Value<int>? rev,
+    Value<DateTime>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return DraftTombstonesCompanion(
+      profileId: profileId ?? this.profileId,
+      uid: uid ?? this.uid,
+      rev: rev ?? this.rev,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (profileId.present) {
+      map['profile_id'] = Variable<String>(profileId.value);
+    }
+    if (uid.present) {
+      map['uid'] = Variable<String>(uid.value);
+    }
+    if (rev.present) {
+      map['rev'] = Variable<int>(rev.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DraftTombstonesCompanion(')
+          ..write('profileId: $profileId, ')
+          ..write('uid: $uid, ')
+          ..write('rev: $rev, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -6674,6 +7087,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $RecipientsHistoryTable recipientsHistory =
       $RecipientsHistoryTable(this);
   late final $DraftsTable drafts = $DraftsTable(this);
+  late final $DraftTombstonesTable draftTombstones = $DraftTombstonesTable(
+    this,
+  );
   late final $ComposePagesTable composePages = $ComposePagesTable(this);
   late final $RemindersTable reminders = $RemindersTable(this);
   late final ProfileDao profileDao = ProfileDao(this as AppDatabase);
@@ -6694,6 +7110,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     outboxEntries,
     recipientsHistory,
     drafts,
+    draftTombstones,
     composePages,
     reminders,
   ];
@@ -9368,6 +9785,8 @@ typedef $$DraftsTableCreateCompanionBuilder =
       Value<String> content,
       Value<String> attachmentPathsJson,
       required DateTime updatedAt,
+      Value<String> uid,
+      Value<int> rev,
     });
 typedef $$DraftsTableUpdateCompanionBuilder =
     DraftsCompanion Function({
@@ -9379,6 +9798,8 @@ typedef $$DraftsTableUpdateCompanionBuilder =
       Value<String> content,
       Value<String> attachmentPathsJson,
       Value<DateTime> updatedAt,
+      Value<String> uid,
+      Value<int> rev,
     });
 
 class $$DraftsTableFilterComposer
@@ -9427,6 +9848,16 @@ class $$DraftsTableFilterComposer
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rev => $composableBuilder(
+    column: $table.rev,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -9479,6 +9910,16 @@ class $$DraftsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rev => $composableBuilder(
+    column: $table.rev,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DraftsTableAnnotationComposer
@@ -9519,6 +9960,12 @@ class $$DraftsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get uid =>
+      $composableBuilder(column: $table.uid, builder: (column) => column);
+
+  GeneratedColumn<int> get rev =>
+      $composableBuilder(column: $table.rev, builder: (column) => column);
 }
 
 class $$DraftsTableTableManager
@@ -9557,6 +10004,8 @@ class $$DraftsTableTableManager
                 Value<String> content = const Value.absent(),
                 Value<String> attachmentPathsJson = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<String> uid = const Value.absent(),
+                Value<int> rev = const Value.absent(),
               }) => DraftsCompanion(
                 id: id,
                 profileId: profileId,
@@ -9566,6 +10015,8 @@ class $$DraftsTableTableManager
                 content: content,
                 attachmentPathsJson: attachmentPathsJson,
                 updatedAt: updatedAt,
+                uid: uid,
+                rev: rev,
               ),
           createCompanionCallback:
               ({
@@ -9577,6 +10028,8 @@ class $$DraftsTableTableManager
                 Value<String> content = const Value.absent(),
                 Value<String> attachmentPathsJson = const Value.absent(),
                 required DateTime updatedAt,
+                Value<String> uid = const Value.absent(),
+                Value<int> rev = const Value.absent(),
               }) => DraftsCompanion.insert(
                 id: id,
                 profileId: profileId,
@@ -9586,6 +10039,8 @@ class $$DraftsTableTableManager
                 content: content,
                 attachmentPathsJson: attachmentPathsJson,
                 updatedAt: updatedAt,
+                uid: uid,
+                rev: rev,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -9616,6 +10071,202 @@ typedef $$DraftsTableProcessedTableManager =
       $$DraftsTableUpdateCompanionBuilder,
       (DbDraft, BaseReferences<_$AppDatabase, $DraftsTable, DbDraft>),
       DbDraft,
+      PrefetchHooks Function()
+    >;
+typedef $$DraftTombstonesTableCreateCompanionBuilder =
+    DraftTombstonesCompanion Function({
+      required String profileId,
+      required String uid,
+      required int rev,
+      required DateTime deletedAt,
+      Value<int> rowid,
+    });
+typedef $$DraftTombstonesTableUpdateCompanionBuilder =
+    DraftTombstonesCompanion Function({
+      Value<String> profileId,
+      Value<String> uid,
+      Value<int> rev,
+      Value<DateTime> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$DraftTombstonesTableFilterComposer
+    extends Composer<_$AppDatabase, $DraftTombstonesTable> {
+  $$DraftTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rev => $composableBuilder(
+    column: $table.rev,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DraftTombstonesTableOrderingComposer
+    extends Composer<_$AppDatabase, $DraftTombstonesTable> {
+  $$DraftTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rev => $composableBuilder(
+    column: $table.rev,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DraftTombstonesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DraftTombstonesTable> {
+  $$DraftTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
+
+  GeneratedColumn<String> get uid =>
+      $composableBuilder(column: $table.uid, builder: (column) => column);
+
+  GeneratedColumn<int> get rev =>
+      $composableBuilder(column: $table.rev, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$DraftTombstonesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DraftTombstonesTable,
+          DbDraftTombstone,
+          $$DraftTombstonesTableFilterComposer,
+          $$DraftTombstonesTableOrderingComposer,
+          $$DraftTombstonesTableAnnotationComposer,
+          $$DraftTombstonesTableCreateCompanionBuilder,
+          $$DraftTombstonesTableUpdateCompanionBuilder,
+          (
+            DbDraftTombstone,
+            BaseReferences<
+              _$AppDatabase,
+              $DraftTombstonesTable,
+              DbDraftTombstone
+            >,
+          ),
+          DbDraftTombstone,
+          PrefetchHooks Function()
+        > {
+  $$DraftTombstonesTableTableManager(
+    _$AppDatabase db,
+    $DraftTombstonesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DraftTombstonesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DraftTombstonesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DraftTombstonesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> profileId = const Value.absent(),
+                Value<String> uid = const Value.absent(),
+                Value<int> rev = const Value.absent(),
+                Value<DateTime> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DraftTombstonesCompanion(
+                profileId: profileId,
+                uid: uid,
+                rev: rev,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String profileId,
+                required String uid,
+                required int rev,
+                required DateTime deletedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => DraftTombstonesCompanion.insert(
+                profileId: profileId,
+                uid: uid,
+                rev: rev,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$DraftTombstonesTable, DbDraftTombstone>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $DraftTombstonesTable,
+                    DbDraftTombstone
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DraftTombstonesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DraftTombstonesTable,
+      DbDraftTombstone,
+      $$DraftTombstonesTableFilterComposer,
+      $$DraftTombstonesTableOrderingComposer,
+      $$DraftTombstonesTableAnnotationComposer,
+      $$DraftTombstonesTableCreateCompanionBuilder,
+      $$DraftTombstonesTableUpdateCompanionBuilder,
+      (
+        DbDraftTombstone,
+        BaseReferences<_$AppDatabase, $DraftTombstonesTable, DbDraftTombstone>,
+      ),
+      DbDraftTombstone,
       PrefetchHooks Function()
     >;
 typedef $$ComposePagesTableCreateCompanionBuilder =
@@ -10040,6 +10691,8 @@ class $AppDatabaseManager {
       $$RecipientsHistoryTableTableManager(_db, _db.recipientsHistory);
   $$DraftsTableTableManager get drafts =>
       $$DraftsTableTableManager(_db, _db.drafts);
+  $$DraftTombstonesTableTableManager get draftTombstones =>
+      $$DraftTombstonesTableTableManager(_db, _db.draftTombstones);
   $$ComposePagesTableTableManager get composePages =>
       $$ComposePagesTableTableManager(_db, _db.composePages);
   $$RemindersTableTableManager get reminders =>
