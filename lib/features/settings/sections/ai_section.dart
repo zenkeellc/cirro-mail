@@ -1043,7 +1043,9 @@ class _ChannelCardState extends State<_ChannelCard> {
     final messenger = ScaffoldMessenger.of(context);
     String? sentence;
     try {
-      sentence = await action.onTap();
+      // 把点击这一帧的 context 交给实现方：它要用它推自己的登录页 / 账号页 /
+      // 收银台弹层。核心只显示返回的那句话，不替实现方导航。
+      sentence = await action.onTap(context);
     } catch (_) {
       sentence = null;
     } finally {

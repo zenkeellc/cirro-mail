@@ -32,6 +32,8 @@
 ///   [AiTransport.channelLabel] 与 [AiChannelState.detail]。
 library;
 
+import 'package:flutter/widgets.dart' show BuildContext;
+
 /// 一次托管调用：**任务 id + 已翻译好的入参**。
 ///
 /// [task] 是稳定字符串码（`rewrite` / `draft` / `continuation` / `subject` /
@@ -62,6 +64,16 @@ enum AiChannelTone { neutral, positive, warning, critical }
 /// 实现方的（去订阅 / 续订 / 重新登录），公开仓库既不该写这些字，也不该知道
 /// 「该导航到哪一页」。核心只负责画一颗按钮、调 [onTap]、把返回的那句话原样
 /// 弹出来 —— 只有实现方知道刚才发生了什么、该说哪一句。
+///
+/// ## [onTap] 必须拿到 `BuildContext`
+///
+/// 动作的落点通常是**应用内**的页面（登录页 / 账号页 / 收银台弹层），这些都要
+/// 一个真实的 `BuildContext` 才能 `Navigator.push` / `showDialog`。早期签名是
+/// `Future<String?> Function()`（无参），实现方拿不到 context，就只剩两条烂路：
+/// 打开外部浏览器，或者让核心替它记住一个全局 context —— 前者把应用内流程降级
+/// 成网页兜底，后者是持有过期的 BuildContext。核心现在把点击那一帧的
+/// `BuildContext` 直接交给实现方（由按钮所在 widget 传入），实现方自己决定
+/// 推页面、弹层还是开浏览器。
 class AiChannelAction {
   const AiChannelAction({required this.label, required this.onTap});
 
@@ -69,7 +81,10 @@ class AiChannelAction {
   final String label;
 
   /// 点下去做什么。返回**要原样弹给用户的一句话**（null = 不弹）。
-  final Future<String?> Function() onTap;
+  ///
+  /// [BuildContext] 是触发点击那颗按钮的 widget 的 context：还在树上、属于
+  /// 当前 `Navigator`。实现方只在 `onTap` 内部使用它，**不要**把它存下来。
+  final Future<String?> Function(BuildContext context) onTap;
 }
 
 /// 通道眼下的可用性与一句给人看的话。

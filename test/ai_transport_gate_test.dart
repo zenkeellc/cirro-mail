@@ -373,7 +373,7 @@ void main() {
           tone: ext.AiChannelTone.positive,
           action: ext.AiChannelAction(
             label: '改用自带 Key',
-            onTap: () async {
+            onTap: (context) async {
               tapped++;
               // 这句话由实现方给，核心**原样**弹出来 —— 不拼「操作成功」。
               return '已切换为自带 Key，重启 App 后生效';
@@ -434,7 +434,7 @@ void main() {
             label: '续订',
             // 返回 null = 实现方没有话要说（例如它自己已经导航走了）：
             // 核心不替它兜一句「已完成」，也就不弹 SnackBar。
-            onTap: () async {
+            onTap: (context) async {
               tapped++;
               return null;
             },
