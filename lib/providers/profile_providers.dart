@@ -29,6 +29,22 @@ final Provider<List<Profile>> activeProfilesProvider = Provider<List<Profile>>(
   name: 'activeProfiles',
 );
 
+/// **一个实例都没有**（全新安装 / 刚把最后一个删掉）。
+///
+/// 单独一个 `bool` provider，而不是让外壳去 `watch(profilesProvider).value`
+/// 自己算：后者会在**每一次** profiles 流推送时重建外壳（同步链路每轮都会
+/// 写 `lastSyncAt`），而外壳只需要知道「空不空」。`Provider` 的依赖通知按
+/// 值比较 —— 这个 bool 在 true/false 之间才变，外壳就只在真正跨过那条线时
+/// 重画。也顺手把「加载中」与「确实是空」分开了：`value == null`（还没读出来）
+/// 一律算 false，避免冷启动先闪一下「没有导航」的版面。
+final Provider<bool> noInstancesProvider = Provider<bool>(
+  (ref) {
+    final list = ref.watch(profilesProvider).value;
+    return list != null && list.isEmpty;
+  },
+  name: 'noInstances',
+);
+
 /// **该被同步调度考虑的**实例：**全部实例**，一个不筛。
 ///
 /// 这里以前是一道 `userId > 0 && email.isNotEmpty` 的过滤，它同时踩了两个坑

@@ -146,12 +146,14 @@ void main() {
 
         // 落点：/mail/all → /settings（不再折到 /setup）。
         expect(r.uri, Routes.settings);
-        // 外壳：宽屏侧栏 / 窄屏底部导航都在。
-        if (size.width >= 600) {
-          expect(find.byType(NavSidebar), findsOneWidget);
-        } else {
-          expect(find.byType(NavigationBar), findsOneWidget);
-        }
+        // 外壳在，但**一级导航收起**：零实例时邮件 / 星标两支都会被
+        // `resolveRedirect` 折回设置页，摆着就是两条点了没反应的按钮
+        // （2026-11-10 安卓真机报的就是这个）。添加实例并登录之后导航自己回来，
+        // 见 `fresh_install_extension_route_test.dart` 那条。
+        expect(find.byType(NavSidebar), findsNothing,
+            reason: '零实例时宽屏侧栏收起');
+        expect(find.byType(NavigationBar), findsNothing,
+            reason: '零实例时窄屏底部导航收起');
         // 设置页本体在（不是那张表单）。
         expect(find.byType(SettingsScreen), findsOneWidget);
         expect(find.text(zh.addAndSignIn), findsNothing,
@@ -185,8 +187,9 @@ void main() {
       expect(find.text(zh.addFirstInstance), findsNothing);
       expect(settingsRailItem(), findsNWidgets(10),
           reason: '设置分类栏十项必须一个不少');
-      expect(find.byType(NavSidebar), findsOneWidget,
-          reason: '一级导航（主菜单）也还在');
+      // 零实例 → 外壳侧栏收起（见上一条用例的注释）；设置页自己的分类栏
+      // 与正文仍然两栏铺开，所以「不压栈、不整页盖住」这件事照样成立。
+      expect(find.byType(NavSidebar), findsNothing);
       expect(find.byType(SettingsScreen), findsOneWidget,
           reason: '不该再压一层「设置页」或整页表单上去');
       // 页内翻页：地址不变（不压栈、不改 URL）。

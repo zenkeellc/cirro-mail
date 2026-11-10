@@ -795,8 +795,18 @@ String? resolveRedirect({
   // 设置页：壳的一级导航与设置分类菜单都得在，用户在那里点「添加第一个
   // 实例」才开始加。这条同时是 `setup` 路由退役的原因 —— 那张表已经并进
   // 设置页的「实例」那一栏（`AddInstanceSection`）。
+  //
+  // **扩展的顶层页面例外**（`/account/login` 这类）：它们是**壳之外**的
+  // 整屏页，不依赖任何邮件实例就能用 —— 恰恰相反，零实例时它们是最该到的
+  // 那一页（Pro 的账号登录与「添加第一个邮件实例」是两件事，账号不该被
+  // 邮件实例的有无卡住）。曾经没有这个例外：全新安装的 Pro 里点「账号 →
+  // 登录」被这条重定向原样折回设置页，用户看到的是「按钮点了没反应」
+  // （2026-11-10 真机复现）。判据只认**扩展注册的顶层路由**，核心自己的
+  // 顶层页（登录页 / 同步页）仍按上面的规矩折回设置页。
   if (profiles.isEmpty) {
-    return location == Routes.settings ? null : Routes.settings;
+    if (location == Routes.settings) return null;
+    if (_extensionOwnsTopLevelPath(location)) return null;
+    return Routes.settings;
   }
 
   final anyLoggedIn = profiles.any((p) => p.isLoggedIn);
@@ -842,6 +852,31 @@ Profile? _find(List<Profile> profiles, String? id) {
     if (profile.id == id) return profile;
   }
   return null;
+}
+
+/// 地址是不是**扩展注册的顶层路由**（`AppExtension.routes()`）。
+///
+/// 只给 [resolveRedirect] 里「一个实例都没有」那一条用：零实例时我们要把
+/// 用户钉在设置页（那里才能添加实例），但扩展的顶层页是**整屏、壳之外**的，
+/// 不依赖邮件实例 —— 折回去等于让按钮点击没反应。
+///
+/// 子路径一并放行（`/account/login?expired=1` 的 query 不进
+/// `matchedLocation`，但扩展也可以自己往里挂 `:id` 这种子路由）：顶层注册的
+/// 前缀就是那一整块「扩展自己管的面」。
+///
+/// 注册表是启动前定好、之后只读的全局单例（见 `AppExtensionRegistry`），
+/// 所以这里直接读，不需要 `ref`。公开版注册表为空 → 恒为 false，行为与
+/// 这个例外出现之前逐字相同。
+bool _extensionOwnsTopLevelPath(String location) {
+  final path = Uri.parse(location).path;
+  if (path.isEmpty) return false;
+  for (final route in AppExtensionRegistry.instance.routes()) {
+    if (route is! GoRoute) continue;
+    final prefix = route.path;
+    if (prefix.isEmpty) continue;
+    if (path == prefix || path.startsWith('$prefix/')) return true;
+  }
+  return false;
 }
 
 MailFolder folderOf(String? raw) {

@@ -64,6 +64,19 @@ class AppShell extends ConsumerWidget {
     final compact = Breakpoints.isCompact(MediaQuery.sizeOf(context).width);
     final current = navigationShell.currentIndex;
 
+    // 一个邮件实例都没有（全新安装 / 刚删光）时**收起一级导航**。
+    //
+    // 那一刻只有设置页是能用的：`resolveRedirect` 会把 `/mail/...` 与
+    // `/starred` 一律折回 `/settings`（没有实例就没有收件箱，也没有星标），
+    // 于是底部那三项里有两项**点了什么都没有** —— 用户看到的是「停在设置页、
+    // 切不过去」（2026-11-10 安卓真机报告）。与其摆两条死按钮，不如干脆
+    // 不摆：用户添加完实例、登录之后，实例表非空，导航自己回来。
+    //
+    // 只在**已经读出来且确实为空**时才收：还在加载时保持原样，避免冷启动
+    // 先闪一下没有导航的版面（判据与「不随 profiles 流每轮重建」的考虑
+    // 都在 `noInstancesProvider` 的注释里）。
+    final noInstances = ref.watch(noInstancesProvider);
+
     // 地址只在**外壳这一层**读一次，窄屏那支要拿它判详情页、判设置页，
     // 宽屏那支也要判设置页。见 `showsComposeFab` 的文档注释。
     final uri = GoRouterState.of(context).uri;
@@ -76,7 +89,9 @@ class AppShell extends ConsumerWidget {
       // 「你现在在收件箱这一层」——用户其实已经沉进一封信里了。
       // 撰写页也是「沉进去」的一屏：手机上没有一级导航的位置，页内自己有
       // 关闭/发送。判据与宽屏的「不挂 FAB」同源（见 [isComposeRoute]）。
-      final hideNav = isDetailRoute(uri) || app_router.isComposeRoute(uri);
+      final hideNav = isDetailRoute(uri) ||
+          app_router.isComposeRoute(uri) ||
+          noInstances;
       return _BreakpointRouteSync(
         child: Scaffold(
           body: navigationShell,
@@ -125,18 +140,20 @@ class AppShell extends ConsumerWidget {
         floatingActionButton: showsComposeFab(uri, compact: false)
             ? const ComposeAction(fab: true)
             : null,
+        // 地址取 `GoRouterState.of(context)` —— 这里解析到的是**外壳那一页**
+        // （`AppShell` 就挂在那棵子树下，`GoRouterState.of` 从顶层 Navigator
+        // 的注册表里查得到它），所以这一层**不随分支内的导航重建**。
+        //
+        // 这不影响侧栏高亮：它需要的 `uri` 是**整条地址**，而整条地址只有
+        // 最外那一层 `GoRouterState` 上才有（`match.dart` 的 `buildState`
+        // 里 `uri: matches.uri` —— 所有 match 共用同一个；被分支单独收窄的
+        // 只有 `matchedLocation`）。外壳页那次 build 恰好就在整条地址刚变的
+        // 时候发生，所以 `uri` 每次都是新的。
         body: Row(
           children: <Widget>[
-            // 地址取 `GoRouterState.of(context)` —— 这里解析到的是**外壳那一页**
-            // （`AppShell` 就挂在那棵子树下，`GoRouterState.of` 从顶层 Navigator
-            // 的注册表里查得到它），所以这一层**不随分支内的导航重建**。
-            //
-            // 这不影响侧栏高亮：它需要的 `uri` 是**整条地址**，而整条地址只有
-            // 最外那一层 `GoRouterState` 上才有（`match.dart` 的 `buildState`
-            // 里 `uri: matches.uri` —— 所有 match 共用同一个；被分支单独收窄的
-            // 只有 `matchedLocation`）。外壳页那次 build 恰好就在整条地址刚变的
-            // 时候发生，所以 `uri` 每次都是新的。
-            _sidebar(context, ref, uri),
+            // 零实例时与窄屏同一个理由：侧栏里每一项都会折回设置页
+            // （见 `noInstances` 的注释），收起它，只留设置页自己的分类栏。
+            if (!noInstances) _sidebar(context, ref, uri),
             Expanded(child: navigationShell),
           ],
         ),
