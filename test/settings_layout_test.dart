@@ -348,6 +348,13 @@ void main() {
     expect(find.byType(NavSidebarItem), findsNWidgets(10));
     expect(find.byType(SettingsCategoryTile), findsNothing);
 
+    // 宽屏分类栏**不动**：行高仍是 40 —— 这次只改窄屏那张列表（48），
+    // 别被「两处共用一颗行」带着把宽屏也撑高。
+    for (final item
+        in tester.widgetList<NavSidebarItem>(find.byType(NavSidebarItem))) {
+      expect(item.height, 40, reason: '宽屏分类栏 ${item.label}');
+    }
+
     // 默认选中「实例」：右栏是实例正文（空实例时的入口），
     // **不是**一片空白 —— `_built` 若忘了把初值放进去就是那样。
     expect(find.text(zh.addFirstInstance), findsOneWidget);
