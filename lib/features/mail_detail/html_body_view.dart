@@ -13,6 +13,7 @@ import 'package:html/parser.dart' as html_parser;
 import '../../core/theme/app_theme.dart';
 import '../../core/util/url_utils.dart';
 import '../compose/html/html_depth_guard.dart';
+import 'email_css.dart';
 import 'external_resource_banner.dart';
 import 'external_resources.dart';
 
@@ -38,6 +39,12 @@ import 'package:html/dom.dart' as dom;
 ///    `customStylesBuilder` 补回去，并尽量把 `<body style="...">` 里能被支持的
 ///    几项（字号 / 行高 / 颜色）提到外层 —— 与 Web 端「把 body 的 style 注入
 ///    到容器」的做法对齐。
+///
+///    另外把 `<style>` 里算出来的 `display` 也喂进去（见 [EmailCss]）：
+///    真实营销邮件会用 `.m7{display:none}` 这类规则在手机版 / 桌面版二选一，
+///    不认它就会把同一段内容画两遍。**只补 display**，别的属性不碰。
+///    已知上限：媒体查询按固定桌面视口（800px / screen / 浅色）求值；样式表
+///    的 `!important` 压不过行内 `style`（fwfh 先加 custom styles 再加行内）。
 ///
 /// 4. **外联资源默认拦截**：正文里的外链图片 / 背景图 / 样式表 / 脚本在渲染
 ///    前扫描出来（[scanExternalResources]），默认一律不加载；顶部
@@ -95,6 +102,12 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
   late String _prepared;
   EmailBodyStyle _bodyStyle = const EmailBodyStyle();
 
+  /// 正文 `<style>` 算出来的 `display`（每封邮件解析一次）。
+  ///
+  /// 与 [_prepared] 一起在 [_prepare] 里重建；`customStylesBuilder` 每个元素
+  /// 调一次 [EmailCss.displayFor]，所以这里只做解析、不在 build 里解析。
+  EmailCss _css = const EmailCss.empty();
+
   /// 净化前扫出来的外联资源，顺序即正文首次出现顺序。
   ExternalResourceScan _scan = ExternalResourceScan.empty;
 
@@ -137,6 +150,10 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
     // 扫描必须在净化之前：`sanitizeEmailHtml` 会把 `<script>` /
     // `<link rel=stylesheet>` 删掉，之后就看不到它们了。
     _scan = scanExternalResources(substituted, ossBase: widget.ossBase);
+    // 样式表用**净化前**的副本解析，与 `_scan` 同一份：净化本身不动
+    // `<style>`，两边等价；放在净化后面解析也没差，索性跟着 `_scan` 走，
+    // 少一次「净化是否改写了 style 内容」的心智负担。
+    _css = EmailCss.parse(substituted);
     final parsed = sanitizeEmailHtml(substituted);
     _prepared = parsed.html;
     _bodyStyle = parsed.bodyStyle;
@@ -282,13 +299,23 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
   static final _floatDeclaration =
       RegExp(r'\bfloat\s*:\s*(?:left|right)', caseSensitive: false);
 
-  /// 把 Web 端 shadow-html 的默认样式翻译成 fwfh 认识的 CSS 声明。
+  /// 把 Web 端 shadow-html 的默认样式翻译成 fwfh 认识的 CSS 声明，并合并
+  /// 邮件 `<style>` 算出来的 `display`。
   ///
   /// 只处理能生效的几项，**不写 fwfh 不支持的东西**（媒体查询、grid），
   /// 那些会被静默忽略 —— 写了也只是噪声。
   /// 唯一的例外是 `float`：它本身也不被支持，但会被改写成
   /// `inline-block` 顶上（见下）。
-  static Map<String, String>? _customStyles(
+  ///
+  /// 优先级（从低到高）：这里的默认样式 → 邮件样式表的 `display` →
+  /// `float` 降级。样式表的 `display` 盖过默认值，是「作者的 CSS 比我们的
+  /// 兜底更懂这封邮件」；但 `float` 降级必须最后覆盖（原因见下），唯一例外
+  /// 是样式表明确 `display:none` —— 藏内容永远优先，否则又会出现
+  /// 「手机版 + 桌面版画两遍」。
+  ///
+  /// 非 static：要读 [`_css`]。`customStylesBuilder` 是每个元素一次的热路径，
+  /// 所以只做查表，不在这里解析 `<style>`。
+  Map<String, String>? _customStyles(
     dom.Element element,
     ThemeData theme,
   ) {
@@ -319,6 +346,11 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
         styles['border-collapse'] = 'collapse';
     }
 
+    // 邮件 `<style>` 算出来的 display：作者 CSS 优先于上面那几项默认值。
+    // 没有命中就什么都不加，别把 fwfh 的默认 display 顶掉。
+    final cssDisplay = _css.displayFor(element);
+    if (cssDisplay != null) styles['display'] = cssDisplay;
+
     final rawStyle = element.attributes['style'];
     if (rawStyle != null && _floatDeclaration.hasMatch(rawStyle)) {
       // `float` 不被支持，退化成**块级**（一人一行）。带 `height` 的窄条
@@ -335,7 +367,12 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
       // `vertical-align` 非 baseline 时 fwfh 改走 `PlaceholderAlignment`
       // （见 `internal/ops/style_vertical_align.dart`），根本不取基线。
       // 顺带一提这跟混排位置也更准 —— 浏览器里 float 本来就是块级，不参与基线。
-      styles['display'] = 'inline-block';
+      //
+      // 样式表算出 `display:none` 时**不**降级：藏内容优先于修复 float 布局，
+      // 否则「手机版 / 桌面版二选一」的规则会被这里重新画出来。
+      if (styles['display'] != 'none') {
+        styles['display'] = 'inline-block';
+      }
       styles['vertical-align'] = 'middle';
     }
 
