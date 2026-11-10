@@ -22,6 +22,43 @@ import 'no_selection_pane.dart';
 /// 两个数不同是**有意的**，不是忘了同步。
 const double kPaneHeaderHeight = 60;
 
+/// 「栏顶」这一块底：高 [kPaneHeaderHeight] + 底边一条 1px 的 [BorderSide]。
+///
+/// [PaneHeader]（列表栏 / 阅读区各自的头）就是「这块底 + 一行内容」。
+///
+/// 另外**两处只借它的底边那条线**：侧栏顶格（那条横线要从窗口左缘一直连到
+/// 右缘，侧栏那一段不能例外）与两栏之间的拖动条（它占的 6px 不属于任何一栏，
+/// 两栏的头都只画到栏边为止 —— 这就是用户看到的那个「豁口」）。
+///
+/// 三处共用同一个部件，而不是各自写一遍 `height: 60` + `outlineVariant.alpha
+/// 0.5`：那条线现在要跨四个部件才连成一条，高度差 1px 或色差一档，它在拼接处
+/// 就又「断」了一次。
+class PaneHeaderBand extends StatelessWidget {
+  const PaneHeaderBand({super.key, this.child});
+
+  /// 头里的内容；拖动条那条只画线，传 null。
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: kPaneHeaderHeight,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: Border(
+            bottom: BorderSide(
+              color: scheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
 /// 宽屏分栏形态的内容区：左栏列表（可拖动调宽）+ 右栏阅读区。
 ///
 /// 由三个列表页共用，各自把「自己的列表栏」作为 [list] 传进来（列表栏里
@@ -92,6 +129,10 @@ class _MailPanesState extends ConsumerState<MailPanes> {
               _PaneResizeHandle(
                 onDrag: _onDrag,
                 onDragEnd: _onDragEnd,
+                // 右栏顶上有没有那条头：阅读区（`MailDetailScreen` 内嵌形态）
+                // 有，多选面板与空态都没有。没有头的那一侧不画这 6px ——
+                // 画了就是一小段**悬在空栏里**的线，比缺口更像 bug。
+                showHeaderBorder: pane == null && selected != null,
               ),
               Expanded(
                 // 多选优先：正在选一批信时，右栏说的是那一批（用户需求 1），
@@ -137,11 +178,28 @@ class _MailPanesState extends ConsumerState<MailPanes> {
 ///
 /// 视觉上是一条 1px 的竖线（与外壳 `app_shell.dart` 里那条同款），
 /// 但命中区有 [Breakpoints.paneHandleWidth] 那么宽 —— 1px 几乎点不中。
+///
+/// 它顺带是那条**横线**的最后一截：两栏的头各自只画到自己栏边为止，中间这
+/// [Breakpoints.paneHandleWidth] 谁也不画 —— 于是那条横线在两栏之间空出一截
+/// （用户报的「线断开」就是这个，截图里红框框着的就是那个豁口）。所以这里
+/// 在头的高度上补一段同色同高的线。
+///
+/// 补多长取决于右栏顶上有没有头：
+/// - **有**（阅读区）：补满整个宽度，横线于是从侧栏一路连到窗口右缘；
+/// - **没有**（空态 / 多选面板）：只补到中间那条竖线上为止。补满会让线伸进
+///   空栏里变成一小段悬空的线；不补则离竖线还差半条拖动条 —— 又是个小豁口。
 class _PaneResizeHandle extends StatefulWidget {
-  const _PaneResizeHandle({required this.onDrag, required this.onDragEnd});
+  const _PaneResizeHandle({
+    required this.onDrag,
+    required this.onDragEnd,
+    required this.showHeaderBorder,
+  });
 
   final ValueChanged<double> onDrag;
   final VoidCallback onDragEnd;
+
+  /// 右栏顶上有没有那条头（阅读区有；空态与多选面板没有）。
+  final bool showHeaderBorder;
 
   @override
   State<_PaneResizeHandle> createState() => _PaneResizeHandleState();
@@ -163,12 +221,30 @@ class _PaneResizeHandleState extends State<_PaneResizeHandle> {
         onHorizontalDragEnd: (_) => widget.onDragEnd(),
         child: SizedBox(
           width: Breakpoints.paneHandleWidth,
-          child: Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              width: _hovering ? 3 : 1,
-              color: _hovering ? scheme.primary : scheme.outlineVariant,
-            ),
+          child: Stack(
+            // 竖线要**贯穿整个高度**（含头部这一段），所以用 `Center` 铺满；
+            // 头部那截横线是叠在上面的 `Positioned`。
+            fit: StackFit.expand,
+            children: <Widget>[
+              Positioned(
+                top: 0,
+                left: 0,
+                // 竖线画在中间，所以「到竖线上」= 半个拖动条宽。
+                width: widget.showHeaderBorder
+                    ? Breakpoints.paneHandleWidth
+                    : Breakpoints.paneHandleWidth / 2,
+                child: const PaneHeaderBand(
+                  key: ValueKey<String>('paneHandleHeaderBand'),
+                ),
+              ),
+              Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  width: _hovering ? 3 : 1,
+                  color: _hovering ? scheme.primary : scheme.outlineVariant,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -177,6 +253,9 @@ class _PaneResizeHandleState extends State<_PaneResizeHandle> {
 }
 
 /// 分栏形态下每栏顶部的条：左端是标题一类的控件，右端是动作按钮。
+///
+/// 高度与底边那条线都来自 [PaneHeaderBand] —— 侧栏顶格与两栏之间的拖动条也要
+/// 跟它对上（见那边的注释）。
 class PaneHeader extends StatelessWidget {
   const PaneHeader({super.key, required this.child, this.actions = const <Widget>[]});
 
@@ -185,26 +264,14 @@ class PaneHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SizedBox(
-      height: kPaneHeaderHeight,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border(
-            bottom: BorderSide(
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-            ),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: <Widget>[
-              Expanded(child: child),
-              ...actions,
-            ],
-          ),
+    return PaneHeaderBand(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: <Widget>[
+            Expanded(child: child),
+            ...actions,
+          ],
         ),
       ),
     );

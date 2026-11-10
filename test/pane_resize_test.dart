@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mail_app/core/db/database.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/core/storage/token_store.dart';
+import 'package:mail_app/core/theme/breakpoints.dart';
 import 'package:mail_app/data/models/enums.dart';
 import 'package:mail_app/data/models/instance_capabilities.dart';
 import 'package:mail_app/data/models/mail_ref.dart';
@@ -221,6 +222,65 @@ void main() {
     expect(find.byType(MailDetailScreen), findsOneWidget);
 
     // 拆树再推一帧：drift 的流关闭排的是零延时定时器。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 5));
+  });
+
+  /// 栏顶那条横线要**一条连到底**：侧栏顶格 → 列表栏头 → 拖动条那 6px →
+  /// 阅读区头。两栏的头各自只画到自己栏边为止，拖动条占的那 6px 谁也不画，
+  /// 于是那条线在两栏之间空出一截（用户报的「红色框里的线断开了」，截图里
+  /// 两个红框一个框在侧栏交界、一个框在拖动条上）。
+  ///
+  /// 这套「真外壳 + 真路由 + 真详情」的 harness 在这个文件里已经搭好了
+  /// （`pump`），为这一条用例再复制 120 行到新文件不划算。
+  testWidgets('栏顶那条横线跨过侧栏与拖动条，四块头落在同一条 y 上', (tester) async {
+    await pump(tester);
+
+    // 未选中：右栏是空态（`NoSelectionPane`，它**没有头**）。那条横线得收在
+    // 中缝那条竖线上（半个拖动条宽）：补满就是一小段悬在空栏里的线，不补
+    // 又离竖线差半个拖动条 —— 还是个小豁口。
+    expect(find.byType(PaneHeaderBand), findsNWidgets(3));
+    final idleHandleBand = tester.getRect(
+      find.byKey(const ValueKey<String>('paneHandleHeaderBand')),
+    );
+    expect(idleHandleBand.width, Breakpoints.paneHandleWidth / 2);
+    expect(
+      idleHandleBand.left,
+      closeTo(tester.getRect(find.byType(PaneHeader)).right, 0.01),
+      reason: '空态那一截必须紧贴列表栏的头，不能悬空',
+    );
+
+    // 点开一封：右栏换成有头的阅读区。
+    await tester.tap(find.text(subject).first);
+    await tester.pumpAndSettle();
+    expect(find.byType(MailDetailScreen), findsOneWidget);
+
+    final sidebarBand = tester.getRect(
+      find.byKey(const ValueKey<String>('navSidebarHeaderBand')),
+    );
+    final listHeader = tester.getRect(find.byType(PaneHeader).first);
+    final handleBand = tester.getRect(
+      find.byKey(const ValueKey<String>('paneHandleHeaderBand')),
+    );
+    final detailHeader = tester.getRect(find.byType(PaneHeader).last);
+
+    // 1) 四块头一样高、底边在同一条 y 上 —— 差 1px 就是「两块拼起来的」。
+    for (final rect in <Rect>[sidebarBand, listHeader, handleBand, detailHeader]) {
+      expect(rect.height, kPaneHeaderHeight);
+      expect(rect.bottom, closeTo(sidebarBand.bottom, 0.01));
+    }
+
+    // 2) 横着也是连着的：侧栏（1px 分隔线）列表栏 → 拖动条 → 阅读区，没有缝。
+    expect(listHeader.left, closeTo(sidebarBand.right + 1, 0.01),
+        reason: '侧栏右缘那条 1px 分隔线占掉的就是这 1px');
+    expect(handleBand.left, closeTo(listHeader.right, 0.01));
+    expect(handleBand.width, Breakpoints.paneHandleWidth,
+        reason: '右栏有头时要补满整个拖动条，横线才能接上阅读区那一块');
+    expect(detailHeader.left, closeTo(handleBand.right, 0.01));
+    expect(detailHeader.right, 1400,
+        reason: '阅读区这一栏一直画到窗口右缘，那条横线才有右端可收');
+
+    // 拆树再推一帧：drift 的流关闭排的是零延时定时器（同上面那条用例）。
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 5));
   });

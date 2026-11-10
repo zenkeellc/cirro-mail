@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/breakpoints.dart';
 import '../../l10n/app_localizations.dart';
+import '../mail_list/mail_panes.dart' show PaneHeaderBand;
 import 'sidebar_counts.dart';
 
 /// 宽屏左侧的一级导航栏。
@@ -71,9 +72,20 @@ class NavSidebar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-              child: leading,
+            // 顶部这一格与两栏各自的头（`PaneHeader`）**同高、底边同一条线**。
+            //
+            // 那条横线原来只从列表栏画起，走到侧栏右缘就断在那里（用户报的
+            // 「线断开」，截图红框就框在侧栏与列表栏交界处）。高度不能靠上下
+            // 内边距凑：原来的 10 / 6 让它比 `kPaneHeaderHeight` 高 4px，
+            // 把线画上去之后那 4px 的错位比断线更难解释。
+            //
+            // 内容仍然垂直居中 —— `PaneHeader` 里那行也是居中的，两块头才对得上。
+            PaneHeaderBand(
+              key: const ValueKey<String>('navSidebarHeaderBand'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: leading,
+              ),
             ),
             // 可滚动：窗口压低到刚好分栏时，7 个入口 + 3 个小组标题会超出
             // 高度。原来 7 个图标挤在 72px 里没有这个问题，加宽之后有了。
