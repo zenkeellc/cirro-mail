@@ -101,6 +101,71 @@ class MailListWindowController extends Notifier<int> {
   }
 }
 
+/// **用户此刻正打开预览的那一封**（详情页挂载期间才非 null）。
+///
+/// 未读视图（`MailListQuery.unreadOnly`）是「已读状态是筛选条件」的那一张列表：
+/// 点开一封未读邮件 → `EmailRepository.openMail` 本地优先标已读 → 下一帧
+/// 这一行就不再满足 `unread = 0`，于是**用户还开着这封信，左侧列表里它却
+/// 当场消失了**。用户报的「点开预览后邮件从未读列表消失」就是它。
+///
+/// 所以由详情页在挂载期间「按住」这一封，[mailListProvider] 把这一封作为
+/// 例外交给 DAO（`MailDao.watchMailboxSet` 的 `keep`）：它继续显示（显示成
+/// 已读，这是事实），只是不离开列表；详情页一卸载（返回列表 / 关掉右栏 /
+/// 删掉这封），按住解除，下一帧它按正常口径消失。
+///
+/// 为什么不放在列表页自己的 `State` 里：两个入口（宽屏右栏的 `embedded`
+/// 形态、窄屏的整页详情）挂在不同的 Element 树上，而**只有详情页**知道
+/// 「用户还没离开这一封」。列表页窄屏时更是被压在路由栈下面，根本收不到
+/// 「详情页关掉了」这件事。
+///
+/// 为什么用 `Object` token（一页一个）而不是只存一个 `MailRef`：宽屏换信时
+/// 新详情页的 `initState` 先跑、旧页的 `dispose` 后到（换 key 重挂）。
+/// 只存一个 ref 的话，旧页那一下解除会把**新那一封**的按住一起抹掉 ——
+/// 用户换到下一封，列表上它又立刻消失。token 让「解除」只作用于自己那次登记。
+final NotifierProvider<PreviewedMailController, MailRef?>
+    previewedMailProvider =
+    NotifierProvider<PreviewedMailController, MailRef?>(
+  PreviewedMailController.new,
+  name: 'previewedMail',
+);
+
+class PreviewedMailController extends Notifier<MailRef?> {
+  /// token → 那一页正打开的那封。
+  ///
+  /// `LinkedHashMap`（Dart 默认 `Map`）保持**调用顺序**：`values.last` 就是
+  /// 「最后一次 hold 的那一页」，也就是用户最后打开/换到的那一封。
+  ///
+  /// 同 token 换信时要**先删再插**（见 [hold]）：Dart 的 Map 对已有 key 重新
+  /// 赋值不改变位置，光赋值会让「最后 hold 的」留在一个旧位置 —— 将来真出现
+  /// 两个详情页并存、且先登记的那页换信时，就会保留错的那一封。
+  final Map<Object, MailRef> _held = <Object, MailRef>{};
+
+  @override
+  MailRef? build() => null;
+
+  /// 登记「这一页正打开 [mail]」。同一个 token 再调就是「这一页换了一封」。
+  void hold(Object token, MailRef mail) {
+    if (!ref.mounted) return;
+    if (_held[token] == mail && state == mail) return;
+    // 先删再插 = 把这一页挪到队尾，让「最后一次 hold」这个语义严格成立。
+    _held.remove(token);
+    _held[token] = mail;
+    _publish();
+  }
+
+  /// 解除 [token] 那次登记（详情页卸载 / 撤销挂载前的那次 hold）。
+  void release(Object token) {
+    if (!ref.mounted) return;
+    if (_held.remove(token) == null) return;
+    _publish();
+  }
+
+  void _publish() {
+    final latest = _held.isEmpty ? null : _held.values.last;
+    if (latest != state) state = latest;
+  }
+}
+
 /// 一个列表页要展示的行。
 ///
 /// **统一从本地库读**，网络只在 `MailListController.refresh/loadMore` 里跑 ——
@@ -118,6 +183,9 @@ final mailListProvider =
   (ref, query) {
     final db = ref.watch(databaseProvider);
     final limit = ref.watch(mailListWindowProvider(query));
+    // 预览中的那一封只对未读视图有意义 —— 其它列表不按已读状态过滤，
+    // 本来就不会因为它变已读而消失（见 [previewedMailProvider]）。
+    final keep = query.unreadOnly ? ref.watch(previewedMailProvider) : null;
     return switch (query.folder) {
       MailFolder.starred => db.mailDao.watchStarred(
           profileIds: query.profileIds,
@@ -128,6 +196,7 @@ final mailListProvider =
           type: query.apiType,
           unreadOnly: query.unreadOnly,
           limit: limit,
+          keep: keep,
         ),
     };
   },

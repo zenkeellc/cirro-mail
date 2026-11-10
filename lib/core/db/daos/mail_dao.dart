@@ -718,11 +718,19 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
   ///   口径（见 [watchMailbox] 里 `allReceive` 那段注释）；
   /// - 具体邮箱 → `profile_id` 与 `account_id` 都要对上。0 的老行**不**混进来：
   ///   它完全可能属于别的邮箱，混进来就是脏数据。
+  ///
+  /// [keep] 是**用户此刻正打开预览的那一封**，只对 [unreadOnly] 有意义：
+  /// 打开一封未读邮件会当场把它标成已读，未读视图下一帧就会把它抽走 ——
+  /// 用户明明还开着这封信，左侧列表里却没了，看起来像被删掉。所以这里给它
+  /// 开一个例外：**仍然满足同一份 scope**（邮箱集合 / 方向 / 未删除），只是
+  /// 放过 `unread = 0` 那一条。它显示成已读，但留在原位；详情页一关，
+  /// [keep] 变 null，下一帧它就按正常口径消失。
   Stream<List<MailRow>> watchMailboxSet({
     List<MailboxFilter> mailboxes = const <MailboxFilter>[],
     int? type,
     bool unreadOnly = false,
     int limit = 200,
+    MailRef? keep,
   }) {
     final query = select(mails)
       ..where(
@@ -731,6 +739,7 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
           mailboxes,
           type: type,
           unreadOnly: unreadOnly,
+          keep: keep,
         ),
       );
     // 列表行要显示附件标记，附件数用子查询一起带出来（见 [_attachmentCountExp]）。
@@ -753,11 +762,15 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
   /// 单独抽出来是为了让聚合查询（[countMailboxSet] 用的是 `selectOnly`，
   /// 那里没有 `select(mails)` 这个句柄）与列表查询**共用同一份口径** ——
   /// 「还剩几封没同步」是拿两个数相减的，两边口径但凡差一点，数字就是错的。
+  ///
+  /// [keep] 不出现在计数的调用点上（默认 null）：计数要的是**真正的未读数**，
+  /// 预览中那一封已经读过了，不该再算进「未读」里。
   Expression<bool> _mailboxSetPredicate(
     $MailsTable t,
     List<MailboxFilter> mailboxes, {
     int? type,
     bool unreadOnly = false,
+    MailRef? keep,
   }) {
     Expression<bool> predicate = t.isDel.equals(0);
     if (mailboxes.isNotEmpty) {
@@ -776,9 +789,23 @@ class MailDao extends DatabaseAccessor<AppDatabase> with _$MailDaoMixin {
     }
     if (unreadOnly) {
       // `unread` 的语义与字段名相反：0 才是未读。未读只对收件方向有意义。
-      predicate = predicate &
+      final unread = predicate &
           t.unread.equals(UnreadState.unread) &
           t.type.equals(MailType.receive);
+      if (keep == null) return unread;
+      // 预览中的那一封（见 [watchMailboxSet] 的 `keep`）：只放过 `unread`，
+      // 邮箱集合 / 方向 / 未删除仍然要满足 —— 否则从别的实例打开一封信，
+      // 会把它塞进不相干的未读列表里。
+      //
+      // 方向那一句**不能只靠**上面 `type != null` 时叠的过滤：调用方可能
+      // 不传 `type`（裸 `unreadOnly: true`，测试与将来的入口都可能这样写），
+      // 而未读视图本身恒为收件方向 —— 这里必须自己写死，否则 keep 会把一封
+      // 已发送的邮件拉进「未读」。
+      return unread |
+          (predicate &
+              t.type.equals(MailType.receive) &
+              t.profileId.equals(keep.profileId) &
+              t.emailId.equals(keep.emailId));
     }
     return predicate;
   }

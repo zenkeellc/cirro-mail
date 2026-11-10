@@ -106,6 +106,22 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
   /// 的焦点抢回来。
   String? _focusedMailKey;
 
+  /// 「用户还没离开这一封」的按住令牌 —— 未读列表靠它不把正在预览的邮件
+  /// 抽走（见 `previewedMailProvider` 的类注释）。
+  ///
+  /// 写 provider 一律推到帧后：`initState` / `didUpdateWidget` / `dispose`
+  /// 都跑在构建期，直接写会撞 riverpod 的
+  /// 「Tried to modify a provider while the widget tree was building」，
+  /// 与 `_closeStaleDock` / `_openOnce` 是同一条约定。
+  late final PreviewedMailController _previewHold =
+      ref.read(previewedMailProvider.notifier);
+
+  /// 本页在 [previewedMailProvider] 里的身份。
+  ///
+  /// 每页一个，与 [_previewHold] 成对：`release` 只解除自己那一次登记 ——
+  /// 宽屏换信时新页的 `hold` 先到、旧页的 `release` 后到，不能互相抹掉。
+  final Object _previewToken = Object();
+
   /// 停靠请求的订阅（`initState` 里建，`dispose` 里关）。
   late final ProviderSubscription<MailRef?> _suggestDockSub;
 
@@ -149,7 +165,30 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
     // 上一封的面板会话不许跟着换到这封信上：**只在真的是另一封时**收掉。
     // 窗口宽窄切换重挂的是同一封，那种情况下面板必须还在。
     _closeStaleDock();
+    // 「这一封正开着」告诉未读列表：它刚被标成已读，但在用户离开之前不要
+    // 从列表里消失。要排在 `_openOnce` 之前登记 —— 后者才会真的写已读。
+    _holdPreview(_ref);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openOnce());
+  }
+
+  /// 宣布「本页正开着 [mail]」（帧后 —— 构建期不能写 provider）。
+  void _holdPreview(MailRef mail) {
+    final hold = _previewHold;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      hold.hold(_previewToken, mail);
+    });
+  }
+
+  /// 解除「正开着」的登记。
+  ///
+  /// 帧后执行：`dispose` 也在构建期；而且这个次序正好兜住宽屏换信 ——
+  /// 新页 `hold` 的回调先登记、旧页 `release` 的回调后登记。
+  void _releasePreview() {
+    final hold = _previewHold;
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => hold.release(_previewToken),
+    );
   }
 
   /// 收掉「不是当前这一封」的面板状态（切信 / 从列表点开另一封时）。
@@ -182,12 +221,16 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
       _syncing = false;
       // 换了一封：上一封的停靠面板不能跟着留在新邮件下面。
       _closeStaleDock();
+      // 按住的那一封也跟着换成新的一封（同一个 token，就地覆盖）。
+      _holdPreview(_ref);
       WidgetsBinding.instance.addPostFrameCallback((_) => _openOnce());
     }
   }
 
   @override
   void dispose() {
+    // 用户离开这一封了：未读列表可以按正常口径把它收走。
+    _releasePreview();
     _suggestDockSub.close();
     _readerFocus.dispose();
     super.dispose();
