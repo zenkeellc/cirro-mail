@@ -174,10 +174,22 @@ class _MailPanesState extends ConsumerState<MailPanes> {
   }
 }
 
+/// 中缝那条竖线的宽度。
+const double kPaneDividerWidth = 1;
+
 /// 两栏之间那条可拖动的分隔条。
 ///
-/// 视觉上是一条 1px 的竖线（与外壳 `app_shell.dart` 里那条同款），
-/// 但命中区有 [Breakpoints.paneHandleWidth] 那么宽 —— 1px 几乎点不中。
+/// 视觉上是一条 [kPaneDividerWidth] 的竖线（与外壳 `app_shell.dart` 里那条
+/// 同款），但命中区有 [Breakpoints.paneHandleWidth] 那么宽 —— 1px 几乎点不中。
+///
+/// **竖线画在拖动条的左缘，不是正中。** 它同时是**列表栏的右边界**：行的
+/// 选中 / 未读底色必须一直铺到它上面。画在正中时，行的底色到竖线之间空出
+/// 半个拖动条（3px）的一道光 —— 一列里凡是带底色的行（选中的那封、未读的
+/// 那几封）右边都缺一角，用户报的「列表要填充满这条缝」就是它。挪到左缘
+/// 之后，那 3px 落在阅读区一侧，而阅读区那一侧通体是 `surface`，看不出来。
+///
+/// 代价是拖动的手感往右偏了 3px（命中区还是这 6px），可以忽略：光标进到
+/// 这 6px 里就是 `resizeColumn`，用户不会去数线在哪一像素上。
 ///
 /// 它顺带是那条**横线**的最后一截：两栏的头各自只画到自己栏边为止，中间这
 /// [Breakpoints.paneHandleWidth] 谁也不画 —— 于是那条横线在两栏之间空出一截
@@ -186,8 +198,8 @@ class _MailPanesState extends ConsumerState<MailPanes> {
 ///
 /// 补多长取决于右栏顶上有没有头：
 /// - **有**（阅读区）：补满整个宽度，横线于是从侧栏一路连到窗口右缘；
-/// - **没有**（空态 / 多选面板）：只补到中间那条竖线上为止。补满会让线伸进
-///   空栏里变成一小段悬空的线；不补则离竖线还差半条拖动条 —— 又是个小豁口。
+/// - **没有**（空态 / 多选面板）：只补到左缘那条竖线上为止（就是它自己那
+///   1px）。补满会让线伸进空栏里变成一小段悬空的线；不补又会在角上缺一格。
 class _PaneResizeHandle extends StatefulWidget {
   const _PaneResizeHandle({
     required this.onDrag,
@@ -222,25 +234,28 @@ class _PaneResizeHandleState extends State<_PaneResizeHandle> {
         child: SizedBox(
           width: Breakpoints.paneHandleWidth,
           child: Stack(
-            // 竖线要**贯穿整个高度**（含头部这一段），所以用 `Center` 铺满；
-            // 头部那截横线是叠在上面的 `Positioned`。
+            // 竖线要**贯穿整个高度**（含头部这一段），所以靠在 `Align` 里
+            // 铺满；头部那截横线是叠在上面的 `Positioned`。
             fit: StackFit.expand,
             children: <Widget>[
               Positioned(
                 top: 0,
                 left: 0,
-                // 竖线画在中间，所以「到竖线上」= 半个拖动条宽。
+                // 竖线在左缘（见类注释），所以「到竖线上」= 它自己那 1px。
                 width: widget.showHeaderBorder
                     ? Breakpoints.paneHandleWidth
-                    : Breakpoints.paneHandleWidth / 2,
+                    : kPaneDividerWidth,
                 child: const PaneHeaderBand(
                   key: ValueKey<String>('paneHandleHeaderBand'),
                 ),
               ),
-              Center(
+              Align(
+                alignment: Alignment.centerLeft,
                 child: AnimatedContainer(
+                  // 贴左缘：列表栏的行底色与它之间不再留那道白缝。
+                  key: const ValueKey<String>('paneHandleDivider'),
                   duration: const Duration(milliseconds: 120),
-                  width: _hovering ? 3 : 1,
+                  width: _hovering ? 3 : kPaneDividerWidth,
                   color: _hovering ? scheme.primary : scheme.outlineVariant,
                 ),
               ),

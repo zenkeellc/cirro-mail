@@ -231,19 +231,23 @@ void main() {
   /// 于是那条线在两栏之间空出一截（用户报的「红色框里的线断开了」，截图里
   /// 两个红框一个框在侧栏交界、一个框在拖动条上）。
   ///
+  /// 中缝那条竖线画在拖动条的**左缘**（列表栏的右边界），不是正中 —— 见
+  /// `_PaneResizeHandle` 的类注释。所以空态那一截补到左缘的竖线上为止，
+  /// 宽度是竖线自己的 1px，不是半个拖动条。
+  ///
   /// 这套「真外壳 + 真路由 + 真详情」的 harness 在这个文件里已经搭好了
   /// （`pump`），为这一条用例再复制 120 行到新文件不划算。
   testWidgets('栏顶那条横线跨过侧栏与拖动条，四块头落在同一条 y 上', (tester) async {
     await pump(tester);
 
     // 未选中：右栏是空态（`NoSelectionPane`，它**没有头**）。那条横线得收在
-    // 中缝那条竖线上（半个拖动条宽）：补满就是一小段悬在空栏里的线，不补
-    // 又离竖线差半个拖动条 —— 还是个小豁口。
+    // 中缝那条竖线（就在拖动条左缘）上：补满就是一小段悬在空栏里的线，不补
+    // 又会在角上缺一格。
     expect(find.byType(PaneHeaderBand), findsNWidgets(3));
     final idleHandleBand = tester.getRect(
       find.byKey(const ValueKey<String>('paneHandleHeaderBand')),
     );
-    expect(idleHandleBand.width, Breakpoints.paneHandleWidth / 2);
+    expect(idleHandleBand.width, kPaneDividerWidth);
     expect(
       idleHandleBand.left,
       closeTo(tester.getRect(find.byType(PaneHeader)).right, 0.01),
@@ -279,6 +283,47 @@ void main() {
     expect(detailHeader.left, closeTo(handleBand.right, 0.01));
     expect(detailHeader.right, 1400,
         reason: '阅读区这一栏一直画到窗口右缘，那条横线才有右端可收');
+
+    // 拆树再推一帧：drift 的流关闭排的是零延时定时器（同上面那条用例）。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 5));
+  });
+
+  /// 列表栏那一行的底色要**一直铺到中缝的竖线上**，中间不许留白缝。
+  ///
+  /// 竖线原来画在 6px 拖动条的正中：行的底色只到列表栏的栏边，到竖线之间
+  /// 于是空出半个拖动条（3px）—— 一列里凡是带底色的行（选中的那封、未读的
+  /// 那几封）右边都缺一角。用户红框框的就是这条竖着的白缝（「左侧列表要填
+  /// 充满这个缝隙」）。现在竖线挪到拖动条左缘，行的底色与它严丝合缝。
+  testWidgets('行的底色一直铺到中缝竖线上，不留白缝', (tester) async {
+    await pump(tester);
+
+    // 点开一封：那一行变成选中行 —— 只有带底色的行才看得出这道缝。
+    await tester.tap(find.text(subject).first);
+    await tester.pumpAndSettle();
+    expect(find.byType(MailDetailScreen), findsOneWidget);
+
+    final handleBand = tester.getRect(
+      find.byKey(const ValueKey<String>('paneHandleHeaderBand')),
+    );
+    final divider = tester.getRect(
+      find.byKey(const ValueKey<String>('paneHandleDivider')),
+    );
+    final rowSurface = tester.getRect(
+      find.byKey(const ValueKey<String>('rowSurface')),
+    );
+
+    expect(divider.width, kPaneDividerWidth, reason: '竖线本身还是 1px 那条');
+    expect(
+      divider.left,
+      closeTo(handleBand.left, 0.01),
+      reason: '竖线贴在拖动条的左缘（列表栏的右边界），不是正中',
+    );
+    expect(
+      rowSurface.right,
+      closeTo(divider.left, 0.01),
+      reason: '行的底色与竖线之间不许再空出半个拖动条的白缝',
+    );
 
     // 拆树再推一帧：drift 的流关闭排的是零延时定时器（同上面那条用例）。
     await tester.pumpWidget(const SizedBox.shrink());
