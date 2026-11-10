@@ -85,11 +85,10 @@ class Routes {
   ///    互相替换，压栈的语义根本不成立（这正是「发件箱点开一条之后回不去」
   ///    的成因）。
   ///
-  /// 挂进**邮件那一支**（而不是各给一支）的原因在 `AppShell` 那侧：窄屏的
-  /// 底部导航只有三项，而 `NavigationBar` 断言 `selectedIndex` 在项数之内
-  /// —— 单独成支的页面在手机上会当场断言失败。挂在邮件这一支里，
-  /// `/outbox` 的 `currentIndex` 就是 0（「邮件」高亮），既成立了断言，
-  /// 也符合语义：这三个入口本来就从主屏菜单进。
+  /// 挂进**邮件那一支**（而不是各给一支）的原因在 `AppShell` 那侧：`NavigationBar`
+  /// 断言 `selectedIndex` 在**项数**之内，而这几页在手机上不该占一格 tab。
+  /// 挂在邮件这一支里，`/outbox` 的 `currentIndex` 就是 0（「邮件」高亮），
+  /// 既成立了断言，也符合语义：这三个入口本来就从主屏菜单进。
   ///
   /// 代价是它们进了 `indexedStack` 之后不会被回收（访问过一次就一直活着）。
   /// 这是「跟星标一样」的同义词 —— 星标本来就是这样。规模也可控：发件箱是
@@ -265,9 +264,15 @@ class Routes {
 /// 真正的差别只有「有没有实例过滤条」，而那个过滤条跟收件箱的多选邮箱
 /// 是同一件事（见 spec §1）。
 ///
-/// **仍然是三支**：发件箱 / 草稿箱 / 附件缓存挂在**邮件那一支**里，不另开
-/// 分支（理由见 [Routes.attachmentCache]）。所以这里没有它们的位置 ——
-/// 窄屏底部导航只有三项，三者都落在「邮件」那一项上。
+/// 发件箱 / 草稿箱 / 附件缓存挂在**邮件那一支**里，不另开分支（理由见
+/// [Routes.attachmentCache]）。
+///
+/// ## 分支数 ≠ 底部导航项数（2026-11-10）
+///
+/// 手机上的底部导航只剩**两格**：「邮件」与「设置」。星标**仍有自己的分支**
+/// （切走再切回来保留滚动位置、列表状态），但不再占一格 tab —— 它从主屏
+/// 菜单进入。于是这里的分支下标不能直接当 `NavigationBar.selectedIndex` 用，
+/// 映射在 `AppShell._tabBranches` / `_tabIndexOf` 里；改顺序时两处一起改。
 class ShellBranch {
   const ShellBranch._();
 
@@ -277,8 +282,14 @@ class ShellBranch {
   ///
   /// 发件箱 / 草稿箱 / 附件缓存也在这一支里（各自是一个根路由）。
   static const int mail = 0;
+
+  /// 星标。**有分支、没有 tab**：它从主屏菜单进，落在这一支自己的
+  /// Navigator 上（底部导航这时高亮「邮件」，见 `AppShell._tabIndexOf`）。
   static const int starred = 1;
+
   static const int settings = 2;
+
+  /// 分支总数（不是底部导航的项数 —— 那是 `AppShell._destinations()` 的长度）。
   static const int count = 3;
 }
 

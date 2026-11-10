@@ -111,7 +111,8 @@ class AppShell extends ConsumerWidget {
           bottomNavigationBar: hideNav
               ? null
               : NavigationBar(
-                  selectedIndex: current,
+                  // 分支下标 ≠ tab 下标（星标有分支、没 tab），见 [_tabIndexOf]。
+                  selectedIndex: _tabIndexOf(current),
                   onDestinationSelected: (index) =>
                       _onSelect(context, ref, index),
                   destinations: <Widget>[
@@ -336,9 +337,14 @@ class AppShell extends ConsumerWidget {
 
   /// 窄屏底部导航项。角标全部来自**本地库**——服务端没有未读计数接口。
   ///
-  /// 从四项变成三项：聚合没了（并进了邮件那一支），发件箱的角标也从
-  /// 「设置」那一项挪到了主屏的发件箱入口上 —— 前者的问题是「不去设置就
-  /// 永远不知道有封信没发出去」。
+  /// 从四项 → 三项 → **两项**（2026-11-10）：聚合页并进邮件那一支之后，
+  /// 「星标」也不再占一格。理由：手机上三格里有两格（星标 / 设置）属于
+  /// **低频**入口，而星标本来就在主屏菜单的第一行（`HomeEntries.topActions`），
+  /// 从「邮件」进去一点即到；把一格让出来之后，剩下两格各管一件事 ——
+  /// 「邮件」（全部邮件入口与各实例邮箱树）与「设置」。
+  ///
+  /// 分支**仍然是三支**（星标还在自己的分支里，切走再切回来保留滚动位置），
+  /// 只是不再有对应的 tab —— 见 [_tabIndexOf]。
   List<_Destination> _destinations(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     return <_Destination>[
@@ -349,11 +355,6 @@ class AppShell extends ConsumerWidget {
         count: ref.watch(totalUnreadProvider),
       ),
       _Destination(
-        label: l10n.starred,
-        icon: Icons.star_border,
-        selectedIcon: Icons.star,
-      ),
-      _Destination(
         label: l10n.settings,
         icon: Icons.settings_outlined,
         selectedIcon: Icons.settings,
@@ -361,23 +362,44 @@ class AppShell extends ConsumerWidget {
     ];
   }
 
+  /// tab 下标 → 分支下标。**顺序即底部导航的顺序**（见 [_destinations]）。
+  ///
+  /// 星标那一支**不在表里**：它没有 tab，但地址仍然可以停在它上面（主屏菜单
+  /// 的「星标」、深链、窗口从宽屏拖窄）。那时 `NavigationBar.selectedIndex`
+  /// 必须折回「邮件」那一格 —— `NavigationBar` 会断言
+  /// `selectedIndex < destinations.length`，直接传分支下标（=1）在只有两格
+  /// 的导航栏上当场红屏。
+  static const List<int> _tabBranches = <int>[
+    app_router.ShellBranch.mail,
+    app_router.ShellBranch.settings,
+  ];
+
+  /// 当前分支在底部导航里高亮哪一格。
+  ///
+  /// 星标（以及将来任何「有分支、没 tab」的页面）落到第 0 格「邮件」上：
+  /// 星标本来就是邮件的一个视图，高亮「邮件」是这两格里唯一说得通的那个。
+  static int _tabIndexOf(int branch) {
+    final index = _tabBranches.indexOf(branch);
+    return index < 0 ? 0 : index;
+  }
+
   /// 统一用 `context.go` 切分支，而不是 `goBranch`。
   ///
   /// 理由：`goBranch` 只把你送回该分支**上次停留的位置**，而「点底部导航」
-  /// 的语义是「去这个功能」，不是「回到上次那封邮件」。这里三个目标都是
-  /// 各分支的根路径，分支内部已有的前进栈会被清掉，但各分支的 Navigator
-  /// 状态（滚动位置等）仍由 indexedStack 保留。
+  /// 的语义是「去这个功能」，不是「回到上次那封邮件」。目标都是各分支的
+  /// 根路径，分支内部已有的前进栈会被清掉，但各分支的 Navigator 状态
+  /// （滚动位置等）仍由 indexedStack 保留。
   ///
-  /// 邮件这一支的根是**主屏菜单**（而不是某个列表）：从星标切回来时该看到
-  /// 菜单，而不是上次那封没读完的信。
+  /// 邮件这一支的根是**主屏菜单**（而不是某个列表）：从别的 tab 切回来时
+  /// 该看到菜单，而不是上次那封没读完的信。
+  ///
+  /// [index] 是**底部导航的下标**（不是分支下标）—— 映射见 [_tabBranches]。
   void _onSelect(BuildContext context, WidgetRef ref, int index) {
-    switch (index) {
+    switch (_tabBranches[index]) {
       case app_router.ShellBranch.mail:
         context.go(app_router.Routes.home);
         // 主屏可能有多个实例的邮件，不该把某一台标成「活跃」。
         ref.read(syncControllerProvider.notifier).setActiveProfile(null);
-      case app_router.ShellBranch.starred:
-        context.go(app_router.Routes.starred);
       case app_router.ShellBranch.settings:
         context.go(app_router.Routes.settings);
     }
