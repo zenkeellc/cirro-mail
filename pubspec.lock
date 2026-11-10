@@ -231,7 +231,7 @@ packages:
       path: "packages/cirro_mail_ext"
       relative: true
     source: path
-    version: "0.1.0"
+    version: "0.1.7"
   cli_util:
     dependency: transitive
     description:

@@ -1,7 +1,7 @@
 name: mail_app
 description: "Cirro Mail 多实例 Flutter 客户端（Android / iOS / macOS / Windows / Linux）"
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.7+110
 
 environment:
   # 3.12 是 `flutter_riverpod` 3.4.x / `go_router` 18.x 的下限，

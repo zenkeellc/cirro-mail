@@ -1,7 +1,7 @@
 name: cirro_mail_ext
 description: "Cirro Mail 的扩展接缝：商业/第三方模块实现这里的接口，核心只读注册表。"
 publish_to: 'none'
-version: 0.1.0
+version: 0.1.7
 
 environment:
   # 与根包（`mail_app`）同一档：本包要引用 `RouteBase` / `Widget`，
