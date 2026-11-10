@@ -149,6 +149,7 @@ class NavSidebarItem extends StatefulWidget {
     this.alwaysShowCount = false,
     this.countBadge = false,
     this.trailing,
+    this.height = 40,
   });
 
   final IconData icon;
@@ -156,6 +157,18 @@ class NavSidebarItem extends StatefulWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
+  /// 一行的高度。侧栏与宽屏分类栏都是默认的 40。
+  ///
+  /// 唯一改它的是**窄屏设置页的分类列表**（[SettingsCategoryTile]，48）：
+  /// 手机上那一列是设置页的**唯一**入口列表，行太矮时图标底、文字、行间距
+  /// 挤在一起（用户报的就是这个）。宽屏分类栏不改 —— 它旁边常驻着一栏正文，
+  /// 行高已经够了。
+  ///
+  /// 只放开高度、不放开别的：图标尺寸 / 颜色、左右内边距、圆角、hover 与
+  /// 选中底色全部与侧栏**同一份实现** —— 两处各画一份，就会像以前那样
+  /// 「窄屏 18dp 图标住 32dp 圆角底、宽屏 20dp 裸字形」地对不上。
+  final double height;
 
   /// 0 表示不显示角标 —— **除了发件箱**。那里 0 也要显示（一个灰色的 `0`），
   /// 因为它的用途是「让你知道还有这么个地方」（spec §2.4）。
@@ -212,7 +225,7 @@ class _NavSidebarItemState extends State<NavSidebarItem> {
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            height: 40,
+            height: widget.height,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               color: background,

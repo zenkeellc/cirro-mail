@@ -39,6 +39,16 @@ void main() {
 
   final zh = lookupAppLocalizations(const Locale('zh'));
 
+  /// 窄屏分类列表里的一行（按文案找）。
+  ///
+  /// 必须收窄到 [SettingsCategoryTile]：列表行与宽屏分类栏**共用**同一颗
+  /// [`NavSidebarItem`]（见 `SettingsCategoryTile` 的类文档），只按 widget
+  /// 类型分不开两种形态。
+  Finder categoryRow(String label) => find.descendant(
+        of: find.byType(SettingsCategoryTile),
+        matching: find.text(label),
+      );
+
   group('十个分类', () {
     test('数量与顺序就是分类栏里的顺序', () {
       expect(
@@ -206,26 +216,28 @@ void main() {
     for (final label in <String>[
       '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
     ]) {
-      expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
+      expect(categoryRow(label), findsOneWidget, reason: label);
     }
-    // 那十个是**列表**，不是分类栏 —— 分类栏的项是 `NavSidebarItem`。
-    expect(find.byType(NavSidebarItem), findsNothing);
+    // 那十个是窄屏**分类列表**，不是宽屏分类栏：列表行与分类栏共用同一颗
+    // `NavSidebarItem`，所以这里数总数 —— 若宽屏那一列也画了出来，会是 20。
+    expect(find.byType(SettingsCategoryTile), findsNWidgets(10));
+    expect(find.byType(NavSidebarItem), findsNWidgets(10));
     // 也没进任何分类页：没有返回箭头。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
     // 点「外观」→ 进外观那一页。
-    await tester.tap(find.widgetWithText(ListTile, '外观'));
+    await tester.tap(categoryRow('外观'));
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(ListTile, '主题'), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
     // 分类列表已经让位给正文了（标题里那个「外观」是 AppBar，不是列表行）。
-    expect(find.widgetWithText(ListTile, '实例'), findsNothing);
+    expect(categoryRow('实例'), findsNothing);
 
     // 返回箭头回分类列表。
     await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(ListTile, '实例'), findsOneWidget);
+    expect(categoryRow('实例'), findsOneWidget);
     expect(find.widgetWithText(ListTile, '主题'), findsNothing);
 
     // **系统返回键**是同一个动作（安卓返回键 / iOS 边缘滑动）。
@@ -236,15 +248,55 @@ void main() {
     // 写法照抄 `compose_exit_paths_test.dart`：**不能直接 await
     // `handlePopRoute()`** —— 那个 future 要等整套弹出流程跑完，而流程靠帧
     // 推进，直接 await 会把用例钉死在那儿。
-    await tester.tap(find.widgetWithText(ListTile, '外观'));
+    await tester.tap(categoryRow('外观'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(ListTile, '主题'), findsOneWidget);
 
     final popped = tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(await popped, isTrue, reason: '返回手势应当被设置页接住');
-    expect(find.widgetWithText(ListTile, '实例'), findsOneWidget,
+    expect(categoryRow('实例'), findsOneWidget,
         reason: '返回键该退回分类列表，而不是把整个设置页弹掉');
+  });
+
+  /// 窄屏分类列表与宽屏分类栏**同一颗行**，只有行高不同。
+  ///
+  /// 用户报过「窄屏这一列比宽带模式矮、图标也对不上」：以前窄屏自己画的是
+  /// `ListTile`（32dp 浅色图标底 + 18dp 字形 + 右箭头），宽屏是 20dp 裸字形。
+  /// 这条把两边共用的那几个数钉死 —— 以后再有人想在窄屏那颗行上「加一点
+  /// 自己的风格」，先看这里。
+  testWidgets('窄屏分类列表的行：48 高、20dp 裸图标、没有右箭头', (tester) async {
+    await pumpNarrow(tester);
+
+    final rows = tester
+        .widgetList<NavSidebarItem>(find.descendant(
+          of: find.byType(SettingsCategoryTile),
+          matching: find.byType(NavSidebarItem),
+        ))
+        .toList();
+    expect(rows.length, 10);
+    for (final row in rows) {
+      // 48 是手机上的触控行；宽屏分类栏仍是 40（见 `NavSidebarItem.height`）。
+      expect(row.height, 48, reason: row.label);
+      // 窄屏列表没有选中态 —— 选中由「进到那一页 + 返回箭头」表示。
+      expect(row.selected, isFalse, reason: row.label);
+    }
+
+    // 图标 20dp、颜色/文字样式由 `NavSidebarItem` 那份实现决定，与宽屏一致。
+    final icons = tester
+        .widgetList<Icon>(find.descendant(
+          of: find.byType(SettingsCategoryTile),
+          matching: find.byType(Icon),
+        ))
+        .toList();
+    expect(icons, isNotEmpty);
+    for (final icon in icons) {
+      expect(icon.size, 20, reason: '图标尺寸必须与宽屏分类栏一致');
+    }
+
+    // 右箭头是以前「自己画的那颗 ListTile」留下的，宽屏分类栏没有 ——
+    // 现在两处同一颗行，一起没有。
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
   });
 
   // ── 宽屏（1400×900，>= 1024）──────────────────────────────────────
@@ -294,7 +346,7 @@ void main() {
       expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
     }
     expect(find.byType(NavSidebarItem), findsNWidgets(10));
-    expect(find.widgetWithText(ListTile, '实例'), findsNothing);
+    expect(find.byType(SettingsCategoryTile), findsNothing);
 
     // 默认选中「实例」：右栏是实例正文（空实例时的入口），
     // **不是**一片空白 —— `_built` 若忘了把初值放进去就是那样。
@@ -357,14 +409,14 @@ void main() {
       for (final label in <String>[
         '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
       ]) {
-        expect(find.widgetWithText(ListTile, label), findsOneWidget, reason: label);
+        expect(categoryRow(label), findsOneWidget, reason: label);
       }
-      expect(find.widgetWithText(ListTile, '免打扰'), findsOneWidget);
+      expect(categoryRow('免打扰'), findsOneWidget);
 
       // 顺序：「诊断」→ 扩展 → 「安全」→「关于」。「安全」「关于」固定收尾。
       final labels = tester
-          .widgetList<ListTile>(find.byType(ListTile))
-          .map((tile) => (tile.title! as Text).data)
+          .widgetList<SettingsCategoryTile>(find.byType(SettingsCategoryTile))
+          .map((tile) => tile.label)
           .toList();
       expect(labels, <String>[
         '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
@@ -378,7 +430,7 @@ void main() {
       ]);
       await pumpNarrow(tester);
 
-      await tester.tap(find.widgetWithText(ListTile, '免打扰'));
+      await tester.tap(categoryRow('免打扰'));
       await tester.pumpAndSettle();
 
       expect(find.text('扩展正文'), findsOneWidget);
@@ -421,7 +473,7 @@ void main() {
     /// 设置页与从前逐像素相同。
     testWidgets('没有扩展时不多任何一栏', (tester) async {
       await pumpNarrow(tester);
-      expect(find.byType(ListTile), findsNWidgets(10));
+      expect(find.byType(SettingsCategoryTile), findsNWidgets(10));
     });
   });
 

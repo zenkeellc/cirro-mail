@@ -399,7 +399,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               SettingsGroup(
                 children: <Widget>[
                   for (final ref in sections)
-                    _CategoryTile(
+                    SettingsCategoryTile(
                       icon: ref.icon,
                       label: _labelOf(ref, l10n),
                       onTap: () => _select(ref),
@@ -499,40 +499,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
 /// 窄屏分类列表里的一行。
 ///
-/// 图标住在一颗**浅色圆角底**里而不是裸字形：整张列表是十几个并列入口，
-/// 裸图标与文字挤在一起时先被看到的是字，找不到「我要的那一栏」。底块把
-/// 图标列变成一条竖线，扫视时是「先认图标 → 再读字」。
-class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({
+/// **与宽屏分类栏的行是同一颗**（[NavSidebarItem]）—— 只有两个参数不同：
+///
+/// - 行高 48（宽屏分类栏 40，见 [NavSidebarItem.height]）。窄屏这一列是设置页
+///   的**唯一**入口列表，行矮一截时图标与文字贴得太紧，点起来也挤；
+/// - 永远不选中：窄屏的「你在这一栏」由**进到那一页 + 返回箭头**表示，列表
+///   本身没有选中态。
+///
+/// ## 为什么不再自己画一颗 `ListTile`
+///
+/// 以前这里是一颗 `ListTile`：32dp 浅色圆角图标底 + 18dp 字形 + 右侧
+/// `chevron_right`，而宽屏分类栏是 20dp 裸字形、没有箭头。同一个设置页换一次
+/// 窗口宽度，图标就换一副长相、行高也矮一截（用户报的就是这个）。现在两处
+/// **共用同一份行实现**：20dp 图标、12dp 间距、`bodyMedium` 文字、圆角 10、
+/// hover / 选中底色全部一致 —— 只有高度按上一条分开。
+///
+/// 图标也不再套那颗浅色圆角底：宽屏分类栏已经证明「20dp 裸字形 + 文字」在
+/// 二百来宽的栏里够辨认；窄屏列表的行更宽，缺的从来不是图标的存在感，而是
+/// **行高**。底块还会把图标列画成一条粗竖线，反而与宽屏不是一门语言。
+class SettingsCategoryTile extends StatelessWidget {
+  const SettingsCategoryTile({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,
   });
 
+  /// 未选中态的字形（窄屏列表没有选中态，`selectedIcon` 用不上）。
   final IconData icon;
+
   final String label;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      leading: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: scheme.primaryContainer.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(9),
-        ),
-        child: Icon(icon, size: 18, color: scheme.onPrimaryContainer),
-      ),
-      title: Text(label),
-      trailing: Icon(
-        Icons.chevron_right,
-        size: 20,
-        color: scheme.onSurfaceVariant,
-      ),
+    return NavSidebarItem(
+      // 48 而不是 40：手机上的触控行。宽屏分类栏那一列旁边常驻正文，
+      // 40 已经够用，见 `NavSidebarItem.height`。
+      height: 48,
+      icon: icon,
+      // 这一行恒为未选中，`selectedIcon` 不会被画出来 —— 给同一颗字形，
+      // 免得「这里为什么传了另一颗」变成下一个读代码的人的疑问。
+      selectedIcon: icon,
+      label: label,
+      selected: false,
       onTap: onTap,
     );
   }

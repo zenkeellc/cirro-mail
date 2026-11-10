@@ -129,8 +129,15 @@ void main() {
         matching: find.byType(NavSidebarItem),
       );
 
-  Finder categoryTile(String label) =>
-      find.widgetWithText(ListTile, label);
+  /// 窄屏分类列表里的一行。
+  ///
+  /// 列表行与宽屏分类栏**共用**同一颗 `NavSidebarItem`（见
+  /// `SettingsCategoryTile` 的类文档），所以不能按 `ListTile` 找，也不能只按
+  /// `NavSidebarItem` 找 —— 必须收窄到 `SettingsCategoryTile`。
+  Finder categoryTile(String label) => find.descendant(
+        of: find.byType(SettingsCategoryTile),
+        matching: find.text(label),
+      );
 
   group('一个实例都没有（全新安装）', () {
     for (final size in const <Size>[Size(1400, 900), Size(420, 900)]) {
