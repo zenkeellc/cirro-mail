@@ -18,6 +18,9 @@ import 'change_signal.dart';
 /// 这里的东西丢了只会让用户重新点几下，不会导致登录态泄漏或丢失。
 ///
 /// 约定：所有 key 都带 `cm_` 前缀，避免与将来引入的其他 SDK 撞名。
+///
+/// 变更流靠注入的 [SettingsChangeSignal]：**生产只许 `bootstrap()` 建一份
+/// 共用 signal**，不传就会拿到私有实例（测试便利，生产会永远不同步）。
 class PrefsStore {
   PrefsStore(this._prefs, {SettingsChangeSignal? signal})
       : signal = signal ?? SettingsChangeSignal();
