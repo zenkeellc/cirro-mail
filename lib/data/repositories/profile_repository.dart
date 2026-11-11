@@ -30,8 +30,12 @@ class ProfileRepository {
   /// **哪些写要打枪**：实例本身的增删改（[create] / [update] / [rename] /
   /// [setColorIndex] / [updateBaseUrl] / [markLoggedIn] / [delete] /
   /// [signOut]）。**哪些不打**：[touch] 与 [setLastSyncAt]（每轮同步都写，
-  /// 打枪等于每轮同步都触发一次配置上传）、[markNeedsLogin] 与 [setActive]
-  /// （本机状态，不是漫游配置）。
+  /// 打枪等于每轮同步都触发一次配置上传）、[markNeedsLogin]（本机状态，不走
+  /// prefs，0 枪）。
+  ///
+  /// [setActive] 自己**不打枪**，但它走的 `cm_active_profile` prefs setter 会
+  /// 打一枪：那是 C 类设备本地项，快照里会过滤，多这一枪只等于一次空 diff，
+  /// 可接受。
   final SettingsChangeSignal _signal;
 
   static const Uuid _uuid = Uuid();
