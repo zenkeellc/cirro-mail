@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/db/database.dart';
+import 'core/storage/change_signal.dart';
 import 'core/storage/prefs_store.dart';
 import 'core/storage/token_store.dart';
 import 'providers/core_providers.dart';
@@ -41,19 +42,23 @@ Future<BootstrapData> bootstrap() async {
     db = null;
   }
 
+  // 全 App 唯一的「本机配置变了」信号：prefs / token / 实例三处写入口共用
+  // 同一个实例，消费方只订阅一条流就够了（见 `SettingsChangeSignal`）。
+  final signal = SettingsChangeSignal();
+
   // 构造 `TokenStore` 不打平台通道，密钥库真出问题会在第一次 read/write 时
   // 以 `PlatformException` 的形式出现 —— `TokenStore` 自己会降级为「仅内存」
   // 并置 `isDegraded`（设置页与启动失败页据此提示用户）。这里不需要 try。
-  tokens = TokenStore();
+  tokens = TokenStore(signal: signal);
 
   try {
-    prefs = await PrefsStore.open();
+    prefs = await PrefsStore.open(signal: signal);
   } catch (e, st) {
     // SharedPreferences 起不来（极少见）时给一份**内存实例**兜住：设置不落盘，
     // 但用户至少能读信。这个失败**不**置 bootstrapError —— 没有它 App 也能用，
     // 没必要把用户挡在启动失败页外面。
     debugPrint('偏好设置打不开，本次运行不落盘：$e\n$st');
-    prefs = PrefsStore(await SharedPreferences.getInstance());
+    prefs = PrefsStore(await SharedPreferences.getInstance(), signal: signal);
   }
 
   return BootstrapData(

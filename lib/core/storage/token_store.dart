@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'change_signal.dart';
 import 'secure_storage.dart';
 
 /// 每个 profile 一个 token，存系统密钥库（Keychain / Keystore / libsecret / DPAPI）。
@@ -28,9 +29,15 @@ class TokenStore {
   /// 不传 [storage] 时走 [resolveSecureStorage]：macOS 上优先 data protection
   /// 钥匙串（没有逐 App ACL，不弹授权框），没有 entitlement 的构建自动退回
   /// 老钥匙串。测试可以注入一个走内存的假存储，就不必碰平台通道。
-  TokenStore({FlutterSecureStorage? storage}) : _injectedStorage = storage;
+  TokenStore({FlutterSecureStorage? storage, SettingsChangeSignal? signal})
+      : _injectedStorage = storage,
+        _signal = signal ?? SettingsChangeSignal();
 
   final FlutterSecureStorage? _injectedStorage;
+
+  /// 本机配置变更流：token 也是**配置**的一部分（换设备要把登录态带过去）。
+  /// 由 `bootstrap()` 建、与 `PrefsStore` / `ProfileRepository` 共用同一个实例。
+  final SettingsChangeSignal _signal;
 
   /// 真正用的存储。**懒解析**：构造 `TokenStore` 不碰平台通道（`bootstrap` 里
   /// 就是构造完直接拿去用，那时还不到读钥匙串的时候），首次读写才去解析。
@@ -172,6 +179,7 @@ class TokenStore {
       _degraded = true;
       debugPrint('TokenStore.write 失败（本次运行仍可用）：${e.message}');
     }
+    _signal.notify();
   }
 
   Future<void> delete(String profileId) async {
@@ -184,6 +192,7 @@ class TokenStore {
       _degraded = true;
       debugPrint('TokenStore.delete 失败：${e.message}');
     }
+    _signal.notify();
   }
 
   /// 删实例时调用：清掉该 profile 的 token 与缓存。

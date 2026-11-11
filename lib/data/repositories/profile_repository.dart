@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 import '../../core/db/database.dart';
+import '../../core/storage/change_signal.dart';
 import '../../core/storage/prefs_store.dart';
 import '../../core/storage/token_store.dart';
 import '../../core/theme/instance_colors.dart';
@@ -16,11 +17,22 @@ class ProfileRepository {
     required this.db,
     required this.tokens,
     required this.prefs,
-  });
+    SettingsChangeSignal? signal,
+  }) : _signal = signal ?? prefs.signal;
 
   final AppDatabase db;
   final TokenStore tokens;
   final PrefsStore prefs;
+
+  /// 本机配置变更流。默认就用 [prefs] 那一个 —— 生产里两者本来就是同一个
+  /// 实例（`bootstrap()` 建），注入只是为了测试能单独盯着它。
+  ///
+  /// **哪些写要打枪**：实例本身的增删改（[create] / [update] / [rename] /
+  /// [setColorIndex] / [updateBaseUrl] / [markLoggedIn] / [delete] /
+  /// [signOut]）。**哪些不打**：[touch] 与 [setLastSyncAt]（每轮同步都写，
+  /// 打枪等于每轮同步都触发一次配置上传）、[markNeedsLogin] 与 [setActive]
+  /// （本机状态，不是漫游配置）。
+  final SettingsChangeSignal _signal;
 
   static const Uuid _uuid = Uuid();
 
@@ -62,6 +74,7 @@ class ProfileRepository {
       ossBase: UrlUtils.ossBase(userApi: normalized),
     );
     await db.profileDao.upsertProfile(profile);
+    _signal.notify();
     return profile;
   }
 
@@ -77,26 +90,32 @@ class ProfileRepository {
     int? userId,
     String? ossBase,
     bool? needsLogin,
-  }) =>
-      db.profileDao.updateProfileFields(
-        id,
-        name: name,
-        sort: sort,
-        colorIndex: colorIndex,
-        serverTitle: serverTitle,
-        email: email,
-        userName: userName,
-        userId: userId,
-        ossBase: ossBase,
-        needsLogin: needsLogin,
-      );
+  }) async {
+    await db.profileDao.updateProfileFields(
+      id,
+      name: name,
+      sort: sort,
+      colorIndex: colorIndex,
+      serverTitle: serverTitle,
+      email: email,
+      userName: userName,
+      userId: userId,
+      ossBase: ossBase,
+      needsLogin: needsLogin,
+    );
+    _signal.notify();
+  }
 
   /// 修改备注名（设置页用）。
-  Future<void> rename(String id, String name) =>
-      db.profileDao.updateProfileFields(id, name: name);
+  Future<void> rename(String id, String name) async {
+    await db.profileDao.updateProfileFields(id, name: name);
+    _signal.notify();
+  }
 
-  Future<void> setColorIndex(String id, int colorIndex) =>
-      db.profileDao.updateProfileFields(id, colorIndex: colorIndex);
+  Future<void> setColorIndex(String id, int colorIndex) async {
+    await db.profileDao.updateProfileFields(id, colorIndex: colorIndex);
+    _signal.notify();
+  }
 
   /// 保存实例配置（`baseUrl` 变了会清掉该实例的 token ——
   /// A 实例签发的 token 在 B 实例毫无意义）。
@@ -125,6 +144,7 @@ class ProfileRepository {
         lastActiveAt: current.lastActiveAt,
       ),
     );
+    _signal.notify();
   }
 
   /// 登录成功后把服务端认到的身份写回。
@@ -135,17 +155,19 @@ class ProfileRepository {
     required String userName,
     String? serverTitle,
     String? ossBase,
-  }) =>
-      db.profileDao.updateProfileFields(
-        id,
-        userId: userId,
-        email: email,
-        userName: userName,
-        serverTitle: serverTitle,
-        ossBase: ossBase,
-        needsLogin: false,
-        lastActiveAt: DateTime.now().toUtc(),
-      );
+  }) async {
+    await db.profileDao.updateProfileFields(
+      id,
+      userId: userId,
+      email: email,
+      userName: userName,
+      serverTitle: serverTitle,
+      ossBase: ossBase,
+      needsLogin: false,
+      lastActiveAt: DateTime.now().toUtc(),
+    );
+    _signal.notify();
+  }
 
   /// 401 后置「需要重新登录」。**不删 token** —— 用户可能只是被别的设备挤掉，
   /// 重新登录即可；删掉反而丢了「上次是谁」的信息。
@@ -167,6 +189,7 @@ class ProfileRepository {
       final rest = await db.profileDao.allProfiles();
       await prefs.setActiveProfileId(rest.isEmpty ? null : rest.first.id);
     }
+    _signal.notify();
   }
 
   /// 退出登录但**保留服务器**（用户还想换个账号登回来）。
@@ -180,6 +203,7 @@ class ProfileRepository {
       await db.profileDao.clearProfileData(id);
     }
     await markNeedsLogin(id);
+    _signal.notify();
   }
 
   /// 切换当前实例。
