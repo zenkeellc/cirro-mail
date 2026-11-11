@@ -12,6 +12,9 @@ import '../models/profile.dart';
 ///
 /// 这是**唯一**可以删 profile 的地方：删实例要同时清本地缓存（dao 的级联）
 /// 与密钥库里的 token，两个不同的存储，必须由知道两边存在的一层来协调。
+///
+/// 一次逻辑操作可能连打 2–3 枪（token 一枪 + 行一枪，当前实例再 +prefs）：
+/// 消费方按防抖 / 幂等处理，别把一枪当一改。
 class ProfileRepository {
   ProfileRepository({
     required this.db,
