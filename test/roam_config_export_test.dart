@@ -69,17 +69,30 @@ void main() {
     });
     final items = await r.host.exportItems();
     final byKey = <String, RoamConfigItem>{for (final item in items) item.key: item};
+    // **精确键集**（不是 containsAll）：多导出一条不该漫游的 key 就是越界。
+    // 典型是扩展自己的 `app.dnd` / `app.proxy` —— 核心不解释它们，也就不该
+    // 替它们保管，更不该在别的设备上把它们当成核心设置写回去。
+    expect(byKey.keys.toSet(), <String>{
+      'app.schema',
+      'app.appearance',
+      'app.compose',
+      'sig:a@b.com',
+      'phrases:a@b.com',
+      'app.reading',
+      'app.ai',
+    });
     expect(
-      byKey.keys,
-      containsAll(<String>[
-        'app.schema',
-        'app.appearance',
-        'app.compose',
-        'sig:a@b.com',
-        'phrases:a@b.com',
-        'app.reading',
-        'app.ai',
-      ]),
+      <String, String>{for (final item in items) item.key: item.group},
+      <String, String>{
+        'app.schema': 'meta',
+        'app.appearance': 'appearance',
+        'app.compose': 'compose',
+        'sig:a@b.com': 'compose',
+        'phrases:a@b.com': 'compose',
+        'app.reading': 'reading',
+        'app.ai': 'ai',
+      },
+      reason: 'group 是消费方分组的唯一依据，每条都要落在约定的组里',
     );
     expect(byKey['app.schema']!.data, <String, Object?>{'v': 1});
     expect(byKey['app.appearance']!.data, <String, Object?>{
@@ -151,6 +164,62 @@ void main() {
           .any((item) => item.key.startsWith('instance:https://other')),
       isFalse,
       reason: '没有登录邮箱的实例不漫游',
+    );
+  });
+
+  test('坏 JSON 的 AI 设置降级成空对象；没配来源时 source 为 null', () async {
+    final r = await rig(seed: <String, Object>{'cm_ai_settings': '{"apiFormat":'});
+    final byKey = <String, RoamConfigItem>{
+      for (final item in await r.host.exportItems()) item.key: item,
+    };
+    expect(
+      byKey['app.ai']!.data['settings'],
+      <String, Object?>{},
+      reason: '坏 JSON 当没配过（与 AiSettingsCodec.decode 同口径），不是半截字符串',
+    );
+    expect(byKey['app.ai']!.data['source'], isNull);
+  });
+
+  test('includeSecrets 只带出真有 token 的实例', () async {
+    final r = await rig();
+    await r.db.profileDao.upsertProfile(const Profile(
+      id: 'p-1',
+      baseUrl: 'https://mail.example.com/api',
+      email: 'a@b.com',
+      sort: 0,
+    ));
+    await r.db.profileDao.upsertProfile(const Profile(
+      id: 'p-2',
+      baseUrl: 'https://other.example.com/api',
+      email: 'b@c.com',
+      sort: 1,
+    ));
+    await r.tokens.write('p-1', 'tok-1');
+    final withSecrets = await r.host.exportItems(includeSecrets: true);
+    expect(
+      <String>[
+        for (final item in withSecrets)
+          if (item.group == 'secrets') item.key,
+      ],
+      <String>['secret.instance:https://mail.example.com|a@b.com'],
+      reason: '没有 token 的实例不出 secret 条目 —— 空值写回去会把对方的登录态删掉',
+    );
+    expect(
+      <String>[
+        for (final item in withSecrets)
+          if (item.group == 'instances') item.key,
+      ],
+      <String>[
+        'instance:https://mail.example.com|a@b.com',
+        'instance:https://other.example.com|b@c.com',
+      ],
+      reason: '没有 token 的实例照样导出（别的设备靠它建实例），只是不带登录态',
+    );
+    expect(
+      withSecrets.where((item) => item.group == 'secrets').every(
+            (item) => item.secret,
+          ),
+      isTrue,
     );
   });
 }
