@@ -10,6 +10,7 @@ import '../../features/mail_detail/external_allowlist.dart';
 import '../../features/mail_list/mailbox_filter.dart';
 import '../config/app_defaults.dart';
 import '../theme/breakpoints.dart';
+import 'change_signal.dart';
 
 /// 非敏感的 UI 偏好设置。
 ///
@@ -18,12 +19,44 @@ import '../theme/breakpoints.dart';
 ///
 /// 约定：所有 key 都带 `cm_` 前缀，避免与将来引入的其他 SDK 撞名。
 class PrefsStore {
-  PrefsStore(this._prefs);
+  PrefsStore(this._prefs, {SettingsChangeSignal? signal})
+      : signal = signal ?? SettingsChangeSignal();
 
   final SharedPreferences _prefs;
 
-  static Future<PrefsStore> open() async =>
-      PrefsStore(await SharedPreferences.getInstance());
+  /// 生产里由 `bootstrap()` 建、与 `TokenStore` / `ProfileRepository` 共用。
+  final SettingsChangeSignal signal;
+
+  /// 本机配置变更流（= `signal.changes`）。
+  Stream<void> get changes => signal.changes;
+
+  /// 报告一次「本机配置变了」。给**不经过 setter** 的写入口用
+  /// （`ProfileRepository` 改完实例行之后打一枪）。setter 自己会发，别再补。
+  void notifyChanged() => signal.notify();
+
+  static Future<PrefsStore> open({SettingsChangeSignal? signal}) async =>
+      PrefsStore(await SharedPreferences.getInstance(), signal: signal);
+
+  /// 写盘 + 打一枪。**所有 setter 都从这里走** —— 漏一处就是「那类配置永远
+  /// 不触发同步」，所以宁可多一层也不让 setter 直接碰 `_prefs`。
+  Future<void> _write(Future<bool> Function() op) async {
+    await op();
+    notifyChanged();
+  }
+
+  /// 「空 = 删掉这个 key」的那批 setter（10 多个都是这个语义）。
+  Future<void> _putOrRemove(String key, String? value) => _write(
+        () => (value == null || value.isEmpty)
+            ? _prefs.remove(key)
+            : _prefs.setString(key, value),
+      );
+
+  /// 同上，值是字符串列表（空列表 = 删 key）。
+  Future<void> _putList(String key, List<String> values) => _write(
+        () => values.isEmpty
+            ? _prefs.remove(key)
+            : _prefs.setStringList(key, values),
+      );
 
   // ---- key ----
   static const String _kActiveProfile = 'cm_active_profile';
@@ -86,31 +119,21 @@ class PrefsStore {
   // ---- 当前实例 ----
   String? get activeProfileId => _prefs.getString(_kActiveProfile);
 
-  Future<void> setActiveProfileId(String? id) async {
-    if (id == null || id.isEmpty) {
-      await _prefs.remove(_kActiveProfile);
-    } else {
-      await _prefs.setString(_kActiveProfile, id);
-    }
-  }
+  Future<void> setActiveProfileId(String? id) =>
+      _putOrRemove(_kActiveProfile, id);
 
   // ---- 语言 ----
   /// `'zh'` / `'en'`；null 表示跟随系统。
   String? get localeCode => _prefs.getString(_kLocale);
 
-  Future<void> setLocaleCode(String? code) async {
-    if (code == null || code.isEmpty) {
-      await _prefs.remove(_kLocale);
-    } else {
-      await _prefs.setString(_kLocale, code);
-    }
-  }
+  Future<void> setLocaleCode(String? code) => _putOrRemove(_kLocale, code);
 
   // ---- 主题 ----
   /// `'system'` / `'light'` / `'dark'`。
   String get themeMode => _prefs.getString(_kThemeMode) ?? 'system';
 
-  Future<void> setThemeMode(String mode) => _prefs.setString(_kThemeMode, mode);
+  Future<void> setThemeMode(String mode) =>
+      _write(() => _prefs.setString(_kThemeMode, mode));
 
   /// 选中的主题包 id；null = 没选过 / 已清空，用内置默认主题。
   String? get themePackId {
@@ -118,13 +141,7 @@ class PrefsStore {
     return (id == null || id.isEmpty) ? null : id;
   }
 
-  Future<void> setThemePackId(String? id) async {
-    if (id == null || id.isEmpty) {
-      await _prefs.remove(_kThemePack);
-    } else {
-      await _prefs.setString(_kThemePack, id);
-    }
-  }
+  Future<void> setThemePackId(String? id) => _putOrRemove(_kThemePack, id);
 
   // ---- 轮询间隔 ----
   /// 每隔多久检查一次新邮件。服务端 `autoRefresh` 只作建议（线上为 0），
@@ -137,7 +154,7 @@ class PrefsStore {
   }
 
   Future<void> setPollInterval(Duration d) =>
-      _prefs.setInt(_kPollSeconds, _clamp(d.inSeconds).inSeconds);
+      _write(() => _prefs.setInt(_kPollSeconds, _clamp(d.inSeconds).inSeconds));
 
   static Duration _clamp(int seconds) {
     if (seconds < AppDefaults.pollMin.inSeconds) return AppDefaults.pollMin;
@@ -155,7 +172,7 @@ class PrefsStore {
       _prefs.getDouble(_kPaneListWidth) ?? Breakpoints.listMinWidth;
 
   Future<void> setPaneListWidth(double width) =>
-      _prefs.setDouble(_kPaneListWidth, width);
+      _write(() => _prefs.setDouble(_kPaneListWidth, width));
 
   // ---- 侧栏的邮箱下级菜单 ----
 
@@ -171,7 +188,7 @@ class PrefsStore {
       _prefs.getBool(_kSidebarMailboxes) ?? true;
 
   Future<void> setSidebarMailboxesExpanded(bool value) =>
-      _prefs.setBool(_kSidebarMailboxes, value);
+      _write(() => _prefs.setBool(_kSidebarMailboxes, value));
 
   /// 左侧「邮件撰写」分类展开不展开。**默认展开** —— 需求就是默认展开，
   /// 而且这一组的存在意义就是「让你看见现在开着哪几页」；默认收着等于
@@ -180,7 +197,7 @@ class PrefsStore {
       _prefs.getBool(_kSidebarCompose) ?? true;
 
   Future<void> setSidebarComposeExpanded(bool value) =>
-      _prefs.setBool(_kSidebarCompose, value);
+      _write(() => _prefs.setBool(_kSidebarCompose, value));
 
   /// 用户在侧栏里**单独收起**了哪些实例的邮箱列表。
   ///
@@ -196,16 +213,8 @@ class PrefsStore {
   Set<String> get collapsedSidebarInstances =>
       (_prefs.getStringList(_kSidebarCollapsed) ?? const <String>[]).toSet();
 
-  Future<void> setCollapsedSidebarInstances(Set<String> ids) async {
-    if (ids.isEmpty) {
-      await _prefs.remove(_kSidebarCollapsed);
-    } else {
-      await _prefs.setStringList(
-        _kSidebarCollapsed,
-        ids.toList(growable: false),
-      );
-    }
-  }
+  Future<void> setCollapsedSidebarInstances(Set<String> ids) =>
+      _putList(_kSidebarCollapsed, ids.toList(growable: false));
 
   // ---- 发送延迟 ----
 
@@ -224,16 +233,18 @@ class PrefsStore {
     return Duration(seconds: seconds);
   }
 
-  Future<void> setSendDelay(Duration d) => _prefs.setInt(
-        _kSendDelay,
-        d.inSeconds.clamp(0, AppDefaults.sendDelayMax.inSeconds),
+  Future<void> setSendDelay(Duration d) => _write(
+        () => _prefs.setInt(
+          _kSendDelay,
+          d.inSeconds.clamp(0, AppDefaults.sendDelayMax.inSeconds),
+        ),
       );
 
   /// 列表翻完之后是否后台补拉 `full=1` 详情（费流量，可关）。
   bool get prefetchFull => _prefs.getBool(_kPrefetchFull) ?? true;
 
   Future<void> setPrefetchFull(bool value) =>
-      _prefs.setBool(_kPrefetchFull, value);
+      _write(() => _prefs.setBool(_kPrefetchFull, value));
 
   // ---- 实例色标 ----
   /// profileId → 色标下标。用户可固定某个实例的颜色。
@@ -255,7 +266,7 @@ class PrefsStore {
   }
 
   Future<void> setInstanceColors(Map<String, int> colors) =>
-      _prefs.setString(_kInstanceColors, jsonEncode(colors));
+      _write(() => _prefs.setString(_kInstanceColors, jsonEncode(colors)));
 
   // ---- 签名（按发件邮箱）----
 
@@ -293,7 +304,7 @@ class PrefsStore {
     } else {
       next[email] = text;
     }
-    return _prefs.setString(_kSignatures, jsonEncode(next));
+    return _write(() => _prefs.setString(_kSignatures, jsonEncode(next)));
   }
 
   // ---- 常用语（按发件邮箱）----
@@ -334,14 +345,16 @@ class PrefsStore {
     } else {
       next[email] = List<WritingSnippet>.unmodifiable(items);
     }
-    return _prefs.setString(
-      _kPhrases,
-      jsonEncode(<String, dynamic>{
-        for (final entry in next.entries)
-          entry.key: <Map<String, dynamic>>[
-            for (final snippet in entry.value) snippet.toJson(),
-          ],
-      }),
+    return _write(
+      () => _prefs.setString(
+        _kPhrases,
+        jsonEncode(<String, dynamic>{
+          for (final entry in next.entries)
+            entry.key: <Map<String, dynamic>>[
+              for (final snippet in entry.value) snippet.toJson(),
+            ],
+        }),
+      ),
     );
   }
 
@@ -359,31 +372,31 @@ class PrefsStore {
   List<MailboxFilter>? get mailboxFilter =>
       prefsToMailboxes(_prefs.getStringList(_kMailboxFilter));
 
-  Future<void> setMailboxFilter(List<MailboxFilter>? boxes) async {
-    if (boxes == null || boxes.isEmpty) {
-      await _prefs.remove(_kMailboxFilter);
-    } else {
-      await _prefs.setStringList(_kMailboxFilter, mailboxesToPrefs(boxes));
-    }
-  }
+  Future<void> setMailboxFilter(List<MailboxFilter>? boxes) => _putList(
+        _kMailboxFilter,
+        boxes == null || boxes.isEmpty
+            ? const <String>[]
+            : mailboxesToPrefs(boxes),
+      );
 
   // ---- 通知 ----
   bool get notifyEnabled => _prefs.getBool(_kNotifyEnabled) ?? true;
 
   Future<void> setNotifyEnabled(bool value) =>
-      _prefs.setBool(_kNotifyEnabled, value);
+      _write(() => _prefs.setBool(_kNotifyEnabled, value));
 
   /// 收到新邮件时**在 App 里弹不弹横幅**。与 [notifyEnabled] 分开：
   /// 那个关掉是「连收信都停」，这个关掉只是「别打扰我」。默认开。
   bool get notifyBanner => _prefs.getBool(_kNotifyBanner) ?? true;
 
   Future<void> setNotifyBanner(bool value) =>
-      _prefs.setBool(_kNotifyBanner, value);
+      _write(() => _prefs.setBool(_kNotifyBanner, value));
 
   /// 是否已经走过首次引导（决定冷启动落在引导页还是聚合页）。
   bool get onboarded => _prefs.getBool(_kOnboarded) ?? false;
 
-  Future<void> setOnboarded(bool value) => _prefs.setBool(_kOnboarded, value);
+  Future<void> setOnboarded(bool value) =>
+      _write(() => _prefs.setBool(_kOnboarded, value));
 
   // ---- 推送中转（mail-push）------------------------------------------------
   //
@@ -400,36 +413,19 @@ class PrefsStore {
   /// 中转 Worker 的地址（形如 `https://push.example.com`）。空 = 没配。
   String get pushRelayUrl => _prefs.getString(_kPushRelayUrl) ?? '';
 
-  Future<void> setPushRelayUrl(String url) async {
-    if (url.isEmpty) {
-      await _prefs.remove(_kPushRelayUrl);
-    } else {
-      await _prefs.setString(_kPushRelayUrl, url);
-    }
-  }
+  Future<void> setPushRelayUrl(String url) => _putOrRemove(_kPushRelayUrl, url);
 
   /// 本机在中转端占用的实例位 id（部署者用 `/admin/instances` 开的那个）。
   String get pushInstanceId => _prefs.getString(_kPushInstanceId) ?? '';
 
-  Future<void> setPushInstanceId(String id) async {
-    if (id.isEmpty) {
-      await _prefs.remove(_kPushInstanceId);
-    } else {
-      await _prefs.setString(_kPushInstanceId, id);
-    }
-  }
+  Future<void> setPushInstanceId(String id) =>
+      _putOrRemove(_kPushInstanceId, id);
 
   /// 本机在中转端的设备号，注册时生成后**不再变** —— 它同时是
   /// 「注销哪些注册」的依据，重装才会换。
   String get pushDeviceId => _prefs.getString(_kPushDeviceId) ?? '';
 
-  Future<void> setPushDeviceId(String id) async {
-    if (id.isEmpty) {
-      await _prefs.remove(_kPushDeviceId);
-    } else {
-      await _prefs.setString(_kPushDeviceId, id);
-    }
-  }
+  Future<void> setPushDeviceId(String id) => _putOrRemove(_kPushDeviceId, id);
 
   /// 已在中转端登记过推送的收件邮箱（小写）。
   ///
@@ -438,19 +434,14 @@ class PrefsStore {
   List<String> get pushMailboxes =>
       _prefs.getStringList(_kPushMailboxes) ?? const <String>[];
 
-  Future<void> setPushMailboxes(List<String> mailboxes) async {
-    if (mailboxes.isEmpty) {
-      await _prefs.remove(_kPushMailboxes);
-    } else {
-      await _prefs.setStringList(_kPushMailboxes, mailboxes);
-    }
-  }
+  Future<void> setPushMailboxes(List<String> mailboxes) =>
+      _putList(_kPushMailboxes, mailboxes);
 
   /// 推送总开关。关掉只是不注册 / 注销，**不影响轮询与本地通知**。
   bool get pushEnabled => _prefs.getBool(_kPushEnabled) ?? false;
 
   Future<void> setPushEnabled(bool value) =>
-      _prefs.setBool(_kPushEnabled, value);
+      _write(() => _prefs.setBool(_kPushEnabled, value));
 
   /// 清掉**手填**的推送配置：中转地址、实例位、以及「已登记邮箱」的旧记录。
   ///
@@ -465,6 +456,7 @@ class PrefsStore {
     await _prefs.remove(_kPushRelayUrl);
     await _prefs.remove(_kPushInstanceId);
     await _prefs.remove(_kPushMailboxes);
+    notifyChanged();
   }
 
   static const String _kPushIsAdmin = 'cm_push_is_admin';
@@ -477,18 +469,13 @@ class PrefsStore {
   bool? get pushIsAdmin => _prefs.getBool(_kPushIsAdmin);
 
   Future<void> setPushIsAdmin(bool value) =>
-      _prefs.setBool(_kPushIsAdmin, value);
+      _write(() => _prefs.setBool(_kPushIsAdmin, value));
 
   /// AI 设置的非敏感部分（JSON 串）。**里面绝不含 Key** —— 见 `AiSettingsCodec`。
   String? get aiSettingsJson => _prefs.getString(_kAiSettings);
 
-  Future<void> setAiSettingsJson(String? json) async {
-    if (json == null || json.isEmpty) {
-      await _prefs.remove(_kAiSettings);
-    } else {
-      await _prefs.setString(_kAiSettings, json);
-    }
-  }
+  Future<void> setAiSettingsJson(String? json) =>
+      _putOrRemove(_kAiSettings, json);
 
   /// AI 来源偏好：`'managed'`（扩展注册的托管通道）或 `'byok'`（用户自己的
   /// 配置）。null = 从没选过，按 `managed` 处理。
@@ -498,27 +485,18 @@ class PrefsStore {
   /// 份是给设置页的完整对象。放一起就得先反序列化整份配置才能路由。
   String? get aiSourceCode => _prefs.getString(_kAiSource);
 
-  Future<void> setAiSourceCode(String? code) async {
-    if (code == null || code.isEmpty) {
-      await _prefs.remove(_kAiSource);
-    } else {
-      await _prefs.setString(_kAiSource, code);
-    }
-  }
+  Future<void> setAiSourceCode(String? code) => _putOrRemove(_kAiSource, code);
 
   /// 每日调用计数，形如 `2026-10-10:7`（见 `AiUsageCounter`）。
   String? get aiUsage => _prefs.getString(_kAiUsage);
 
-  Future<void> setAiUsage(String? value) async {
-    if (value == null || value.isEmpty) {
-      await _prefs.remove(_kAiUsage);
-    } else {
-      await _prefs.setString(_kAiUsage, value);
-    }
-  }
+  Future<void> setAiUsage(String? value) => _putOrRemove(_kAiUsage, value);
 
   @visibleForTesting
-  Future<void> clearAll() => _prefs.clear();
+  Future<void> clearAll() async {
+    await _prefs.clear();
+    notifyChanged();
+  }
 
   // ---- 外联资源域名白名单 ----
 
@@ -543,11 +521,7 @@ class PrefsStore {
       if (pattern == null || normalized.contains(pattern)) continue;
       normalized.add(pattern);
     }
-    if (normalized.isEmpty) {
-      await _prefs.remove(_kExternalAllowedHosts);
-    } else {
-      await _prefs.setStringList(_kExternalAllowedHosts, normalized);
-    }
+    await _putList(_kExternalAllowedHosts, normalized);
   }
 
   // ---- 追踪像素 ----
@@ -564,14 +538,10 @@ class PrefsStore {
   bool get quietTrackingPixels =>
       _prefs.getBool(_kQuietTrackingPixels) ?? true;
 
-  Future<void> setQuietTrackingPixels(bool value) async {
-    // 默认值不落盘：预置里没有这个 key 就是「开」。
-    if (value) {
-      await _prefs.remove(_kQuietTrackingPixels);
-    } else {
-      await _prefs.setBool(_kQuietTrackingPixels, false);
-    }
-  }
+  Future<void> setQuietTrackingPixels(bool value) => value
+      // 默认值不落盘：预置里没有这个 key 就是「开」。
+      ? _write(() => _prefs.remove(_kQuietTrackingPixels))
+      : _write(() => _prefs.setBool(_kQuietTrackingPixels, false));
 
   // ---- 版本 / 更新检查 ----
 
@@ -583,25 +553,20 @@ class PrefsStore {
       _prefs.getBool(_kUpdateCheckEnabled) ?? AppDefaults.updateCheckDefault;
 
   Future<void> setUpdateCheckEnabled(bool value) =>
-      _prefs.setBool(_kUpdateCheckEnabled, value);
+      _write(() => _prefs.setBool(_kUpdateCheckEnabled, value));
 
   /// 上次成功检查更新的时间戳（毫秒）。0 = 从没检查过。
   int get updateLastCheckMs => _prefs.getInt(_kUpdateLastCheckMs) ?? 0;
 
   Future<void> setUpdateLastCheckMs(int ms) =>
-      _prefs.setInt(_kUpdateLastCheckMs, ms);
+      _write(() => _prefs.setInt(_kUpdateLastCheckMs, ms));
 
   /// 已经提示过的版本（`0.2.0+132`）。空串 = 还没提示过。
   String get updateLastNotified =>
       _prefs.getString(_kUpdateLastNotified) ?? '';
 
-  Future<void> setUpdateLastNotified(String version) async {
-    if (version.isEmpty) {
-      await _prefs.remove(_kUpdateLastNotified);
-    } else {
-      await _prefs.setString(_kUpdateLastNotified, version);
-    }
-  }
+  Future<void> setUpdateLastNotified(String version) =>
+      _putOrRemove(_kUpdateLastNotified, version);
 
   // ---- 「关于」页的通用推广位 ----
 
@@ -612,11 +577,5 @@ class PrefsStore {
   ///
   /// 传空串等于清掉记录（目前没有调用方这么用，但让 setter 的语义对称，
   /// 免得将来要「重新启用」时再补一个方法）。
-  Future<void> dismissPromo(String url) async {
-    if (url.isEmpty) {
-      await _prefs.remove(_kPromoDismissedUrl);
-    } else {
-      await _prefs.setString(_kPromoDismissedUrl, url);
-    }
-  }
+  Future<void> dismissPromo(String url) => _putOrRemove(_kPromoDismissedUrl, url);
 }
