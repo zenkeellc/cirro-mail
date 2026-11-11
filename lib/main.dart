@@ -146,8 +146,9 @@ class _BootstrapGateState extends State<BootstrapGate> {
         AppExtensionRegistry.instance.attachDraftStore(CoreDraftStore(data.db));
 
         // 配置快照读写口：与两个 store 同一时机、同一处挂 —— 库 / prefs / 钥匙串
-        // 此刻都就绪，而扩展的启动钩子早跑完（它们要么等 `roamConfigHostReady`，
-        // 要么安静降级）。先判 null：这个 builder 每次重建都会跑，而
+        // 此刻都就绪，而扩展的启动钩子**已发起**（`bootstrapAll` 是 unawaited，
+        // 此刻可能还在跑）—— 它们要么等 `roamConfigHostReady`，要么安静降级。
+        // 先判 null：这个 builder 每次重建都会跑，而
         // `registerRoamConfigHost` 只认第一次（与 `attachMailStore` 同一口径）。
         // 公开版没人读它：这一段不启动任何东西、不改任何行为。
         if (AppExtensionRegistry.instance.roamConfigHost == null) {
