@@ -327,6 +327,13 @@ class AppExtensionRegistry {
         for (final ext in _extensions) ...ext.shellActions(context),
       ];
 
+  /// 所有扩展往「欢迎页」动作区加的入口，按注册顺序拼接。
+  ///
+  /// 位置由调用方（`welcome_view.dart`）落实：主按钮「添加第一个实例」下面。
+  List<Widget> welcomeActions(BuildContext context) => <Widget>[
+        for (final ext in _extensions) ...ext.welcomeActions(context),
+      ];
+
   /// 扩展声明的产品名（见 [AppExtension.appDisplayName]），注册顺序取第一个
   /// **非空白**的。没有扩展认领时是 null —— 核心回落到自己的默认名。
   ///

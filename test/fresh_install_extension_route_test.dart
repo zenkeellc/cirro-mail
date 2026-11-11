@@ -7,9 +7,13 @@
 // `AppExtension.routes()` 挂在根上的 `/account/login`（壳之外的整屏页）刚被
 // `go` 上去就被原样折回来 —— 用户看到的是「按钮失灵」。
 //
-// 同一条重定向也是底部导航那两个死键的成因（`/mail/...`、`/starred` 折回
-// 设置页）；那两条由外壳**把导航收起**来兜（见 `AppShell` 的 `noInstances`）。
-// 这里只钉第三件事：**扩展顶层页的放行**。
+// ## 零实例的落点（2026-11-11 iOS 真机之后改过）
+//
+// 上一版为了不摆死键，把零实例的落点钉在设置页、并把底部导航整条收起 ——
+// 结果设置页成了**唯一可达**的一页（「停在设置页、回不到主页面」）。
+// 现在窄屏的落点是**主页面**（`/home`，零实例时是欢迎/引导页），底部导航
+// 两格都在；宽屏仍是设置页（宽屏的主页面就是侧栏，零实例时侧栏收起）。
+// 这里钉三件事：扩展顶层页的放行、壳内页的折回口径、导航不再整条消失。
 //
 // 用真 `routerProvider` + 一个假扩展（与商业版同形的 `/account/login`）：
 // 缺陷的成因就是「顶层路由 + redirect」，单看 `resolveRedirect` 的返回值不足以
@@ -53,6 +57,8 @@ class _AccountLoginExt extends AppExtension {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  final zh = lookupAppLocalizations(const Locale('zh'));
 
   setUp(AppExtensionRegistry.instance.reset);
   tearDown(AppExtensionRegistry.instance.reset);
@@ -121,8 +127,8 @@ void main() {
           .registerAll(const <AppExtension>[_AccountLoginExt()]);
       final router = await pump(tester, profiles: const <Profile>[]);
 
-      // 冷启动仍然落在设置页（零实例时的唯一可用页）。
-      expect(uriOf(router), Routes.settings);
+      // 冷启动落在主页面（零实例时是欢迎 / 引导页）。
+      expect(uriOf(router), Routes.home);
 
       router.go('/account/login');
       await tester.pumpAndSettle();
@@ -146,27 +152,46 @@ void main() {
       await reset(tester);
     });
 
-    testWidgets('外壳里的页面（邮件 / 星标）仍然折回设置页', (tester) async {
+    testWidgets('壳内的其它页面（收件箱 / 星标）仍然折回主页面', (tester) async {
       final router = await pump(tester, profiles: const <Profile>[]);
 
-      expect(uriOf(router), Routes.settings);
+      // 零实例的落点是主页面（窄屏），不是设置页。
+      expect(uriOf(router), Routes.home);
       router.go(Routes.starred);
       await tester.pumpAndSettle();
-      expect(uriOf(router), Routes.settings);
-      router.go(Routes.home);
+      expect(uriOf(router), Routes.home);
+      router.go(Routes.mailAll);
       await tester.pumpAndSettle();
-      expect(uriOf(router), Routes.settings);
+      expect(uriOf(router), Routes.home);
 
       await reset(tester);
     });
 
-    testWidgets('零实例时底部导航收起 —— 不摆两条点了没反应的按钮',
+    testWidgets('零实例时底部导航仍在，且「邮件」那一格能回主页面 —— 不是死键',
         (tester) async {
       final router = await pump(tester, profiles: const <Profile>[]);
 
+      expect(uriOf(router), Routes.home);
+      expect(find.byType(NavigationBar), findsOneWidget);
+      // 主页面是欢迎 / 引导页（不是那张点不动的图标网格）。
+      expect(find.text(zh.welcomeHeadline), findsOneWidget);
+
+      // 「设置」→ 设置页；再「邮件」→ 回主页面。两格都通向真页面。
+      await tester.tap(find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text(zh.settings),
+      ));
+      await tester.pumpAndSettle();
       expect(uriOf(router), Routes.settings);
-      expect(find.byType(NavigationBar), findsNothing);
       expect(find.byType(SettingsScreen), findsOneWidget);
+
+      await tester.tap(find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text(zh.mailTab),
+      ));
+      await tester.pumpAndSettle();
+      expect(uriOf(router), Routes.home);
+      expect(find.text(zh.welcomeHeadline), findsOneWidget);
 
       await reset(tester);
     });
@@ -183,13 +208,25 @@ void main() {
   });
 
   group('公开版（空注册表）行为不变', () {
-    test('零实例 + 未注册扩展 → 任何地址都折回设置页', () {
+    test('零实例 + 未注册扩展 → 任何地址都折回落点（窄屏主页面 / 宽屏设置页）',
+        () {
       expect(
         resolveRedirect(
           healthy: true,
           async: const AsyncData<List<Profile>>(<Profile>[]),
           location: '/account/login',
           profileIdParam: null,
+          compact: true,
+        ),
+        Routes.home,
+      );
+      expect(
+        resolveRedirect(
+          healthy: true,
+          async: const AsyncData<List<Profile>>(<Profile>[]),
+          location: '/account/login',
+          profileIdParam: null,
+          compact: false,
         ),
         Routes.settings,
       );

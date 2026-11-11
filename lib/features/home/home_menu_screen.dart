@@ -10,6 +10,7 @@ import '../shell/nav_sidebar.dart';
 import '../shell/sidebar_mailboxes.dart';
 import 'home_entries.dart';
 import 'home_nav.dart';
+import 'welcome_view.dart';
 
 /// 主屏菜单：收件箱那一支的第一屏。
 ///
@@ -25,6 +26,16 @@ class HomeMenuScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 零实例：主屏整页换成欢迎 / 引导页（`WelcomeView`）。
+    //
+    // 这一页本来就是「有实例之后从这里进各处」的菜单；一个实例都没有时它
+    // 的七个入口都只能 `onTap: null`（没登录任何实例时点进去只会看到空
+    // 列表），留在屏幕上就是一屏点不动的图标。换成欢迎页之后，主屏仍然
+    // 是一页**有内容**的页面：说明现状、给一条去设置加实例的路、把接上之后
+    // 能做的事摆出来。判据与外壳同一个（`noInstancesProvider`）—— 窄屏的
+    // 底部导航「邮件」那一格就是它，两处不能各算各的。
+    if (ref.watch(noInstancesProvider)) return const WelcomeView();
+
     final l10n = AppLocalizations.of(context);
     final profiles = ref.watch(activeProfilesProvider);
     final unread = ref.watch(totalUnreadProvider);

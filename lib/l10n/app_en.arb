@@ -1784,5 +1784,17 @@
         "type": "String"
       }
     }
-  }
+  },
+  "welcomeHeadline": "All your mailboxes in one app",
+  "welcomeBody": "This device isn't connected to a mail server yet. Add an instance and your inbox, composer and reminders will show up here.",
+  "welcomeAddInstanceHint": "All it takes is a server address and one sign-in — you can also look around first.",
+  "welcomeFeaturesHeadline": "Once you're connected",
+  "welcomeFeatureInboxTitle": "Every mailbox in one list",
+  "welcomeFeatureInboxBody": "Several servers and mailboxes merge into one inbox with a shared unread count; stars and search cover all of them.",
+  "welcomeFeatureComposeTitle": "Writing, drafts and an AI assistant",
+  "welcomeFeatureComposeBody": "Signature, canned replies and send delay live on one page; drafts stay on this device and survive leaving the screen.",
+  "welcomeFeatureNotifyTitle": "New-mail notifications",
+  "welcomeFeatureNotifyBody": "Background push and in-app alerts are controlled separately: which mailboxes and when is up to you.",
+  "welcomeFeaturePrivacyTitle": "Remote content in messages stays blocked",
+  "welcomeFeaturePrivacyBody": "No remote images load, so senders never learn when you opened a message. Allow domains when you want to; scripts never run."
 }

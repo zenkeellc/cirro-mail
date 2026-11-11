@@ -29,6 +29,7 @@ import 'theme_pack.dart';
 /// | [appDisplayName] | `AppBrand`（侧栏标题 / 原生窗口标题 / 关于页 / 任务切换器 / 推送的实例名默认值） |
 /// | [aboutExtras] | `about_section.dart` 的「关于」页 |
 /// | [shellActions] | 宽屏侧栏标题行 / 窄屏列表页 `AppBar.actions` |
+/// | [welcomeActions] | `welcome_view.dart`（零实例的欢迎页，主按钮下方） |
 /// | [settingsSections] | `settings_screen.dart` 的分类列表 |
 /// | [themes] | `app.dart`（`MaterialApp` 的 theme / darkTheme + 背板）、`appearance_section.dart`（主题画廊） |
 /// | [aiUsageExtras] | `ai_section.dart`（「设置 → AI」页「用量」分组末尾） |
@@ -156,6 +157,26 @@ abstract class AppExtension {
   ///
   /// 导航由扩展自己做（`context.go(...)`）—— 核心不知道这些按钮通向哪儿。
   List<Widget> shellActions(BuildContext context) => const <Widget>[];
+
+  /// 追加进「欢迎页」动作区的入口 —— 零实例（全新安装）时的主页面。
+  ///
+  /// 零实例时核心主屏不是那张空菜单，而是一张**欢迎 / 引导页**
+  /// （`features/home/welcome_view.dart`）：产品名 + 一句说明 + 四张功能亮点卡，
+  /// 主按钮是「添加第一个实例」。扩展在这里挂**不依赖邮件实例**的入口 ——
+  /// 商业版的「登录 / 注册账号」就是它：账号与邮件实例是两件事，一个实例都
+  /// 没接的时候账号照样能登录、看订阅。
+  ///
+  /// 落点是主按钮**下面**那一行（窄屏纵向排开）：主按钮永远先解决「把邮件
+  /// 接上」，扩展入口跟在它后面，不抢第一眼。返回空列表即「什么都不加」——
+  /// 公开版（空注册表）的欢迎页不出现这一行，版面与没有这个钩子时逐字相同。
+  ///
+  /// **只给按钮**（`OutlinedButton` / `TextButton` 这类），不要塞自带滚动容器的
+  /// 整块 UI —— 欢迎页本身就是一个 `ListView`，那会套出两层滚动。要更复杂的
+  /// 东西就挂一条 [routes] 路由，从这里点进去。
+  ///
+  /// 导航由扩展自己做（`context.push(...)` / `context.go(...)`）—— 与
+  /// [shellActions] 同一条规矩：核心不知道这些按钮通向哪儿。
+  List<Widget> welcomeActions(BuildContext context) => const <Widget>[];
 
   /// 追加进「设置」页的**分类**。
   ///

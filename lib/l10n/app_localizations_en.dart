@@ -2483,4 +2483,48 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get securityExternalResourcesNote =>
       '* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact address applies to that domain only. Scripts and stylesheets are still never run.';
+
+  @override
+  String get welcomeHeadline => 'All your mailboxes in one app';
+
+  @override
+  String get welcomeBody =>
+      'This device isn\'t connected to a mail server yet. Add an instance and your inbox, composer and reminders will show up here.';
+
+  @override
+  String get welcomeAddInstanceHint =>
+      'All it takes is a server address and one sign-in — you can also look around first.';
+
+  @override
+  String get welcomeFeaturesHeadline => 'Once you\'re connected';
+
+  @override
+  String get welcomeFeatureInboxTitle => 'Every mailbox in one list';
+
+  @override
+  String get welcomeFeatureInboxBody =>
+      'Several servers and mailboxes merge into one inbox with a shared unread count; stars and search cover all of them.';
+
+  @override
+  String get welcomeFeatureComposeTitle =>
+      'Writing, drafts and an AI assistant';
+
+  @override
+  String get welcomeFeatureComposeBody =>
+      'Signature, canned replies and send delay live on one page; drafts stay on this device and survive leaving the screen.';
+
+  @override
+  String get welcomeFeatureNotifyTitle => 'New-mail notifications';
+
+  @override
+  String get welcomeFeatureNotifyBody =>
+      'Background push and in-app alerts are controlled separately: which mailboxes and when is up to you.';
+
+  @override
+  String get welcomeFeaturePrivacyTitle =>
+      'Remote content in messages stays blocked';
+
+  @override
+  String get welcomeFeaturePrivacyBody =>
+      'No remote images load, so senders never learn when you opened a message. Allow domains when you want to; scripts never run.';
 }

@@ -172,6 +172,10 @@ class _FakeExt extends AppExtension {
       <Widget>[for (var i = 0; i < actions; i++) Text('action:$id#$i')];
 
   @override
+  List<Widget> welcomeActions(BuildContext context) =>
+      <Widget>[for (var i = 0; i < actions; i++) Text('welcome:$id#$i')];
+
+  @override
   List<SettingsSection> settingsSections(BuildContext context) => <SettingsSection>[
         for (var i = 0; i < sections; i++)
           SettingsSection(
@@ -319,6 +323,7 @@ void main() {
       expect(AppExtensionRegistry.instance.routes(), isEmpty);
       expect(AppExtensionRegistry.instance.mailBranchRoutes(), isEmpty);
       expect(AppExtensionRegistry.instance.shellActions(context), isEmpty);
+      expect(AppExtensionRegistry.instance.welcomeActions(context), isEmpty);
       expect(AppExtensionRegistry.instance.settingsSections(context), isEmpty);
       expect(AppExtensionRegistry.instance.mailStore, isNull);
     });
@@ -446,6 +451,23 @@ void main() {
             .map((t) => t.data)
             .toList(),
         <String>['action:a#0', 'action:a#1', 'action:b#0'],
+      );
+    });
+
+    testWidgets('welcomeActions 按扩展顺序铺平', (tester) async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a', actions: 2),
+        _FakeExt('b', actions: 1),
+      ]);
+      await tester.pumpWidget(const SizedBox.shrink());
+      final context = tester.element(find.byType(SizedBox).first);
+      expect(
+        AppExtensionRegistry.instance
+            .welcomeActions(context)
+            .cast<Text>()
+            .map((t) => t.data)
+            .toList(),
+        <String>['welcome:a#0', 'welcome:a#1', 'welcome:b#0'],
       );
     });
 

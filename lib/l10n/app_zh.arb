@@ -1735,5 +1735,17 @@
         "type": "String"
       }
     }
-  }
+  },
+  "welcomeHeadline": "把邮箱装进一个 App",
+  "welcomeBody": "这台设备还没有接入邮件服务器。添加一个实例之后，收件箱、写信和提醒都会出现在这里。",
+  "welcomeAddInstanceHint": "只需要一个服务器地址和一次登录；不接实例也能先看看这个 App 能做什么。",
+  "welcomeFeaturesHeadline": "接上之后",
+  "welcomeFeatureInboxTitle": "一个列表读所有邮箱",
+  "welcomeFeatureInboxBody": "多台服务器、多个邮箱聚合成一个收件箱，未读一起数，星标与搜索也覆盖全部。",
+  "welcomeFeatureComposeTitle": "写信、草稿与 AI 助手",
+  "welcomeFeatureComposeBody": "签名、常用语、发送延迟都在同一页；草稿留在本机，切走再回来还在。",
+  "welcomeFeatureNotifyTitle": "新邮件提醒",
+  "welcomeFeatureNotifyBody": "后台推送与应用内提醒分开管：哪些邮箱提醒、什么时候提醒，由你定。",
+  "welcomeFeaturePrivacyTitle": "正文里的外联资源默认不加载",
+  "welcomeFeaturePrivacyBody": "远程图片不加载，发件人看不到你何时打开；需要时按域名放行，脚本永远不执行。"
 }

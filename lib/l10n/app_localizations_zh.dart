@@ -2352,4 +2352,41 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get securityExternalResourcesNote =>
       '* 匹配任意字符（包括点）：*.example.com 覆盖所有子域名，但不含 example.com 本身；精确域名只对这一个域名生效。样式表与脚本仍然不会被执行。';
+
+  @override
+  String get welcomeHeadline => '把邮箱装进一个 App';
+
+  @override
+  String get welcomeBody => '这台设备还没有接入邮件服务器。添加一个实例之后，收件箱、写信和提醒都会出现在这里。';
+
+  @override
+  String get welcomeAddInstanceHint => '只需要一个服务器地址和一次登录；不接实例也能先看看这个 App 能做什么。';
+
+  @override
+  String get welcomeFeaturesHeadline => '接上之后';
+
+  @override
+  String get welcomeFeatureInboxTitle => '一个列表读所有邮箱';
+
+  @override
+  String get welcomeFeatureInboxBody => '多台服务器、多个邮箱聚合成一个收件箱，未读一起数，星标与搜索也覆盖全部。';
+
+  @override
+  String get welcomeFeatureComposeTitle => '写信、草稿与 AI 助手';
+
+  @override
+  String get welcomeFeatureComposeBody => '签名、常用语、发送延迟都在同一页；草稿留在本机，切走再回来还在。';
+
+  @override
+  String get welcomeFeatureNotifyTitle => '新邮件提醒';
+
+  @override
+  String get welcomeFeatureNotifyBody => '后台推送与应用内提醒分开管：哪些邮箱提醒、什么时候提醒，由你定。';
+
+  @override
+  String get welcomeFeaturePrivacyTitle => '正文里的外联资源默认不加载';
+
+  @override
+  String get welcomeFeaturePrivacyBody =>
+      '远程图片不加载，发件人看不到你何时打开；需要时按域名放行，脚本永远不执行。';
 }

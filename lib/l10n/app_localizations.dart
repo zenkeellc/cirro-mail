@@ -4327,6 +4327,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'* matches any characters, including dots: *.example.com covers every subdomain but not example.com itself; an exact address applies to that domain only. Scripts and stylesheets are still never run.'**
   String get securityExternalResourcesNote;
+
+  /// No description provided for @welcomeHeadline.
+  ///
+  /// In en, this message translates to:
+  /// **'All your mailboxes in one app'**
+  String get welcomeHeadline;
+
+  /// No description provided for @welcomeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This device isn\'t connected to a mail server yet. Add an instance and your inbox, composer and reminders will show up here.'**
+  String get welcomeBody;
+
+  /// No description provided for @welcomeAddInstanceHint.
+  ///
+  /// In en, this message translates to:
+  /// **'All it takes is a server address and one sign-in — you can also look around first.'**
+  String get welcomeAddInstanceHint;
+
+  /// No description provided for @welcomeFeaturesHeadline.
+  ///
+  /// In en, this message translates to:
+  /// **'Once you\'re connected'**
+  String get welcomeFeaturesHeadline;
+
+  /// No description provided for @welcomeFeatureInboxTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Every mailbox in one list'**
+  String get welcomeFeatureInboxTitle;
+
+  /// No description provided for @welcomeFeatureInboxBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Several servers and mailboxes merge into one inbox with a shared unread count; stars and search cover all of them.'**
+  String get welcomeFeatureInboxBody;
+
+  /// No description provided for @welcomeFeatureComposeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Writing, drafts and an AI assistant'**
+  String get welcomeFeatureComposeTitle;
+
+  /// No description provided for @welcomeFeatureComposeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature, canned replies and send delay live on one page; drafts stay on this device and survive leaving the screen.'**
+  String get welcomeFeatureComposeBody;
+
+  /// No description provided for @welcomeFeatureNotifyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'New-mail notifications'**
+  String get welcomeFeatureNotifyTitle;
+
+  /// No description provided for @welcomeFeatureNotifyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Background push and in-app alerts are controlled separately: which mailboxes and when is up to you.'**
+  String get welcomeFeatureNotifyBody;
+
+  /// No description provided for @welcomeFeaturePrivacyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote content in messages stays blocked'**
+  String get welcomeFeaturePrivacyTitle;
+
+  /// No description provided for @welcomeFeaturePrivacyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'No remote images load, so senders never learn when you opened a message. Allow domains when you want to; scripts never run.'**
+  String get welcomeFeaturePrivacyBody;
 }
 
 class _AppLocalizationsDelegate

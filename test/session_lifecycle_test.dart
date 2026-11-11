@@ -190,6 +190,7 @@ void main() {
       required List<Profile> profiles,
       String? param,
       bool healthy = true,
+      bool compact = true,
       AsyncValue<List<Profile>>? async,
     }) =>
         resolveRedirect(
@@ -197,18 +198,36 @@ void main() {
           async: async ?? AsyncData<List<Profile>>(profiles),
           location: location,
           profileIdParam: param,
+          compact: compact,
         );
 
-    test('一个实例都没有 → 去设置页（添加实例是那一页里的一栏）', () {
-      // 新装时不再被钉在那张占满整窗的「服务器设置」页上：壳的一级导航与
-      // 设置分类菜单都得在，用户从设置页的「实例 → 添加第一个实例」开始。
+    test('一个实例都没有 → 窄屏去主页面（欢迎页），宽屏去设置页', () {
+      // 窄屏：主页面就是「邮件」那一格，零实例时它是欢迎 / 引导页
+      // （`WelcomeView`）—— 用户既能去设置加实例，也随时能回主页面。
       expect(
         at(location: '/mail/all', profiles: const <Profile>[]),
-        '/settings',
+        '/home',
       );
       expect(at(location: '/settings', profiles: const <Profile>[]), isNull);
-      // `/setup` 是旧地址（现在只是到 `/settings` 的重定向）。
-      expect(at(location: '/setup', profiles: const <Profile>[]), '/settings');
+      expect(at(location: '/home', profiles: const <Profile>[]), isNull);
+      // `/setup` 是旧地址（现在只是到主页面的重定向）。
+      expect(at(location: '/setup', profiles: const <Profile>[]), '/home');
+
+      // 宽屏：主页面是左侧栏（零实例时收起），没有「一页」可落 ——
+      // 落点仍是设置页，添加实例就在那一栏里。
+      expect(
+        at(
+          location: '/mail/all',
+          profiles: const <Profile>[],
+          compact: false,
+        ),
+        '/settings',
+      );
+      expect(
+        at(location: '/home', profiles: const <Profile>[], compact: false),
+        '/settings',
+        reason: '宽屏没有主页面可看，/home 与其它壳内页一样折回设置页',
+      );
     });
 
     test('有实例但都没登录 → 去第一个的登录页', () {

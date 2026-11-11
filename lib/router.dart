@@ -644,6 +644,10 @@ String? _redirect(Ref ref, BuildContext context, GoRouterState state) {
     location: state.matchedLocation,
     // 两条分支各用各的参数名：`/mail/:profileId` 与 `/login/:profileId`。
     profileIdParam: state.pathParameters['profileId'],
+    // 零实例的落点按宽度分：窄屏是**主页面（欢迎页）**，宽屏是设置页。
+    // 判据与 `Breakpoints.isCompact` 逐字相同 —— 手机上主页面是那张 icon
+    // 网格（零实例时换成欢迎页），宽屏的主页面是侧栏、没有「一页」可落。
+    compact: Breakpoints.isCompact(MediaQuery.sizeOf(context).width),
   );
   if (auth != null) return auth;
   return foldSelectionAcrossBreakpoints(
@@ -792,6 +796,7 @@ String? resolveRedirect({
   required AsyncValue<List<Profile>> async,
   required String location,
   required String? profileIdParam,
+  required bool compact,
 }) {
   if (!healthy) {
     return location == Routes.startupFailure ? null : Routes.startupFailure;
@@ -802,22 +807,42 @@ String? resolveRedirect({
   if (async.isLoading && !async.hasValue) return null;
   final profiles = async.value ?? const <Profile>[];
 
-  // 一个实例都没有（新装）→ 落在**设置页**，而不是那张占满整窗的服务器
-  // 设置页：壳的一级导航与设置分类菜单都得在，用户在那里点「添加第一个
-  // 实例」才开始加。这条同时是 `setup` 路由退役的原因 —— 那张表已经并进
-  // 设置页的「实例」那一栏（`AddInstanceSection`）。
+  // 一个实例都没有（新装）→ 落在**主页面**，而不是那张占满整窗的服务器
+  // 设置页，也不是一个只有设置的分类列表。
   //
-  // **扩展的顶层页面例外**（`/account/login` 这类）：它们是**壳之外**的
-  // 整屏页，不依赖任何邮件实例就能用 —— 恰恰相反，零实例时它们是最该到的
-  // 那一页（Pro 的账号登录与「添加第一个邮件实例」是两件事，账号不该被
-  // 邮件实例的有无卡住）。曾经没有这个例外：全新安装的 Pro 里点「账号 →
-  // 登录」被这条重定向原样折回设置页，用户看到的是「按钮点了没反应」
-  // （2026-11-10 真机复现）。判据只认**扩展注册的顶层路由**，核心自己的
-  // 顶层页（登录页 / 同步页）仍按上面的规矩折回设置页。
+  // ## 窄屏：主页面 = `/home`（零实例时它是**欢迎 / 引导页**）
+  //
+  // 手机上主页面是那张 icon 网格（`HomeMenuScreen`）；零实例时它换成一张
+  // 欢迎页（`WelcomeView`：产品名 + 功能亮点 + 主按钮「添加第一个实例」，
+  // 扩展还能在下面挂自己的入口 —— 商业版的账号登录就是它）。落在这一页，
+  // 底部导航两格（邮件 / 设置）**都在**，用户既能去设置加实例，也能随时
+  // 回到主页面。
+  //
+  // 这条规则是 2026-11-11 iOS 真机的回归：上一版零实例时把 `/home` 也折回
+  // `/settings`，外壳又为了「不摆点不动的按钮」把底部导航整条收起 ——
+  // 设置页于是成了**唯一可达**的一页，用户看到的是「停在设置页、回不到
+  // 主页面」。收起导航只解决了「死键」，没解决「没有主页面」。
+  //
+  // ## 宽屏：落点仍是设置页
+  //
+  // 宽屏的主页面就是左侧栏，没有「一页」可落；而零实例时侧栏每一项都会
+  // 折回设置页（摆出来全是死键，见 `AppShell` 的 `noInstances` 注释）。
+  // 所以宽屏零实例 = 设置页，添加实例就在「实例」那一栏里。
+  //
+  // ## 扩展的顶层页面例外
+  //
+  // `/account/login` 这类是**壳之外**的整屏页，不依赖任何邮件实例就能用 ——
+  // 恰恰相反，零实例时它们是最该到的那一页（Pro 的账号登录与「添加第一个
+  // 邮件实例」是两件事，账号不该被邮件实例的有无卡住）。曾经没有这个例外：
+  // 全新安装的 Pro 里点「账号 → 登录」被这条重定向原样折回设置页，用户看到
+  // 的是「按钮点了没反应」（2026-11-10 真机复现）。判据只认**扩展注册的
+  // 顶层路由**，核心自己的顶层页（登录页 / 同步页）仍按上面的规矩折回。
   if (profiles.isEmpty) {
+    final landing = compact ? Routes.home : Routes.settings;
     if (location == Routes.settings) return null;
+    if (compact && location == Routes.home) return null;
     if (_extensionOwnsTopLevelPath(location)) return null;
-    return Routes.settings;
+    return landing;
   }
 
   final anyLoggedIn = profiles.any((p) => p.isLoggedIn);

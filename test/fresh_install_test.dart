@@ -27,6 +27,8 @@ import 'package:mail_app/core/db/database.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/core/storage/token_store.dart';
 import 'package:mail_app/data/models/profile.dart';
+import 'package:mail_app/features/compose/compose_action.dart';
+import 'package:mail_app/features/home/welcome_view.dart';
 import 'package:mail_app/features/settings/settings_screen.dart';
 import 'package:mail_app/features/shell/nav_sidebar.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
@@ -140,43 +142,90 @@ void main() {
       );
 
   group('一个实例都没有（全新安装）', () {
-    for (final size in const <Size>[Size(1400, 900), Size(420, 900)]) {
-      final label = '${size.width.toInt()}w';
+    testWidgets('宽屏：落在设置页，一级导航收起 —— 不是那张占满整窗的表单',
+        (tester) async {
+      final r = await pump(
+        tester,
+        profiles: const <Profile>[],
+        size: const Size(1400, 900),
+      );
 
-      testWidgets('$label：落在设置页，一级导航在 —— 不是那张占满整窗的表单',
-          (tester) async {
-        final r = await pump(
-          tester,
-          profiles: const <Profile>[],
-          size: size,
-        );
+      // 宽屏没有「主页面」这一页（侧栏自己就是主页面），零实例的落点
+      // 是设置页 —— 添加实例就在「实例」那一栏里。
+      expect(r.uri, Routes.settings);
+      // 零实例时宽屏侧栏收起：侧栏里每一项都会折回设置页，摆着是一排死键。
+      expect(find.byType(NavSidebar), findsNothing,
+          reason: '零实例时宽屏侧栏收起');
+      // 设置页本体在（不是那张表单）。
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.text(zh.addAndSignIn), findsNothing,
+          reason: '零实例不该一进来就开着表单');
+      // 分类栏常驻（二级菜单）。
+      expect(railItem(zh.instances), findsOneWidget);
+      // 默认选中「实例」：右栏是这一栏的正文（空实例时的入口）。
+      expect(find.text(zh.addFirstInstance), findsOneWidget);
 
-        // 落点：/mail/all → /settings（不再折到 /setup）。
-        expect(r.uri, Routes.settings);
-        // 外壳在，但**一级导航收起**：零实例时邮件 / 星标两支都会被
-        // `resolveRedirect` 折回设置页，摆着就是两条点了没反应的按钮
-        // （2026-11-10 安卓真机报的就是这个）。添加实例并登录之后导航自己回来，
-        // 见 `fresh_install_extension_route_test.dart` 那条。
-        expect(find.byType(NavSidebar), findsNothing,
-            reason: '零实例时宽屏侧栏收起');
-        expect(find.byType(NavigationBar), findsNothing,
-            reason: '零实例时窄屏底部导航收起');
-        // 设置页本体在（不是那张表单）。
-        expect(find.byType(SettingsScreen), findsOneWidget);
-        expect(find.text(zh.addAndSignIn), findsNothing,
-            reason: '零实例不该一进来就开着表单');
+      await settleAndDispose(tester);
+    });
 
-        // 宽屏分类栏常驻（二级菜单）；窄屏是一张分类列表。
-        if (size.width >= 1024) {
-          expect(railItem(zh.instances), findsOneWidget);
-          // 默认选中「实例」：右栏是这一栏的正文（空实例时的入口）。
-          expect(find.text(zh.addFirstInstance), findsOneWidget);
-        } else {
-          expect(categoryTile(zh.instances), findsOneWidget);
-        }
-        await settleAndDispose(tester);
-      });
-    }
+    testWidgets('窄屏：落在主页面（欢迎页），底部导航两格都在',
+        (tester) async {
+      final r = await pump(
+        tester,
+        profiles: const <Profile>[],
+        size: const Size(420, 900),
+      );
+
+      // 落点：/mail/all → /home（主页面）。零实例时主屏是欢迎 / 引导页，
+      // 不是一列点不动的图标，也不是「只剩设置页」的死路 —— 2026-11-11
+      // iOS 真机反馈的那条「停在设置页、回不到主页面」就是它。
+      expect(r.uri, Routes.home);
+      expect(find.byType(WelcomeView), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(WelcomeView),
+          matching: find.text(zh.welcomeHeadline),
+        ),
+        findsOneWidget,
+      );
+      // 底部导航两格都在：邮件（= 这一页）与设置。
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(NavigationDestination), findsNWidgets(2));
+      // 零实例时没有发件人，写邮件那颗浮动按钮必须收起来（点了只会被
+      // redirect 折回来 —— 又一颗死键）。
+      expect(find.byType(ComposeAction), findsNothing);
+      // 设置页不在这一屏上（它只是另一格）。
+      expect(find.byType(SettingsScreen), findsNothing);
+
+      await settleAndDispose(tester);
+    });
+
+    testWidgets('窄屏：欢迎页「添加第一个实例」去设置页，底部导航能回主页面',
+        (tester) async {
+      final r = await pump(
+        tester,
+        profiles: const <Profile>[],
+        size: const Size(420, 900),
+      );
+
+      // 主按钮 → 设置页（另一个分支，走 go）。
+      await tester.tap(find.text(zh.addFirstInstance));
+      await tester.pumpAndSettle();
+      expect(r.uri, Routes.settings);
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(categoryTile(zh.instances), findsOneWidget);
+
+      // 底部导航「邮件」那一格 → 回主页面（欢迎页）。
+      await tester.tap(find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text(zh.mailTab),
+      ));
+      await tester.pumpAndSettle();
+      expect(r.uri, Routes.home);
+      expect(find.byType(WelcomeView), findsOneWidget);
+
+      await settleAndDispose(tester);
+    });
 
     testWidgets('宽屏：添加实例是右栏的一栏正文，分类栏不消失、地址不变',
         (tester) async {
@@ -211,11 +260,16 @@ void main() {
     });
 
     testWidgets('窄屏：两级返回 —— 表单退实例列表，再退分类列表', (tester) async {
-      await pump(
+      final r = await pump(
         tester,
         profiles: const <Profile>[],
         size: const Size(420, 900),
       );
+
+      // 零实例的落点是主页面（欢迎页）；设置页从底部导航进。
+      expect(r.uri, Routes.home);
+      r.go(Routes.settings);
+      await tester.pumpAndSettle();
 
       // 分类列表 → 实例那一页。
       await tester.tap(categoryTile(zh.instances));

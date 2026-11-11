@@ -64,13 +64,18 @@ class AppShell extends ConsumerWidget {
     final compact = Breakpoints.isCompact(MediaQuery.sizeOf(context).width);
     final current = navigationShell.currentIndex;
 
-    // 一个邮件实例都没有（全新安装 / 刚删光）时**收起一级导航**。
+    // 一个邮件实例都没有（全新安装 / 刚删光）时**只收起宽屏侧栏**，不收起
+    // 窄屏底部导航。
     //
-    // 那一刻只有设置页是能用的：`resolveRedirect` 会把 `/mail/...` 与
-    // `/starred` 一律折回 `/settings`（没有实例就没有收件箱，也没有星标），
-    // 于是底部那三项里有两项**点了什么都没有** —— 用户看到的是「停在设置页、
-    // 切不过去」（2026-11-10 安卓真机报告）。与其摆两条死按钮，不如干脆
-    // 不摆：用户添加完实例、登录之后，实例表非空，导航自己回来。
+    // 零实例时 `/mail/...` 与 `/starred` 仍会被 `resolveRedirect` 折回设置页
+    // 或主页面（没有实例就没有收件箱，也没有星标），所以宽屏侧栏摆出来是一排
+    // 死键 —— 2026-11-10 安卓真机报的就是这个，收起它是对的。
+    //
+    // **但窄屏那两格不该跟着收**：2026-11-11 iOS 真机的反馈是「停在设置页、
+    // 回不到主页面」—— 上一版把底部导航整条收掉，设置的分类列表于是成了唯一
+    // 可达的一页，连「主页面」都不存在了。现在零实例的落点是主页面
+    // （`/home`，窄屏上是欢迎/引导页，见 `welcome_view.dart`），「设置」那一格
+    // 也照常可用：两格都通向真页面，没有死键。
     //
     // 只在**已经读出来且确实为空**时才收：还在加载时保持原样，避免冷启动
     // 先闪一下没有导航的版面（判据与「不随 profiles 流每轮重建」的考虑
@@ -89,9 +94,11 @@ class AppShell extends ConsumerWidget {
       // 「你现在在收件箱这一层」——用户其实已经沉进一封信里了。
       // 撰写页也是「沉进去」的一屏：手机上没有一级导航的位置，页内自己有
       // 关闭/发送。判据与宽屏的「不挂 FAB」同源（见 [isComposeRoute]）。
-      final hideNav = isDetailRoute(uri) ||
-          app_router.isComposeRoute(uri) ||
-          noInstances;
+      //
+      // 零实例**不再**收起底部导航（见上面 `noInstances` 的注释）：那两格
+      // 通向的都是真页面 —— 「邮件」= 主页面（零实例时是欢迎页），
+      // 「设置」= 设置分类列表。
+      final hideNav = isDetailRoute(uri) || app_router.isComposeRoute(uri);
       return _BreakpointRouteSync(
         child: Scaffold(
           body: navigationShell,
@@ -102,12 +109,17 @@ class AppShell extends ConsumerWidget {
           // 判据曾经是「这一屏有没有自带 FAB」（`pageOwnsComposeFab`），那要靠
           // 外壳读地址来判断，而地址在外壳这一层会慢一帧 —— 按钮于是时有时无。
           // 现在页面上没有别处会挂，这一颗就是共用那一颗；剩下的例外只有
-          // **详情页**与**设置那一支**（见 `showsComposeFab`）—— 那是刻意不给，
-          // 不是「谁挂」的问题。写邮件页 / 同步页是顶层路由，推上去整棵盖住
-          // 外壳，这一颗自动不可见。
-          floatingActionButton: showsComposeFab(uri, compact: true)
-              ? const ComposeAction(fab: true)
-              : null,
+          // **详情页**、**设置那一支**（见 `showsComposeFab`）与**零实例**
+          // —— 那是刻意不给，不是「谁挂」的问题。写邮件页 / 同步页是顶层路由，
+          // 推上去整棵盖住外壳，这一颗自动不可见。
+          //
+          // 零实例时这颗按钮在欢迎页上**必须**收起来：没有实例就没有发件人，
+          // 点下去只会被 `resolveRedirect` 折回来 —— 又一颗「点了没反应」的
+          // 按钮，正是这轮要清掉的东西。
+          floatingActionButton:
+              !noInstances && showsComposeFab(uri, compact: true)
+                  ? const ComposeAction(fab: true)
+                  : null,
           bottomNavigationBar: hideNav
               ? null
               : NavigationBar(
@@ -152,8 +164,10 @@ class AppShell extends ConsumerWidget {
         // 时候发生，所以 `uri` 每次都是新的。
         body: Row(
           children: <Widget>[
-            // 零实例时与窄屏同一个理由：侧栏里每一项都会折回设置页
-            // （见 `noInstances` 的注释），收起它，只留设置页自己的分类栏。
+            // 零实例时收起宽屏侧栏：侧栏里每一项都会折回设置页
+            // （见 `noInstances` 的注释），摆出来是一排死键。宽屏没有
+            // 「主页面」这一页 —— 侧栏自己就是主页面 —— 所以零实例时落点
+            // 就是设置页，添加实例在「实例」那一栏里。
             if (!noInstances) _sidebar(context, ref, uri),
             Expanded(child: navigationShell),
           ],
