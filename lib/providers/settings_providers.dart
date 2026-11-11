@@ -21,8 +21,11 @@ class ThemeModeController extends Notifier<ThemeMode> {
   };
 
   @override
-  ThemeMode build() =>
-      _byName[ref.watch(prefsStoreProvider).themeMode] ?? ThemeMode.system;
+  ThemeMode build() {
+    // 统一变更流：漫游 / 扩展把配置写回 prefs 之后，这里自己重算。
+    ref.watch(prefsRevisionProvider);
+    return _byName[ref.watch(prefsStoreProvider).themeMode] ?? ThemeMode.system;
+  }
 
   Future<void> set(ThemeMode mode) async {
     state = mode;
@@ -49,7 +52,10 @@ final Provider<List<ThemePack>> registeredThemePacksProvider =
 /// 用户选中的主题包 id。null = 内置默认主题。
 class ThemePackController extends Notifier<String?> {
   @override
-  String? build() => ref.watch(prefsStoreProvider).themePackId;
+  String? build() {
+    ref.watch(prefsRevisionProvider);
+    return ref.watch(prefsStoreProvider).themePackId;
+  }
 
   Future<void> set(String? id) async {
     state = (id == null || id.isEmpty) ? null : id;
@@ -100,6 +106,7 @@ final Provider<({ThemeData light, ThemeData dark})> activeThemeDataProvider =
 class LocaleController extends Notifier<Locale?> {
   @override
   Locale? build() {
+    ref.watch(prefsRevisionProvider);
     final code = ref.watch(prefsStoreProvider).localeCode;
     return (code == null || code.isEmpty) ? null : Locale(code);
   }
@@ -122,7 +129,10 @@ final NotifierProvider<LocaleController, Locale?> localeProvider =
 /// 不需要重启调度器；下一次判定就生效（不必等到当前这一轮跑完）。
 class PollIntervalController extends Notifier<Duration> {
   @override
-  Duration build() => ref.watch(prefsStoreProvider).pollInterval;
+  Duration build() {
+    ref.watch(prefsRevisionProvider);
+    return ref.watch(prefsStoreProvider).pollInterval;
+  }
 
   Future<void> set(Duration value) async {
     state = value;
@@ -140,7 +150,10 @@ final NotifierProvider<PollIntervalController, Duration> pollIntervalProvider =
 /// 「后台预取完整正文」。关掉能省流量（列表翻完就不再自动 `full=1`）。
 class PrefetchFullController extends Notifier<bool> {
   @override
-  bool build() => ref.watch(prefsStoreProvider).prefetchFull;
+  bool build() {
+    ref.watch(prefsRevisionProvider);
+    return ref.watch(prefsStoreProvider).prefetchFull;
+  }
 
   Future<void> set(bool value) async {
     state = value;
@@ -302,7 +315,10 @@ bool instanceMailboxesExpanded({
 /// 「立即发送」按钮（见 `ComposeScreen`）够用了。
 class SendDelayController extends Notifier<Duration> {
   @override
-  Duration build() => ref.watch(prefsStoreProvider).sendDelay;
+  Duration build() {
+    ref.watch(prefsRevisionProvider);
+    return ref.watch(prefsStoreProvider).sendDelay;
+  }
 
   Future<void> set(Duration delay) async {
     state = delay;
@@ -319,7 +335,10 @@ final NotifierProvider<SendDelayController, Duration> sendDelayProvider =
 /// 「后台轮询与通知」总开关（也决定调度器跑不跑）。
 class NotifyEnabledController extends Notifier<bool> {
   @override
-  bool build() => ref.watch(prefsStoreProvider).notifyEnabled;
+  bool build() {
+    ref.watch(prefsRevisionProvider);
+    return ref.watch(prefsStoreProvider).notifyEnabled;
+  }
 
   Future<void> set(bool value) async {
     state = value;
@@ -343,7 +362,10 @@ final NotifierProvider<NotifyEnabledController, bool> notifyEnabledProvider =
 /// 默认开，且只在 [notifyEnabledProvider] 也开着时才有意义。
 class NotifyBannerController extends Notifier<bool> {
   @override
-  bool build() => ref.watch(prefsStoreProvider).notifyBanner;
+  bool build() {
+    ref.watch(prefsRevisionProvider);
+    return ref.watch(prefsStoreProvider).notifyBanner;
+  }
 
   Future<void> set(bool value) async {
     state = value;
@@ -485,7 +507,10 @@ final NotifierProvider<UpdateCheckEnabledController, bool>
 /// 端口 / 路径 / 大写），不是已规范化的 pattern。
 class ExternalAllowedHostsController extends Notifier<List<String>> {
   @override
-  List<String> build() => ref.watch(prefsStoreProvider).externalAllowedHosts;
+  List<String> build() {
+    ref.watch(prefsRevisionProvider);
+    return ref.watch(prefsStoreProvider).externalAllowedHosts;
+  }
 
   /// 覆盖写。返回落盘后的实际列表（非法项已被丢掉）。
   Future<List<String>> setAll(Iterable<String> patterns) async {
@@ -532,7 +557,10 @@ final NotifierProvider<ExternalAllowedHostsController, List<String>>
 /// 当作普通外链图对待，不再单独计数。已加载的追踪像素两边都会提示。
 class QuietTrackingPixelsController extends Notifier<bool> {
   @override
-  bool build() => ref.watch(prefsStoreProvider).quietTrackingPixels;
+  bool build() {
+    ref.watch(prefsRevisionProvider);
+    return ref.watch(prefsStoreProvider).quietTrackingPixels;
+  }
 
   Future<void> set(bool value) async {
     state = value;

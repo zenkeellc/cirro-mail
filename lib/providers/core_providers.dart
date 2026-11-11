@@ -86,6 +86,30 @@ final Provider<PrefsStore> prefsStoreProvider = Provider<PrefsStore>(
   name: 'prefsStore',
 );
 
+/// 「本机配置变了」的版本号 —— 统一变更流在 Riverpod 这一侧的镜像。
+///
+/// 设置类 provider 的 `build()` 同步读 prefs，prefs 变了它们自己不会知道；
+/// 以前靠「谁写谁顺便 state=...」糊住设置页自己的改动，但扩展把漫游结果写回来
+/// 时没人改 state，界面会一直显示旧值。依赖边很便宜（int 变一下，同步重算）。
+///
+/// **读它之前别顺手去碰钥匙串**：统一流也会被 `setActiveProfileId`、每次
+/// `TokenStore.write`（登录 / token 刷新）、`setAiUsage`（每次 AI 调用）打一枪，
+/// 在这些时机整份重读 keychain 纯属浪费（见 `ai_providers.dart` 里的取舍）。
+class PrefsRevisionController extends Notifier<int> {
+  @override
+  int build() {
+    final sub = ref.watch(prefsStoreProvider).changes.listen((_) => state++);
+    ref.onDispose(sub.cancel);
+    return 0;
+  }
+}
+
+final NotifierProvider<PrefsRevisionController, int> prefsRevisionProvider =
+    NotifierProvider<PrefsRevisionController, int>(
+  PrefsRevisionController.new,
+  name: 'prefsRevision',
+);
+
 /// 本地化字符串，给**控制器**用（屏幕有自己的 `AppLocalizations.of(context)`）。
 ///
 /// 控制器要在状态里放错误文案（「附件最多 10 个」这类），而它拿不到

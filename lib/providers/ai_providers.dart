@@ -72,6 +72,13 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
 
   @override
   Future<AiSettings> build() async {
+    // 统一变更流：漫游把 `app.ai` / `secret.ai_key` 写回之后，只有重读一次
+    // 钥匙串才看得见「有没有 Key」。**这里不能做缓存**：恢复 Key 走的是 host
+    // 自己的 `AiApiKeyStore`（与 provider 层这个不是同一个实例），provider
+    // 无从得知那次写入，缓存只会把刚恢复的 Key 一直当成「没配」。代价是统一
+    // 流被 token 写 / `setAiUsage` 打枪时也会读一次钥匙串 —— 与 AI 调用本身
+    // 读 Key 的那次同量级，不在逐帧路径上。
+    ref.watch(prefsRevisionProvider);
     // 每开始一次读，存在性先退回「未知」—— 否则一次失败的**重读**会拿着上
     // 一次成功读留下的布尔值冒充结论（与缺陷③同一种病：把没验证的东西当真的）。
     _hasKey = null;
@@ -116,9 +123,13 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
     // 变成空话。而「这台设备存不住 Key」这层提示由 `isKeychainDegraded` 单独
     // 带出去（设置页 `aiKeyDegraded` 文案读的就是它），与 `hasApiKey` 各管一段。
     final stored = await _store.readApiKey();
-    _hasKey = stored != null;
+    // 先用局部变量把这次回读的结论定下来：读 `state` 会把因统一变更流排队的
+    // 重建**同步**跑起来，而 `build()` 开头会把 `_hasKey` 置回「未知」——
+    // 直接写 `hasApiKey: _hasKey!` 会在这条路径上取到 null。
+    final hasKey = stored != null;
+    _hasKey = hasKey;
     state = AsyncData(
-      (state.value ?? const AiSettings()).copyWith(hasApiKey: _hasKey!),
+      (state.value ?? const AiSettings()).copyWith(hasApiKey: hasKey),
     );
   }
 }
