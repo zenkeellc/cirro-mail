@@ -103,6 +103,33 @@ void main() {
       await sub.cancel();
     });
 
+    /// 待取槽（`_pendingBackgroundData`）是后台事件流的另一半：冷启动时
+    /// `PushService.background` 一被订阅就把它取走。`config_changed` 若落进槽里
+    /// （后台分支漏了 `return`），订阅那一刻会把它当一条后台事件再解一次 ——
+    /// 既第二次调钩子，又把先到的 `new_mail` 顶掉。这条钉「它根本没进槽」。
+    test('后台入口：config_changed 不占待取槽（不顶掉先到的 new_mail）', () async {
+      final calls = <String>[];
+      AppExtensionRegistry.instance
+          .registerAll(<AppExtension>[_Ext('ext-a', calls: calls)]);
+      final push = await service();
+
+      // 先来一条普通推送占住槽；config_changed 只该走钩子，不该覆盖它。
+      await pushServiceBackgroundEntry(RemoteMessage(data: _newMail()));
+      await pushServiceBackgroundEntry(RemoteMessage(data: _configChanged()));
+      await pumpEventQueue();
+      expect(calls, <String>['ext-a']);
+
+      final events = <PushMailEvent>[];
+      final sub = push.background.listen(events.add);
+      await pumpEventQueue();
+      await sub.cancel();
+
+      expect(calls, <String>['ext-a'],
+          reason: '槽里若换成 config_changed，订阅会把它再解一次、钩子被调第二遍');
+      expect(events.map((event) => event.emailId), <int>[128],
+          reason: 'config_changed 落进待取槽会顶掉先到的 new_mail');
+    });
+
     test('一个扩展抛错不影响另一个；new_mail 行为不变', () async {
       final calls = <String>[];
       AppExtensionRegistry.instance.registerAll(<AppExtension>[
