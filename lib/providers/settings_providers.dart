@@ -399,6 +399,13 @@ class WritingSnippetsController extends Notifier<WritingSnippets> {
 
   @override
   WritingSnippets build() {
+    // 统一变更流：漫游 / 扩展把 `sig:` / `phrases:` 写回 prefs 之后，这里
+    // 自己重算 —— 写信页 watch 着这个 family 条目，不重算的话已经打开的
+    // 信纸永远显示写回之前那版签名 / 常用语。
+    //
+    // 值全部由 [PrefsStore] 推出来（写也走 store），所以重算不会丢状态：
+    // revision 变了只会让它重新读一次盘，读到的就是刚写进去的那份。
+    ref.watch(prefsRevisionProvider);
     final store = ref.watch(prefsStoreProvider);
     return WritingSnippets(
       signature: store.signatureFor(email),

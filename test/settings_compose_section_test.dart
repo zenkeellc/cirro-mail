@@ -12,11 +12,16 @@
 //
 // 容器搭建照 `settings_layout_test.dart`（prefsStore + profiles 的 override）；
 // `mailboxesProvider` 的 override 照 `compose_toolbar_wiring_test.dart`。
+import 'package:cirro_mail_ext/cirro_mail_ext.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mail_app/core/db/database.dart';
+import 'package:mail_app/core/settings/roam_config_host.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
+import 'package:mail_app/core/storage/token_store.dart';
 import 'package:mail_app/data/models/mailbox_account.dart';
 import 'package:mail_app/data/models/profile.dart';
 import 'package:mail_app/features/settings/sections/compose_section.dart';
@@ -167,6 +172,46 @@ void main() {
         reason: '从常用语页返回时应当把整组写回 prefs');
     expect(saved.single.name, '约时间');
     expect(saved.single.text, '方便的话，我们约周四下午三点。');
+  });
+
+  // ── 漫游写回之后这一页自己刷新 ─────────────────────────────────────
+
+  testWidgets('漫游写回签名/常用语：不重新挂载，副标题也变', (tester) async {
+    final prefs = await pump(tester);
+    expect(signatureSubtitle(tester, _email), isNull, reason: '写回之前没配过签名');
+
+    // 漫游用的 host 与界面共用**同一份 prefs** —— 生产里就是扩展调
+    // `applyItems`，写进核心这份存储。这里**不重新 `pump`**：已挂载的这一页
+    // 必须靠统一变更流自己重画（只看 `prefsStoreProvider` 是不会通知的）。
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final host = RoamConfigHostImpl(prefs: prefs, tokens: TokenStore(), db: db);
+    await host.applyItems(<RoamConfigItem>[
+      RoamConfigItem(
+        key: 'sig:$_email',
+        group: 'compose',
+        secret: false,
+        data: <String, Object?>{'text': '—— 漫游来的'},
+      ),
+      RoamConfigItem(
+        key: 'phrases:$_email',
+        group: 'compose',
+        secret: false,
+        data: <String, Object?>{
+          'items': <Object?>[
+            <String, Object?>{'id': 'p1', 'name': '问候', 'text': '你好'},
+          ],
+        },
+      ),
+    ]);
+    // 让变更流的那个事件跑到（microtask）；不需要退场动画。
+    await tester.pump();
+    expect(signatureSubtitle(tester, _email), '—— 漫游来的',
+        reason: '漫游写回之后这一页要自己重画'
+            '（以前只看 prefsStoreProvider，永远不刷新）');
+    // 常用语那一行没有按内容的副标题；同一份写回是否落盘由 store 侧确认，
+    // 界面是否重建由上面的签名副标题证明。
+    expect(prefs.phrasesFor(_email).single.text, '你好');
   });
 
   // ── 签名往返 + 取消 / 清空 ─────────────────────────────────────────

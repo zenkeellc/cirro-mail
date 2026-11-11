@@ -50,6 +50,11 @@ class ComposeSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+    // `prefsStoreProvider` 的值是个稳定对象（换了 prefs 才会通知），所以
+    // 只看它时，「漫游 / 扩展把签名、常用语写回同一份 prefs」不会让这一页
+    // 重画 —— 副标题与常用语摘要会一直停在旧值。统一变更流的版本号才是
+    // 「盘上的东西变了」的那条边。
+    ref.watch(prefsRevisionProvider);
     final store = ref.watch(prefsStoreProvider);
     final profiles = ref.watch(profilesProvider).value ?? const <Profile>[];
     // 地址集合 = **已配置邮箱** ∪ **两张表里已有的键**。

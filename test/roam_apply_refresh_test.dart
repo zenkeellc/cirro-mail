@@ -92,4 +92,49 @@ void main() {
       reason: '统一的变更流响过之后，读钥匙串的那半也会重读',
     );
   });
+
+  test('applyItems 写回 sig: / phrases: 之后，writingSnippetsProvider 自己刷新',
+      () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    FlutterSecureStorage.setMockInitialValues(<String, String>{});
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final signal = SettingsChangeSignal();
+    final prefs =
+        PrefsStore(await SharedPreferences.getInstance(), signal: signal);
+    final tokens = TokenStore(signal: signal);
+    final container = ProviderContainer.test(overrides: [
+      bootstrapProvider.overrideWithValue(
+        BootstrapData(db: db, tokens: tokens, prefs: prefs),
+      ),
+    ]);
+    // 先读一次，把「版本号 → 这个 family 条目」的依赖边建起来 —— 写信页
+    // （`compose_screen.dart`）就是先 watch 住、之后才有人写回。
+    expect(container.read(writingSnippetsProvider('a@b.com')).signature, isEmpty);
+    expect(container.read(writingSnippetsProvider('a@b.com')).phrases, isEmpty);
+    final host = RoamConfigHostImpl(prefs: prefs, tokens: tokens, db: db);
+    await host.applyItems(const <RoamConfigItem>[
+      RoamConfigItem(
+        key: 'sig:a@b.com',
+        group: 'compose',
+        secret: false,
+        data: <String, Object?>{'text': '—— 漫游来的'},
+      ),
+      RoamConfigItem(
+        key: 'phrases:a@b.com',
+        group: 'compose',
+        secret: false,
+        data: <String, Object?>{
+          'items': <Object?>[
+            <String, Object?>{'id': 'p1', 'name': '问候', 'text': '你好'},
+          ],
+        },
+      ),
+    ]);
+    await pumpEventQueue();
+    final after = container.read(writingSnippetsProvider('a@b.com'));
+    expect(after.signature, '—— 漫游来的',
+        reason: '已打开的信纸要靠这条依赖边看见漫游写回来的签名');
+    expect(after.phrases.single.text, '你好');
+  });
 }
