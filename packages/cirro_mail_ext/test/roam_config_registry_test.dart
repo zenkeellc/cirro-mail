@@ -67,4 +67,24 @@ void main() {
     registry.reset();
     expect(registry.roamConfigHost, isNull);
   });
+
+  test('没注册时 roamConfigHostReady 不完成也不抛', () {
+    // 公开版没有 host：启动期 await 它只会一直等着，不会抛出来把启动流程打断。
+    // 这条盯的是契约本身 —— 别哪天给它加个 `completeError`，也别在 reset 后
+    // 顺手 complete(null)。
+    expect(AppExtensionRegistry.instance.roamConfigHostReady, doesNotComplete);
+  });
+
+  test('reset 换新 Completer：旧 host 不会被新注册的等到', () async {
+    final registry = AppExtensionRegistry.instance;
+    final old = _Host();
+    registry.registerRoamConfigHost(old);
+    expect(await registry.roamConfigHostReady, same(old));
+
+    registry.reset();
+    final next = _Host();
+    registry.registerRoamConfigHost(next);
+    // 若 reset 只把 host 置 null、没换 Completer，这里拿到的会是 old。
+    expect(await registry.roamConfigHostReady, same(next));
+  });
 }
