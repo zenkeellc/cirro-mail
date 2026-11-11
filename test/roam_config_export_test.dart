@@ -1,53 +1,16 @@
 import 'dart:convert';
 
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
-import 'package:drift/native.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mail_app/core/db/database.dart';
-import 'package:mail_app/core/settings/roam_config_host.dart';
-import 'package:mail_app/core/storage/change_signal.dart';
-import 'package:mail_app/core/storage/prefs_store.dart';
-import 'package:mail_app/core/storage/token_store.dart';
 import 'package:mail_app/data/models/profile.dart';
-import 'package:mail_app/features/ai/ai_settings_store.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-/// 后面几个任务（导出 / 写回 / 敏感项 / 删除）共用的测试夹具：一份内存库、
-/// 一份注入同一 signal 的 prefs / token、一个 host。
-typedef Rig = ({
-  AppDatabase db,
-  PrefsStore prefs,
-  TokenStore tokens,
-  RoamConfigHostImpl host,
-});
-
-Future<Rig> rig({Map<String, Object> seed = const <String, Object>{}}) async {
-  SharedPreferences.setMockInitialValues(seed);
-  FlutterSecureStorage.setMockInitialValues(<String, String>{});
-  final db = AppDatabase.forTesting(NativeDatabase.memory());
-  addTearDown(db.close);
-  final signal = SettingsChangeSignal();
-  final prefs = PrefsStore(await SharedPreferences.getInstance(), signal: signal);
-  final tokens = TokenStore(signal: signal);
-  return (
-    db: db,
-    prefs: prefs,
-    tokens: tokens,
-    host: RoamConfigHostImpl(
-      prefs: prefs,
-      tokens: tokens,
-      db: db,
-      aiKeys: AiApiKeyStore(),
-    ),
-  );
-}
+import 'support/roam_rig.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('导出 app 级条目', () async {
-    final r = await rig(seed: <String, Object>{
+    final r = await roamRig(seed: <String, Object>{
       'cm_theme_mode': 'dark',
       'cm_locale': 'en',
       'cm_send_delay_seconds': 3,
@@ -118,7 +81,7 @@ void main() {
   });
 
   test('实例按 instanceKey 出条目；敏感项只在 includeSecrets 时出现', () async {
-    final r = await rig();
+    final r = await roamRig();
     await r.db.profileDao.upsertProfile(const Profile(
       id: 'p-1',
       baseUrl: 'https://mail.example.com/api',
@@ -168,7 +131,7 @@ void main() {
   });
 
   test('坏 JSON 的 AI 设置降级成空对象；没配来源时 source 为 null', () async {
-    final r = await rig(seed: <String, Object>{'cm_ai_settings': '{"apiFormat":'});
+    final r = await roamRig(seed: <String, Object>{'cm_ai_settings': '{"apiFormat":'});
     final byKey = <String, RoamConfigItem>{
       for (final item in await r.host.exportItems()) item.key: item,
     };
@@ -181,7 +144,7 @@ void main() {
   });
 
   test('includeSecrets 只带出真有 token 的实例', () async {
-    final r = await rig();
+    final r = await roamRig();
     await r.db.profileDao.upsertProfile(const Profile(
       id: 'p-1',
       baseUrl: 'https://mail.example.com/api',
@@ -224,7 +187,7 @@ void main() {
   });
 
   test('同 instanceKey 的多条本机 profile 只导出一条实例（先到先得）', () async {
-    final r = await rig();
+    final r = await roamRig();
     // 同 host 同邮箱、挂载 path 不同 → instanceKey 相同。
     await r.db.profileDao.upsertProfile(const Profile(
       id: 'p-1',
@@ -261,7 +224,7 @@ void main() {
   });
 
   test('先去的那条没有 token 时，token 仍从同 key 的另一条带上', () async {
-    final r = await rig();
+    final r = await roamRig();
     await r.db.profileDao.upsertProfile(const Profile(
       id: 'p-1',
       baseUrl: 'https://mail.example.com/api',
