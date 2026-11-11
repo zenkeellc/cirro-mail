@@ -17,7 +17,7 @@ App 把「哪些设置算配置、怎么读成条目、怎么写回本机」收�
 | `app.compose` | `compose` | `{sendDelaySeconds}` | `cm_send_delay_seconds` |
 | `sig:<email>` | `compose` | `{text}` | `cm_signatures` 一条 |
 | `phrases:<email>` | `compose` | `{items:[{id,name,text}…]}` | `cm_phrases` 一组 |
-| `app.reading` | `reading` | `{pollSeconds, prefetchFull, notifyEnabled, notifyBanner, quietTrackingPixels, externalAllowedHosts}` | 五个 `cm_*` |
+| `app.reading` | `reading` | `{pollSeconds, prefetchFull, notifyEnabled, notifyBanner, quietTrackingPixels, externalAllowedHosts}` | 六个 `cm_*` |
 | `app.ai` | `ai` | `{settings:{…}, source}` | `cm_ai_settings` 原样 JSON / `cm_ai_source` |
 | `instance:<instanceKey>` | `instances` | `{baseUrl, name, email, colorIndex, sort}` | `profiles` 一行（不含 `userId`/`userName`/`serverTitle`/`ossBase`/`needsLogin`） |
 | `secret.instance:<instanceKey>` | `secrets` | `{value}`（token 原样字符串） | 钥匙串 `token_<profileId>`；只在 `includeSecrets: true` 导出，**永不经过 `applyItems`** |
