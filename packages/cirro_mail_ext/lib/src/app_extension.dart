@@ -44,6 +44,7 @@ import 'theme_pack.dart';
 /// | [managedPushConfig] | `push_service.dart#refreshManagedConfig`（推送三条值优先从哪来） |
 /// | [pushLicenseBinding] | `push_service.dart#syncAll`（`/register` 请求体里的两个 license 字段） |
 /// | [onDraftChanged] | `push_service.dart`（`kind=draft_changed` 的静默推送：前台 / 后台入口 / 点开推送） |
+/// | [onConfigChanged] | `push_service.dart`（`kind=config_changed`：前台分派 / 后台入口） |
 /// | [pushSettings] | `settings_screen.dart#_pushBody`（「设置 → 通知 → 后台推送」子页的整块正文） |
 /// | [autoLoadExternalResources] / [rewriteExternalResourceUrl] | `external_resource_banner.dart#_HtmlBodyViewState` / `html_body_view.dart`（读信页外联资源） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
@@ -401,6 +402,17 @@ abstract class AppExtension {
   ///
   /// 单个扩展抛错不影响其它扩展（注册表逐个 await、吞异常只留日志）。
   Future<void> onDraftChanged() async {}
+
+  /// 收到 `kind=config_changed` 的静默推送时调用。
+  ///
+  /// 「别的设备改了配置快照」的信号：服务端发 data-only，核心**不构造通知
+  /// 事件、不弹横幅、不解释内容**，只转发。两个落点：前台三个入口收口在
+  /// `PushService._decode` 的 kind 分派；**后台入口 `pushServiceBackgroundEntry`
+  /// 是独立的一条**（与 [onDraftChanged] 逐字同形）。
+  ///
+  /// 实现必须**幂等**（同一条可能到两次）、必须**快**（核心 `unawaited`
+  /// 发起，只许置标志 / 入队）。单个扩展抛错不影响其它扩展。
+  Future<void> onConfigChanged() async {}
 
   /// 画「设置 → 后台推送」的**替身 UI**。
   ///

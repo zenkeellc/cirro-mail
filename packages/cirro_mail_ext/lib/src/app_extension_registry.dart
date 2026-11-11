@@ -9,6 +9,7 @@ import 'draft_store.dart';
 import 'mail_store.dart';
 import 'notification_policy.dart';
 import 'push_managed.dart';
+import 'roam_config.dart';
 import 'settings_section.dart';
 import 'theme_pack.dart';
 
@@ -50,6 +51,8 @@ class AppExtensionRegistry {
     _draftStore = null;
     _draftStoreReady = Completer<DraftStore>();
     _pushSyncTrigger = null;
+    _roamConfigHost = null;
+    _roamConfigHostReady = Completer<RoamConfigHost>();
   }
 
   // ---- 本地邮件读取 ----
@@ -226,6 +229,47 @@ class AppExtensionRegistry {
         await ext.onDraftChanged();
       } catch (e) {
         debugPrint('扩展 ${ext.id} 的 onDraftChanged 失败：$e');
+      }
+    }
+  }
+
+  // ---- 配置快照 ----
+
+  RoamConfigHost? _roamConfigHost;
+
+  /// 核心挂上来的配置快照读写口；没有时 null。**只是给「已经等到 host」的
+  /// 调用方用的** —— 启动期请用 [roamConfigHostReady]，别猜时序。
+  RoamConfigHost? get roamConfigHost => _roamConfigHost;
+
+  Completer<RoamConfigHost> _roamConfigHostReady = Completer<RoamConfigHost>();
+
+  /// 「host 挂上来了」这个时刻。**这是消费方唯一该用的入口**：
+  /// `final host = await AppExtensionRegistry.instance.roamConfigHostReady;`
+  /// —— 扩展的 `onBootstrap` 跑在核心挂 host 之前，那一刻 [roamConfigHost]
+  /// 必然是 null；直接判 null 只会写出一段永远不生效的初始化。
+  ///
+  /// 语义（写死，消费方照这个用）：注册成功时 complete；[reset] 时换一个新的
+  /// Completer（测试隔离）；**没注册时这个 future 不完成、也不抛** ——
+  /// 公开版因此不会有人在启动期被它卡住（只该在确实需要它时 await）。
+  Future<RoamConfigHost> get roamConfigHostReady => _roamConfigHostReady.future;
+
+  /// 由核心在启动流程里挂一次。**只认第一次**（与 [attachMailStore] 同一口径：
+  /// 重试会重建依赖树，第二个 host 指向界面上看不见的库）。
+  void registerRoamConfigHost(RoamConfigHost host) {
+    if (_roamConfigHost != null) return;
+    _roamConfigHost = host;
+    if (!_roamConfigHostReady.isCompleted) {
+      _roamConfigHostReady.complete(host);
+    }
+  }
+
+  /// 逐个通知扩展「配置快照有变化」。与 [notifyDraftChanged] 同一套纪律。
+  Future<void> notifyConfigChanged() async {
+    for (final ext in _extensions) {
+      try {
+        await ext.onConfigChanged();
+      } catch (e) {
+        debugPrint('扩展 ${ext.id} 的 onConfigChanged 失败：$e');
       }
     }
   }

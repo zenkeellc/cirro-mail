@@ -48,7 +48,8 @@ export 'src/push_managed.dart'
         PushChainCheck,
         PushFacade,
         PushStatus;
-export 'src/roam_config.dart' show RoamConfigItem, roamInstanceKey;
+export 'src/roam_config.dart'
+    show RoamConfigHost, RoamConfigItem, roamInstanceKey;
 export 'src/settings_section.dart' show SettingsSection;
 export 'src/mail_body_tokens.dart' show MailBodyTokens;
 export 'src/theme_pack.dart' show ThemePack;

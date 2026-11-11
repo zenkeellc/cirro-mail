@@ -73,3 +73,40 @@ String? roamInstanceKey({required String baseUrl, required String email}) {
   final port = uri.hasPort && uri.port != defaultPort ? ':${uri.port}' : '';
   return '$scheme://${uri.host.toLowerCase()}$port|$mail';
 }
+
+/// 核心实现、注册进 `AppExtensionRegistry` 的配置快照读写口。
+///
+/// 核心知道「哪些设置算配置、怎么导出、怎么写回」；扩展知道「加密、传输、
+/// 合并、密钥」。接口里没有任何网络 / 密钥 / 云端概念。
+///
+/// 四条硬约定：
+///
+/// ① 写回只写认得的 key，别的安静忽略（不抛、不丢别人的数据）；
+/// ② 敏感项不走 [applyItems]，恢复走 [writeSecret]；
+/// ③ 删除只走 [deleteItems]，且只覆盖 `sig:` / `phrases:` 两类 —— 别的设备删
+/// 条目不该让本机实例 / 登录态消失；
+/// ④ [changes] 会因 [applyItems] / [deleteItems] 自己写盘而触发，写回期间
+/// 消费方要自己抑制回传。
+abstract class RoamConfigHost {
+  /// 导出本机可漫游条目。`includeSecrets=false` 时不返回任何 secret 项；
+  /// true 时把实例 token / AI Key 一并读出（传哪些由消费方按授权集合过滤）。
+  Future<List<RoamConfigItem>> exportItems({bool includeSecrets = false});
+
+  /// 应用合并结果：只写给出的 key；未知 key 忽略（往前兼容）。
+  Future<void> applyItems(List<RoamConfigItem> items);
+
+  /// 删除本机条目。只对两类 key 生效：`sig:<email>`（删该邮箱签名）与
+  /// `phrases:<email>`（清空该邮箱常用语）；其它 key（app.* / instance:* /
+  /// secret.*）一律忽略 —— 实例与登录态不因别的设备删除而消失。
+  Future<void> deleteItems(List<String> keys);
+
+  /// 本机配置变更流（prefs 写入 / 实例增删改 / token 写入）。广播流，可多次订阅。
+  Stream<void> get changes;
+
+  /// 敏感项读：`secret.instance:<instanceKey>` / `secret.ai_key`。
+  /// 认不出的 key、本机没有的实例 → null。
+  Future<String?> readSecret(String key);
+
+  /// 敏感项写。**空串 = 删掉**；本机没有这台实例、key 认不出 → 安静 no-op。
+  Future<void> writeSecret(String key, String value);
+}
