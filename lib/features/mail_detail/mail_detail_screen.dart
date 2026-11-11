@@ -828,10 +828,12 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
     List<MailAttachment> attachments,
     Color ac,
   ) {
-    // 外联资源域名白名单：设置页与 Banner 上的「始终允许」都写这一份，
+    // 外联资源域名白名单：设置页与 Banner 上的「总是显示」都写这一份，
     // 打开邮件时按它决定哪些外链图直接加载。这里 `watch` 是合法的 ——
     // `_body` 只在 build 里被调用。
     final allowedHosts = ref.watch(externalAllowedHostsProvider);
+    // 「静默过滤 1×1 追踪像素」（设置 → 安全）。只影响提示面积，不影响拦截。
+    final quietTrackingPixels = ref.watch(quietTrackingPixelsProvider);
     // 拉起焦点是 build 里的副作用，但 `_focusReaderOnce` 自己按
     // `(profileId, emailId)` 去重，一封信只排一次。
     _focusReaderOnce(row);
@@ -920,7 +922,8 @@ class _MailDetailScreenState extends ConsumerState<MailDetailScreen> {
                   : _plainTextHtml(row.text),
               ossBase: ossBase,
               allowedHosts: allowedHosts,
-              // Banner 组头的「始终允许」：把域名写进白名单，下一帧就按
+              quietTrackingPixels: quietTrackingPixels,
+              // Banner 组头的「总是显示」：把域名写进白名单，下一帧就按
               // 新名单判定（HtmlBodyView 会换 key 重新解析正文）。
               onAllowHost: (host) => ref
                   .read(externalAllowedHostsProvider.notifier)

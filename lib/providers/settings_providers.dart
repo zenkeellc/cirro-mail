@@ -478,7 +478,7 @@ final NotifierProvider<UpdateCheckEnabledController, bool>
 /// 外联资源的**域名白名单**（读信页里「不过滤」的域名，支持 `*` 通配）。
 ///
 /// 与 [PrefsStore.externalAllowedHosts] 一一对应：直接读同步的 prefs 快照，
-/// 改动即时落盘。读信页 `ref.watch` 它，Banner 上「始终允许」或设置页增删
+/// 改动即时落盘。读信页 `ref.watch` 它，Banner 上「总是显示」或设置页增删
 /// 之后，下一次 build 就按新名单判定（`HtmlBodyView` 会换 key 重新解析正文）。
 ///
 /// 输入统一在这里规范化：`add` 拿到的是用户敲的原始一行（可能带 scheme /
@@ -523,4 +523,26 @@ final NotifierProvider<ExternalAllowedHostsController, List<String>>
     NotifierProvider<ExternalAllowedHostsController, List<String>>(
   ExternalAllowedHostsController.new,
   name: 'externalAllowedHosts',
+);
+
+/// 「静默过滤 1×1 追踪像素」开关（设置 → 安全）。
+///
+/// 只管**提示**，不管拦截：关掉之后被拦的 1×1 会重新出现在读信页的拦截
+/// 明细里，并带上那段「发件人在确认你打开了邮件」的解释；打开时它们被
+/// 当作普通外链图对待，不再单独计数。已加载的追踪像素两边都会提示。
+class QuietTrackingPixelsController extends Notifier<bool> {
+  @override
+  bool build() => ref.watch(prefsStoreProvider).quietTrackingPixels;
+
+  Future<void> set(bool value) async {
+    state = value;
+    await ref.read(prefsStoreProvider).setQuietTrackingPixels(value);
+  }
+}
+
+final NotifierProvider<QuietTrackingPixelsController, bool>
+    quietTrackingPixelsProvider =
+    NotifierProvider<QuietTrackingPixelsController, bool>(
+  QuietTrackingPixelsController.new,
+  name: 'quietTrackingPixels',
 );

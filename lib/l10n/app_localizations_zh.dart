@@ -2179,14 +2179,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String externalResourcesEnabledTitle(int count) {
-    return '已启用 $count 个外部资源';
+    return '已显示 $count 个外部资源';
   }
 
   @override
   String get externalResourcesSubtitle => '外部图片和样式可能让发件人知道你何时、从哪里打开了这封邮件。';
 
   @override
-  String get externalResourcesProxyHint => '启用后将经隐私代理加载，隐藏你的 IP。';
+  String get externalResourcesProxyHint => '显示后将经隐私代理加载，隐藏你的 IP。';
 
   @override
   String externalResourcesDomainCount(int count) {
@@ -2194,21 +2194,19 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String externalResourcesShowList(int count) {
-    return '查看 $count 项';
-  }
+  String get externalResourcesExpand => '查看明细';
 
   @override
-  String get externalResourcesHideList => '收起';
+  String get externalResourcesCollapse => '收起明细';
 
   @override
-  String get externalResourcesEnableAll => '全部启用';
+  String get externalResourcesEnableAll => '显示图片';
 
   @override
   String get externalResourcesBlockAll => '全部屏蔽';
 
   @override
-  String get externalResourcesEnable => '启用';
+  String get externalResourcesEnable => '显示';
 
   @override
   String get externalResourcesBlock => '屏蔽';
@@ -2256,6 +2254,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get externalResourcesViaProxy => '经代理';
 
   @override
+  String externalResourcesTrackingCount(int count) {
+    return '含 $count 个追踪像素';
+  }
+
+  @override
+  String externalResourcesLoadedTrackingNote(int count) {
+    return '含 $count 个已加载的追踪像素';
+  }
+
+  @override
   String trackingPixelWarningTitle(int count) {
     return '检测到 $count 个追踪像素';
   }
@@ -2284,11 +2292,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get externalResourcesAllowDomain => '始终允许';
+  String get externalResourcesAllowDomain => '总是显示';
 
   @override
   String externalResourcesAllowDomainHint(String domain) {
-    return '把 $domain 加入白名单，以后来自该域名的资源不再拦截';
+    return '总是显示来自 $domain 的图片（把它加进白名单，以后不再拦截）';
   }
 
   @override
@@ -2296,6 +2304,20 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get security => '安全';
+
+  @override
+  String get securityTrackingPixelsHeader => '追踪像素';
+
+  @override
+  String get securityTrackingPixelsIntro =>
+      '1×1 的透明图片常用来确认你何时、从哪里打开了邮件；它们和其它外链图片一样默认被拦截。';
+
+  @override
+  String get securityTrackingPixelsQuietTitle => '静默过滤追踪像素';
+
+  @override
+  String get securityTrackingPixelsQuietSubtitle =>
+      '被拦下的 1×1 不在读信页单独提示；已经加载的仍会提示。';
 
   @override
   String get securityExternalResourcesHeader => '邮件正文的外联资源';

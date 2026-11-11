@@ -2306,7 +2306,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String externalResourcesEnabledTitle(int count) {
-    return 'Loaded $count external resources';
+    return 'Shown $count external resources';
   }
 
   @override
@@ -2323,21 +2323,19 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String externalResourcesShowList(int count) {
-    return 'View $count';
-  }
+  String get externalResourcesExpand => 'Show details';
 
   @override
-  String get externalResourcesHideList => 'Hide';
+  String get externalResourcesCollapse => 'Hide details';
 
   @override
-  String get externalResourcesEnableAll => 'Load all';
+  String get externalResourcesEnableAll => 'Show images';
 
   @override
   String get externalResourcesBlockAll => 'Block all';
 
   @override
-  String get externalResourcesEnable => 'Load';
+  String get externalResourcesEnable => 'Show';
 
   @override
   String get externalResourcesBlock => 'Block';
@@ -2386,6 +2384,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get externalResourcesViaProxy => 'via proxy';
 
   @override
+  String externalResourcesTrackingCount(int count) {
+    return 'incl. $count tracking pixels';
+  }
+
+  @override
+  String externalResourcesLoadedTrackingNote(int count) {
+    return 'incl. $count loaded tracking pixels';
+  }
+
+  @override
   String trackingPixelWarningTitle(int count) {
     return 'Tracking pixels detected ($count)';
   }
@@ -2414,11 +2422,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get externalResourcesAllowDomain => 'Always allow';
+  String get externalResourcesAllowDomain => 'Always show';
 
   @override
   String externalResourcesAllowDomainHint(String domain) {
-    return 'Add $domain to the allow list so its resources are never blocked again';
+    return 'Always show images from $domain (adds it to the allow list so it is never blocked again)';
   }
 
   @override
@@ -2426,6 +2434,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get security => 'Security';
+
+  @override
+  String get securityTrackingPixelsHeader => 'Tracking pixels';
+
+  @override
+  String get securityTrackingPixelsIntro =>
+      'Invisible 1×1 images are commonly used to confirm when and where you opened an email. They are blocked by default like any other remote image.';
+
+  @override
+  String get securityTrackingPixelsQuietTitle =>
+      'Silently filter tracking pixels';
+
+  @override
+  String get securityTrackingPixelsQuietSubtitle =>
+      'Blocked 1×1 images are not called out on the reading page; already-loaded ones still are.';
 
   @override
   String get securityExternalResourcesHeader => 'Remote content';

@@ -4037,7 +4037,7 @@ abstract class AppLocalizations {
   /// No description provided for @externalResourcesEnabledTitle.
   ///
   /// In en, this message translates to:
-  /// **'Loaded {count} external resources'**
+  /// **'Shown {count} external resources'**
   String externalResourcesEnabledTitle(int count);
 
   /// No description provided for @externalResourcesSubtitle.
@@ -4058,22 +4058,22 @@ abstract class AppLocalizations {
   /// **'{count} domains'**
   String externalResourcesDomainCount(int count);
 
-  /// No description provided for @externalResourcesShowList.
+  /// No description provided for @externalResourcesExpand.
   ///
   /// In en, this message translates to:
-  /// **'View {count}'**
-  String externalResourcesShowList(int count);
+  /// **'Show details'**
+  String get externalResourcesExpand;
 
-  /// No description provided for @externalResourcesHideList.
+  /// No description provided for @externalResourcesCollapse.
   ///
   /// In en, this message translates to:
-  /// **'Hide'**
-  String get externalResourcesHideList;
+  /// **'Hide details'**
+  String get externalResourcesCollapse;
 
   /// No description provided for @externalResourcesEnableAll.
   ///
   /// In en, this message translates to:
-  /// **'Load all'**
+  /// **'Show images'**
   String get externalResourcesEnableAll;
 
   /// No description provided for @externalResourcesBlockAll.
@@ -4085,7 +4085,7 @@ abstract class AppLocalizations {
   /// No description provided for @externalResourcesEnable.
   ///
   /// In en, this message translates to:
-  /// **'Load'**
+  /// **'Show'**
   String get externalResourcesEnable;
 
   /// No description provided for @externalResourcesBlock.
@@ -4178,6 +4178,18 @@ abstract class AppLocalizations {
   /// **'via proxy'**
   String get externalResourcesViaProxy;
 
+  /// No description provided for @externalResourcesTrackingCount.
+  ///
+  /// In en, this message translates to:
+  /// **'incl. {count} tracking pixels'**
+  String externalResourcesTrackingCount(int count);
+
+  /// No description provided for @externalResourcesLoadedTrackingNote.
+  ///
+  /// In en, this message translates to:
+  /// **'incl. {count} loaded tracking pixels'**
+  String externalResourcesLoadedTrackingNote(int count);
+
   /// No description provided for @trackingPixelWarningTitle.
   ///
   /// In en, this message translates to:
@@ -4217,13 +4229,13 @@ abstract class AppLocalizations {
   /// No description provided for @externalResourcesAllowDomain.
   ///
   /// In en, this message translates to:
-  /// **'Always allow'**
+  /// **'Always show'**
   String get externalResourcesAllowDomain;
 
   /// No description provided for @externalResourcesAllowDomainHint.
   ///
   /// In en, this message translates to:
-  /// **'Add {domain} to the allow list so its resources are never blocked again'**
+  /// **'Always show images from {domain} (adds it to the allow list so it is never blocked again)'**
   String externalResourcesAllowDomainHint(String domain);
 
   /// No description provided for @externalResourcesAllowListedTag.
@@ -4237,6 +4249,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Security'**
   String get security;
+
+  /// No description provided for @securityTrackingPixelsHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Tracking pixels'**
+  String get securityTrackingPixelsHeader;
+
+  /// No description provided for @securityTrackingPixelsIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Invisible 1×1 images are commonly used to confirm when and where you opened an email. They are blocked by default like any other remote image.'**
+  String get securityTrackingPixelsIntro;
+
+  /// No description provided for @securityTrackingPixelsQuietTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Silently filter tracking pixels'**
+  String get securityTrackingPixelsQuietTitle;
+
+  /// No description provided for @securityTrackingPixelsQuietSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Blocked 1×1 images are not called out on the reading page; already-loaded ones still are.'**
+  String get securityTrackingPixelsQuietSubtitle;
 
   /// No description provided for @securityExternalResourcesHeader.
   ///

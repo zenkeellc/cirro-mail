@@ -48,7 +48,7 @@ import 'package:html/dom.dart' as dom;
 ///
 /// 4. **外联资源默认拦截**：正文里的外链图片 / 背景图 / 样式表 / 脚本在渲染
 ///    前扫描出来（[scanExternalResources]），默认一律不加载；顶部
-///    [ExternalResourceBanner] 列出域名与 URL，可逐项或全部启用。加载策略是
+///    [ExternalResourceBanner] 折叠成一行、按需展开域名与 URL。加载策略是
 ///    **默认拒绝**：拦截不依赖扫描是否完整。Pro 的代理改写通过扩展接缝
 ///    [AppExtension.rewriteExternalResourceUrl] 注入，核心不认识具体实现。
 ///
@@ -67,6 +67,7 @@ class HtmlBodyView extends StatefulWidget {
     this.shrinkWrap = false,
     this.allowedHosts = const <String>[],
     this.onAllowHost,
+    this.quietTrackingPixels = true,
   });
 
   /// 原始 HTML（**未替换 `{{domain}}`**）。
@@ -89,10 +90,16 @@ class HtmlBodyView extends StatefulWidget {
   /// 也给 widget 测试留一个「传什么就按什么判」的干净入口。
   final List<String> allowedHosts;
 
-  /// 「始终允许这个域名」：交给宿主去写白名单（详情页接到 prefs）。
+  /// 「总是显示这个域名」：交给宿主去写白名单（详情页接到 prefs）。
   ///
   /// 为空时 Banner 不显示这个动作。
   final void Function(String host)? onAllowHost;
+
+  /// 是否静默过滤被拦下的 1×1 追踪像素（设置 → 安全，默认开）。
+  ///
+  /// 只影响**提示**：追踪像素永远按外联资源默认拒绝，开关只决定要不要把
+  /// 它们算进 Banner 的计数和明细。已加载的追踪像素不受影响。
+  final bool quietTrackingPixels;
 
   @override
   State<HtmlBodyView> createState() => _HtmlBodyViewState();
@@ -271,13 +278,10 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // 追踪像素单独一条警告：它讲的是「发件人在确认你打开了邮件」，
-        // 与「有资源可启用」是两件事。
-        if (_scan.hasTrackingPixels)
-          TrackingPixelWarning(
-            pixels: _scan.trackingPixels,
-            policy: policy,
-          ),
+        // 一张卡说清所有事：折叠时一行，展开才出明细。追踪像素的提示也
+        // 折在里面（静默模式下被拦下的像素甚至不进这张卡）—— 它以前是
+        // 独立的大红卡，营销邮件几乎每封都带 1×1，等于每封都先读两段说明。
+        // 判定在 Banner 里：是否过滤、什么时候仍然要提示，见它的类文档。
         ExternalResourceBanner(
           resources: _scan.resources,
           policy: policy,
@@ -286,6 +290,7 @@ class _HtmlBodyViewState extends State<HtmlBodyView> {
           onEnableAll: _enableAll,
           onBlockAll: _blockAllResources,
           onAllowHost: widget.onAllowHost,
+          quietTrackingPixels: widget.quietTrackingPixels,
         ),
         body,
       ],

@@ -60,6 +60,8 @@ class PrefsStore {
   static const String _kAiUsage = 'cm_ai_usage';
   /// 外联资源的域名白名单（支持 `*` 通配，见 `external_allowlist.dart`）。
   static const String _kExternalAllowedHosts = 'cm_external_allowed_hosts';
+  /// 「静默过滤 1×1 追踪像素」开关。默认**开**，所以只在用户关掉时写盘。
+  static const String _kQuietTrackingPixels = 'cm_quiet_tracking_pixels';
   /// 「启动时自动检查更新」开关（见关于页）。默认由构建参数决定，
   /// 见 `AppDefaults.updateCheckDefault`。
   static const String _kUpdateCheckEnabled = 'cm_update_check_enabled';
@@ -545,6 +547,29 @@ class PrefsStore {
       await _prefs.remove(_kExternalAllowedHosts);
     } else {
       await _prefs.setStringList(_kExternalAllowedHosts, normalized);
+    }
+  }
+
+  // ---- 追踪像素 ----
+
+  /// 是否把被拦截的 1×1 追踪像素**静默过滤**（默认开）。
+  ///
+  /// 「过滤」只影响**提示**，不影响拦截：追踪像素和其它外联资源一样默认拒绝
+  /// 加载，这个开关决定读信页要不要把它们算进拦截计数、列进明细、在里面
+  /// 展开一段解释。默认开 —— 营销邮件几乎每封都带一个 1×1，每封都在正文
+  /// 顶部多占一张卡是噪音。
+  ///
+  /// 唯一不受开关影响的是**已经加载**的追踪像素：那时发件人可能已经拿到
+  /// 打开记录，这条必须说。见 `external_resource_banner.dart`。
+  bool get quietTrackingPixels =>
+      _prefs.getBool(_kQuietTrackingPixels) ?? true;
+
+  Future<void> setQuietTrackingPixels(bool value) async {
+    // 默认值不落盘：预置里没有这个 key 就是「开」。
+    if (value) {
+      await _prefs.remove(_kQuietTrackingPixels);
+    } else {
+      await _prefs.setBool(_kQuietTrackingPixels, false);
     }
   }
 

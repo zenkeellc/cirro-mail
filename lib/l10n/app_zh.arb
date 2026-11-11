@@ -1602,15 +1602,15 @@
   "updateView": "查看",
   "updateOpenFailed": "打不开下载页",
   "externalResourcesBlockedTitle": "已拦截 {count} 个外部资源",
-  "externalResourcesEnabledTitle": "已启用 {count} 个外部资源",
+  "externalResourcesEnabledTitle": "已显示 {count} 个外部资源",
   "externalResourcesSubtitle": "外部图片和样式可能让发件人知道你何时、从哪里打开了这封邮件。",
-  "externalResourcesProxyHint": "启用后将经隐私代理加载，隐藏你的 IP。",
+  "externalResourcesProxyHint": "显示后将经隐私代理加载，隐藏你的 IP。",
   "externalResourcesDomainCount": "{count} 个域名",
-  "externalResourcesShowList": "查看 {count} 项",
-  "externalResourcesHideList": "收起",
-  "externalResourcesEnableAll": "全部启用",
+  "externalResourcesExpand": "查看明细",
+  "externalResourcesCollapse": "收起明细",
+  "externalResourcesEnableAll": "显示图片",
   "externalResourcesBlockAll": "全部屏蔽",
-  "externalResourcesEnable": "启用",
+  "externalResourcesEnable": "显示",
   "externalResourcesBlock": "屏蔽",
   "externalResourcesCannotEnable": "无法启用",
   "externalResourcesStylesheetNote": "外部样式表不会生效",
@@ -1626,6 +1626,22 @@
   "externalResourcesImageBlocked": "外部图片已拦截",
   "externalResourcesTapToLoad": "点按加载",
   "externalResourcesViaProxy": "经代理",
+  "externalResourcesTrackingCount": "含 {count} 个追踪像素",
+  "externalResourcesLoadedTrackingNote": "含 {count} 个已加载的追踪像素",
+  "@externalResourcesTrackingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesLoadedTrackingNote": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "@externalResourcesBlockedTitle": {
     "placeholders": {
       "count": {
@@ -1641,13 +1657,6 @@
     }
   },
   "@externalResourcesDomainCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "@externalResourcesShowList": {
     "placeholders": {
       "count": {
         "type": "int"
@@ -1681,8 +1690,8 @@
     }
   },
   "externalResourcesGroupItems": "{count} 个资源",
-  "externalResourcesAllowDomain": "始终允许",
-  "externalResourcesAllowDomainHint": "把 {domain} 加入白名单，以后来自该域名的资源不再拦截",
+  "externalResourcesAllowDomain": "总是显示",
+  "externalResourcesAllowDomainHint": "总是显示来自 {domain} 的图片（把它加进白名单，以后不再拦截）",
   "externalResourcesAllowListedTag": "白名单",
   "@externalResourcesGroupItems": {
     "description": "外联资源 Banner：域名分组头的资源条数",
@@ -1700,6 +1709,10 @@
     }
   },
   "security": "安全",
+  "securityTrackingPixelsHeader": "追踪像素",
+  "securityTrackingPixelsIntro": "1×1 的透明图片常用来确认你何时、从哪里打开了邮件；它们和其它外链图片一样默认被拦截。",
+  "securityTrackingPixelsQuietTitle": "静默过滤追踪像素",
+  "securityTrackingPixelsQuietSubtitle": "被拦下的 1×1 不在读信页单独提示；已经加载的仍会提示。",
   "securityExternalResourcesHeader": "邮件正文的外联资源",
   "securityExternalResourcesIntro": "邮件里的外联图片默认被拦截，发件人无法知道你何时、从哪里打开了它。下面白名单里的域名会自动加载，不再拦截。",
   "securityExternalResourcesEmpty": "还没有允许的域名。",

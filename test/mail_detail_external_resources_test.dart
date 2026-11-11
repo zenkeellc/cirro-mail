@@ -42,6 +42,7 @@ Future<void> pumpBody(
   bool settle = true,
   List<String> allowedHosts = const <String>[],
   void Function(String host)? onAllowHost,
+  bool quietTrackingPixels = true,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -56,6 +57,7 @@ Future<void> pumpBody(
             shrinkWrap: true,
             allowedHosts: allowedHosts,
             onAllowHost: onAllowHost,
+            quietTrackingPixels: quietTrackingPixels,
           ),
         ),
       ),
@@ -68,11 +70,27 @@ Future<void> pumpBody(
   }
 }
 
+/// 展开拦截提示条（默认收起）。
+///
+/// 折叠态只有「已拦截 N 个外部资源」+ 一行副标题；域名、URL、逐项动作都在
+/// 展开态里 —— 这是 2026-11 那次「一张卡、按需展开」改版的核心。
+Future<void> expandBanner(WidgetTester tester) async {
+  await tester.tap(
+    find.byTooltip(
+      lookupAppLocalizations(const Locale('zh')).externalResourcesExpand,
+    ),
+  );
+  // 不用 `pumpAndSettle`：展开后可能建出真网络图（白名单 / 自动加载），
+  // 那个 future 永远不完成。两帧足够走完 180ms 的 `AnimatedSize`。
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 200));
+}
+
 void main() {
   setUp(AppExtensionRegistry.instance.reset);
   tearDown(AppExtensionRegistry.instance.reset);
 
-  testWidgets('外联图片默认拦截：占位块 + Banner 列出域名，正文里没有网络图', (tester) async {
+  testWidgets('外联图片默认拦截：折叠只报数量，展开才列域名与 URL', (tester) async {
     await pumpBody(
       tester,
       '<p>hi</p><img src="https://tracker.example.com/p.gif" alt="像素" '
@@ -82,16 +100,28 @@ void main() {
     expect(find.byType(BlockedImageTile), findsOneWidget);
     expect(find.byType(CachedNetworkImage), findsNothing);
     expect(find.textContaining('已拦截 1 个外部资源'), findsOneWidget);
-    expect(find.textContaining('tracker.example.com'), findsOneWidget);
+    expect(find.textContaining('1 个域名'), findsOneWidget);
+    // 折叠态只报数量：域名与 URL 收在展开态里，不再默认占版面。
+    // （正文里的占位块自己会显示域名，所以断言只圈 Banner 内部。）
+    final banner = find.byType(ExternalResourceBanner);
+    expect(
+      find.descendant(
+        of: banner,
+        matching: find.textContaining('tracker.example.com'),
+      ),
+      findsNothing,
+    );
 
-    // 展开后能看到完整 URL 与单项启用按钮。
-    await tester.tap(find.textContaining('查看 1 项'));
-    await tester.pumpAndSettle();
+    await expandBanner(tester);
+    expect(
+      find.descendant(of: banner, matching: find.text('tracker.example.com')),
+      findsOneWidget,
+    );
     expect(
       find.textContaining('https://tracker.example.com/p.gif'),
       findsOneWidget,
     );
-    expect(find.text('启用'), findsOneWidget);
+    expect(find.text('显示'), findsOneWidget);
   });
 
   testWidgets('点占位块等于只启用这一张，Banner 状态跟着变', (tester) async {
@@ -105,10 +135,10 @@ void main() {
 
     expect(find.byType(BlockedImageTile), findsNothing);
     expect(find.byType(CachedNetworkImage), findsOneWidget);
-    expect(find.textContaining('已启用 1 个外部资源'), findsOneWidget);
+    expect(find.textContaining('已显示 1 个外部资源'), findsOneWidget);
   });
 
-  testWidgets('全部启用 / 全部屏蔽', (tester) async {
+  testWidgets('显示图片 / 全部屏蔽', (tester) async {
     await pumpBody(
       tester,
       '<img src="https://a.example.com/x.png" width="200" height="100">'
@@ -116,10 +146,10 @@ void main() {
     );
     expect(find.textContaining('已拦截 2 个外部资源'), findsOneWidget);
 
-    await tester.tap(find.text('全部启用'));
+    await tester.tap(find.text('显示图片'));
     await pumpFrame(tester);
     expect(find.byType(CachedNetworkImage), findsNWidgets(2));
-    expect(find.textContaining('已启用 2 个外部资源'), findsOneWidget);
+    expect(find.textContaining('已显示 2 个外部资源'), findsOneWidget);
 
     await tester.tap(find.text('全部屏蔽'));
     await pumpFrame(tester);
@@ -127,16 +157,31 @@ void main() {
     expect(find.byType(BlockedImageTile), findsNWidgets(2));
   });
 
-  testWidgets('1×1 追踪像素被拦但不占版面', (tester) async {
+  testWidgets('默认静默：只有 1×1 追踪像素的邮件完全不出现拦截提示', (tester) async {
     await pumpBody(
       tester,
       '<p>hi</p><img src="https://tracker.example.com/p.gif" width="1" height="1">',
     );
 
-    // Banner 里照旧列出；正文里不画占位块（否则页脚会多一个空框）。
-    expect(find.textContaining('已拦截 1 个外部资源'), findsOneWidget);
+    // 全新默认行为：被拦下的追踪像素不计入提示条，也没有任何卡片。
+    expect(find.textContaining('已拦截'), findsNothing);
+    expect(find.textContaining('追踪像素'), findsNothing);
+    // 正文里不画占位块（否则页脚会多一个空框）。
     expect(find.byType(BlockedImageTile), findsNothing);
     expect(find.byType(CachedNetworkImage), findsNothing);
+  });
+
+  testWidgets('关掉静默过滤后，1×1 重新计入并可在展开态看到解释', (tester) async {
+    await pumpBody(
+      tester,
+      '<p>hi</p><img src="https://tracker.example.com/p.gif" width="1" height="1">',
+      quietTrackingPixels: false,
+    );
+
+    expect(find.textContaining('已拦截 1 个外部资源'), findsOneWidget);
+    expect(find.textContaining('含 1 个追踪像素'), findsOneWidget);
+    await expandBanner(tester);
+    expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
   });
 
   testWidgets('样式表与脚本只列出，标「无法启用」且没有启用按钮', (tester) async {
@@ -147,11 +192,10 @@ void main() {
     );
 
     expect(find.textContaining('已拦截 2 个外部资源'), findsOneWidget);
-    await tester.tap(find.textContaining('查看 2 项'));
-    await tester.pumpAndSettle();
+    await expandBanner(tester);
 
     expect(find.text('无法启用'), findsNWidgets(2));
-    expect(find.text('启用'), findsNothing);
+    expect(find.text('显示'), findsNothing);
     expect(find.textContaining('外部样式表不会生效'), findsOneWidget);
     expect(find.textContaining('脚本不会执行'), findsOneWidget);
   });
@@ -177,7 +221,7 @@ void main() {
       '<img src="https://a.example.com/x.png" width="200" height="100">',
     );
 
-    await tester.tap(find.text('全部启用'));
+    await tester.tap(find.text('显示图片'));
     await pumpFrame(tester);
 
     final image = tester.widget<CachedNetworkImage>(
@@ -188,8 +232,7 @@ void main() {
       'https://proxy.example/?https://a.example.com/x.png',
     );
 
-    await tester.tap(find.textContaining('查看 1 项'));
-    await pumpFrame(tester);
+    await expandBanner(tester);
     expect(find.text('经代理'), findsOneWidget);
   });
 
@@ -205,7 +248,7 @@ void main() {
 
     expect(find.byType(BlockedImageTile), findsNothing);
     expect(find.byType(CachedNetworkImage), findsOneWidget);
-    expect(find.textContaining('已启用 1 个外部资源'), findsOneWidget);
+    expect(find.textContaining('已显示 1 个外部资源'), findsOneWidget);
 
     await tester.tap(find.text('全部屏蔽'));
     await pumpFrame(tester);
@@ -213,16 +256,19 @@ void main() {
     expect(find.byType(CachedNetworkImage), findsNothing);
   });
 
-  testWidgets('1×1 追踪像素：额外一条安全提醒，并说明原因', (tester) async {
+  testWidgets('关掉静默过滤：追踪像素计入拦截数，展开后说明原因', (tester) async {
     await pumpBody(
       tester,
       '<p>hi</p>'
       '<img src="https://tracker.example.com/p.gif" width="1" height="1">'
       '<img src="https://cdn.example.com/a.png" width="600" height="300">',
+      quietTrackingPixels: false,
     );
 
-    // 资源 Banner 照旧；额外多一张追踪像素警告卡，讲清「为什么会这样」。
+    // 折叠态只多一句「含 N 个追踪像素」；解释在展开态里，不占正文版面。
     expect(find.textContaining('已拦截 2 个外部资源'), findsOneWidget);
+    expect(find.textContaining('含 1 个追踪像素'), findsOneWidget);
+    await expandBanner(tester);
     expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
     expect(find.textContaining('记录你何时、从哪里、用什么设备打开了它'), findsOneWidget);
     expect(find.textContaining('来源：tracker.example.com'), findsOneWidget);
@@ -237,16 +283,20 @@ void main() {
 
     expect(find.textContaining('追踪像素'), findsNothing);
     expect(find.textContaining('已拦截 1 个外部资源'), findsOneWidget);
+    await expandBanner(tester);
+    expect(find.textContaining('追踪像素'), findsNothing);
   });
 
-  testWidgets('启用追踪像素后，警告里写明「当前已加载」', (tester) async {
+  testWidgets('显示追踪像素后，提示里写明「当前已加载」', (tester) async {
     await pumpBody(
       tester,
       '<img src="https://tracker.example.com/p.gif" width="1" height="1">',
+      quietTrackingPixels: false,
     );
+    await expandBanner(tester);
     expect(find.textContaining('其中 1 个当前已加载'), findsNothing);
 
-    await tester.tap(find.text('全部启用'));
+    await tester.tap(find.text('显示图片'));
     await pumpFrame(tester);
 
     expect(find.textContaining('其中 1 个当前已加载'), findsOneWidget);
@@ -263,6 +313,10 @@ void main() {
       settle: false,
     );
 
+    // 静默过滤管的是「被拦下的噪音」；已经加载的追踪像素两边都要提示。
+    expect(find.textContaining('已显示 1 个外部资源'), findsOneWidget);
+    expect(find.textContaining('含 1 个已加载的追踪像素'), findsOneWidget);
+    await expandBanner(tester);
     expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
     expect(find.textContaining('其中 1 个当前已加载'), findsOneWidget);
   });
@@ -272,8 +326,10 @@ void main() {
       tester,
       '<style>.px{width:1px;height:1px}</style>'
       '<img class="px" src="https://tracker.example.com/p.gif">',
+      quietTrackingPixels: false,
     );
 
+    await expandBanner(tester);
     expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
     expect(find.textContaining('来源：tracker.example.com'), findsOneWidget);
   });
@@ -282,8 +338,10 @@ void main() {
     await pumpBody(
       tester,
       '<img src="https://tracker.example.com/p.gif" height="1">',
+      quietTrackingPixels: false,
     );
 
+    await expandBanner(tester);
     expect(find.textContaining('检测到 1 个追踪像素'), findsOneWidget);
   });
 
@@ -299,7 +357,7 @@ void main() {
 
     expect(find.byType(BlockedImageTile), findsNothing);
     expect(find.byType(CachedNetworkImage), findsOneWidget);
-    expect(find.textContaining('已启用 1 个外部资源'), findsOneWidget);
+    expect(find.textContaining('已显示 1 个外部资源'), findsOneWidget);
     expect(find.textContaining('已拦截'), findsNothing);
   });
 
@@ -315,7 +373,7 @@ void main() {
     expect(find.textContaining('已拦截 2 个外部资源'), findsOneWidget);
   });
 
-  testWidgets('白名单域名下的资源在 Banner 里标「白名单」且没有「始终允许」', (tester) async {
+  testWidgets('白名单域名下的资源在 Banner 里标「白名单」且没有「总是显示」', (tester) async {
     await pumpBody(
       tester,
       '<img src="https://img.trusted.example/a.png" width="200" height="100">',
@@ -323,15 +381,12 @@ void main() {
       settle: false,
     );
 
-    await tester.tap(find.textContaining('查看 1 项'));
-    // 放行之后正文里会有真网络图：`pumpAndSettle` 会挂在它永不完成的
-    // 加载 future 上（见文件顶部 `pumpFrame` 的说明），这里只推几帧。
-    await pumpFrame(tester);
+    await expandBanner(tester);
     expect(find.text('白名单'), findsOneWidget);
-    expect(find.text('始终允许'), findsNothing);
+    expect(find.text('总是显示'), findsNothing);
   });
 
-  testWidgets('组头「始终允许」把域名交给宿主白名单回调', (tester) async {
+  testWidgets('组头「总是显示」把域名交给宿主白名单回调', (tester) async {
     String? allowedHost;
     await pumpBody(
       tester,
@@ -339,9 +394,8 @@ void main() {
       onAllowHost: (host) => allowedHost = host,
     );
 
-    await tester.tap(find.textContaining('查看 1 项'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('始终允许'));
+    await expandBanner(tester);
+    await tester.tap(find.text('总是显示'));
 
     expect(allowedHost, 'a.example.com');
   });
@@ -357,8 +411,7 @@ void main() {
       settle: false,
     );
 
-    await tester.tap(find.textContaining('查看 3 项'));
-    await tester.pumpAndSettle();
+    await expandBanner(tester);
 
     final banner = find.byType(ExternalResourceBanner);
     final hostA = find.descendant(

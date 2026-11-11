@@ -8,9 +8,10 @@ import '../../mail_detail/external_allowlist.dart' show normalizeDomainPattern;
 
 /// 设置 → 安全。
 ///
-/// 内置只有一块：**邮件正文的外联资源白名单**。读信页默认拦截外部图片
-/// （否则发件人能从你的 IP 知道你什么时候、从哪里打开了邮件），这一页
-/// 让用户按域名放行自己信任的那几个。
+/// 内置两块：**追踪像素的提示方式**与**邮件正文的外联资源白名单**。读信页
+/// 默认拦截外部图片（否则发件人能从你的 IP 知道你什么时候、从哪里打开了
+/// 邮件），这一页让用户按域名放行自己信任的那几个；追踪像素那一组则是
+/// 「拦截之外，还要不要为 1×1 的看不见的图单独提醒」——它只改提示，不改拦截。
 ///
 /// 这一页**还是扩展挂载点**（[AppExtension.securityExtras]）：与「正文里能
 /// 发生什么」有关的开关都该合在这里，而不是在分类栏里再占一栏。商业版的
@@ -96,10 +97,40 @@ class _SecuritySectionState extends ConsumerState<SecuritySection> {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final patterns = ref.watch(externalAllowedHostsProvider);
+    final quietTrackingPixels = ref.watch(quietTrackingPixelsProvider);
 
     return SettingsPage(
       padding: const EdgeInsets.only(top: 8, bottom: 32),
       children: <Widget>[
+        // 追踪像素单独一组、排在白名单前面：它是「读信页有多吵」的选择，
+        // 与「信任哪些域名」是两个问题，塞进同一张卡会让人以为它是白名单
+        // 的一部分。开关本体用 `SwitchListTile`（无障碍正确的形状），
+        // 行间分隔线仍由 `SettingsGroup` 画。
+        SettingsGroup(
+          title: l10n.securityTrackingPixelsHeader,
+          icon: Icons.visibility_off_outlined,
+          description: l10n.securityTrackingPixelsIntro,
+          children: <Widget>[
+            SwitchListTile(
+              key: const ValueKey('security-quiet-tracking'),
+              value: quietTrackingPixels,
+              onChanged: (value) => ref
+                  .read(quietTrackingPixelsProvider.notifier)
+                  .set(value),
+              secondary: const Icon(Icons.filter_alt_outlined),
+              title: Text(l10n.securityTrackingPixelsQuietTitle),
+              subtitle: Text(
+                l10n.securityTrackingPixelsQuietSubtitle,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            ),
+          ],
+        ),
         // 「怎么拦、放行哪些域名」是一组：提问（输入框 + 添加按钮）与已放行的
         // 域名条目在同一张卡里，行间分隔线由 `SettingsGroup` 画。
         SettingsGroup(

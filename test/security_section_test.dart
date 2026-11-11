@@ -132,6 +132,55 @@ void main() {
     expect(prefs.externalAllowedHosts, isEmpty);
   });
 
+  // ── 追踪像素 ───────────────────────────────────────────────────────
+
+  testWidgets('静默过滤默认开：关掉之后 prefs 落盘 false', (tester) async {
+    final prefs = await pumpSection(tester);
+
+    SwitchListTile quietSwitch() => tester.widget<SwitchListTile>(
+          find.byKey(const ValueKey('security-quiet-tracking')),
+        );
+
+    expect(quietSwitch().value, isTrue);
+    expect(prefs.quietTrackingPixels, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('security-quiet-tracking')));
+    await tester.pumpAndSettle();
+
+    expect(quietSwitch().value, isFalse);
+    // 真落盘了 —— 下次打开设置页（或读信页）要按这个值走。
+    expect(prefs.quietTrackingPixels, isFalse);
+  });
+
+  testWidgets('预置 false 时开关是关的，再打开会回到默认值（不写多余的 key）', (tester) async {
+    final prefs = await pumpSection(
+      tester,
+      initial: <String, Object>{'cm_quiet_tracking_pixels': false},
+    );
+
+    expect(
+      tester
+          .widget<SwitchListTile>(
+            find.byKey(const ValueKey('security-quiet-tracking')),
+          )
+          .value,
+      isFalse,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('security-quiet-tracking')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<SwitchListTile>(
+            find.byKey(const ValueKey('security-quiet-tracking')),
+          )
+          .value,
+      isTrue,
+    );
+    expect(prefs.quietTrackingPixels, isTrue);
+  });
+
   testWidgets('点删除：条目消失，prefs 同步清空', (tester) async {
     final prefs = await pumpSection(
       tester,

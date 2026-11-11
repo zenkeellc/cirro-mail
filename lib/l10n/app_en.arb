@@ -1651,15 +1651,15 @@
   "updateView": "View",
   "updateOpenFailed": "Could not open the download page",
   "externalResourcesBlockedTitle": "Blocked {count} external resources",
-  "externalResourcesEnabledTitle": "Loaded {count} external resources",
+  "externalResourcesEnabledTitle": "Shown {count} external resources",
   "externalResourcesSubtitle": "Remote images and styles can tell the sender when and where you opened this email.",
   "externalResourcesProxyHint": "Loading will hide your IP through the privacy proxy.",
   "externalResourcesDomainCount": "{count} domains",
-  "externalResourcesShowList": "View {count}",
-  "externalResourcesHideList": "Hide",
-  "externalResourcesEnableAll": "Load all",
+  "externalResourcesExpand": "Show details",
+  "externalResourcesCollapse": "Hide details",
+  "externalResourcesEnableAll": "Show images",
   "externalResourcesBlockAll": "Block all",
-  "externalResourcesEnable": "Load",
+  "externalResourcesEnable": "Show",
   "externalResourcesBlock": "Block",
   "externalResourcesCannotEnable": "Not available",
   "externalResourcesStylesheetNote": "External stylesheets are not applied",
@@ -1675,6 +1675,22 @@
   "externalResourcesImageBlocked": "Remote image blocked",
   "externalResourcesTapToLoad": "Tap to load",
   "externalResourcesViaProxy": "via proxy",
+  "externalResourcesTrackingCount": "incl. {count} tracking pixels",
+  "externalResourcesLoadedTrackingNote": "incl. {count} loaded tracking pixels",
+  "@externalResourcesTrackingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@externalResourcesLoadedTrackingNote": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "@externalResourcesBlockedTitle": {
     "placeholders": {
       "count": {
@@ -1690,13 +1706,6 @@
     }
   },
   "@externalResourcesDomainCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "@externalResourcesShowList": {
     "placeholders": {
       "count": {
         "type": "int"
@@ -1730,8 +1739,8 @@
     }
   },
   "externalResourcesGroupItems": "{count} resources",
-  "externalResourcesAllowDomain": "Always allow",
-  "externalResourcesAllowDomainHint": "Add {domain} to the allow list so its resources are never blocked again",
+  "externalResourcesAllowDomain": "Always show",
+  "externalResourcesAllowDomainHint": "Always show images from {domain} (adds it to the allow list so it is never blocked again)",
   "externalResourcesAllowListedTag": "Allow list",
   "@externalResourcesGroupItems": {
     "description": "external resources banner: per-domain group header subtitle",
@@ -1749,6 +1758,10 @@
     }
   },
   "security": "Security",
+  "securityTrackingPixelsHeader": "Tracking pixels",
+  "securityTrackingPixelsIntro": "Invisible 1×1 images are commonly used to confirm when and where you opened an email. They are blocked by default like any other remote image.",
+  "securityTrackingPixelsQuietTitle": "Silently filter tracking pixels",
+  "securityTrackingPixelsQuietSubtitle": "Blocked 1×1 images are not called out on the reading page; already-loaded ones still are.",
   "securityExternalResourcesHeader": "Remote content",
   "securityExternalResourcesIntro": "Remote images in emails are blocked by default, so senders can't tell when and where you opened a message. Resources from the domains allowed below load automatically.",
   "securityExternalResourcesEmpty": "No domains are allowed yet.",
