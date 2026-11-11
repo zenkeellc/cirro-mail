@@ -91,6 +91,8 @@ void main() {
     expect(r.prefs.phrasesFor('a@b.com').single.text, '你好');
     expect(r.prefs.pollInterval, const Duration(seconds: 120));
     expect(r.prefs.prefetchFull, isFalse);
+    expect(r.prefs.notifyEnabled, isFalse);
+    expect(r.prefs.notifyBanner, isFalse);
     expect(r.prefs.quietTrackingPixels, isFalse);
     expect(r.prefs.externalAllowedHosts, <String>['*.example.com']);
     expect((jsonDecode(r.prefs.aiSettingsJson!) as Map)['model'], 'm-1');
@@ -136,7 +138,9 @@ void main() {
         group: 'instances',
         secret: false,
         data: <String, Object?>{
-          'baseUrl': apiBase,
+          // 带尾部斜杠的写法：归一化之后与 key 自洽，但**不能**把这个原始串
+          // 写进本机 —— `baseUrl` 是登录与探测的产物，existing 分支不碰它。
+          'baseUrl': 'https://mail.example.com/api/',
           'name': '新备注',
           'email': 'a@b.com',
           'colorIndex': 5,
@@ -149,9 +153,40 @@ void main() {
     expect(profiles.single.id, id, reason: '本机 id 不动（token 的 key 是它）');
     expect(profiles.single.name, '新备注');
     expect(profiles.single.colorIndex, 5);
+    expect(profiles.single.baseUrl, apiBase,
+        reason: 'existing 分支不改 baseUrl（登录/探测的产物，不是展示字段）');
     expect(profiles.single.userId, 7);
     expect(profiles.single.userName, 'Alice');
     expect(profiles.single.needsLogin, isFalse);
+  });
+
+  test('常用语整组都解不出来时保留本地那组（不静默清空）', () async {
+    final r = await roamRig(seed: <String, Object>{
+      'cm_phrases': jsonEncode(<String, dynamic>{
+        'a@b.com': <Map<String, String>>[
+          <String, String>{'id': 'p1', 'name': '问候', 'text': '你好'},
+        ],
+      }),
+    });
+    await r.host.applyItems(const <RoamConfigItem>[
+      RoamConfigItem(
+        key: 'phrases:a@b.com',
+        group: 'compose',
+        secret: false,
+        data: <String, Object?>{
+          // 全是解不出来的条目（不是 Map / 缺字段）：对方版本换了格式或数据坏掉。
+          'items': <Object?>[
+            'junk',
+            <String, Object?>{'id': 'x'},
+          ],
+        },
+      ),
+    ]);
+    expect(
+      r.prefs.phrasesFor('a@b.com').single.text,
+      '你好',
+      reason: '一条都解不出来 ≠ 用户删光了：本地那组必须原样留着',
+    );
   });
 
   test('key 与 data 对不上的实例条目不写（脏数据不制造假实例）', () async {

@@ -264,6 +264,11 @@ class RoamConfigHostImpl implements RoamConfigHost {
         final snippet = WritingSnippet.fromJson(entry);
         if (snippet != null) snippets.add(snippet);
       }
+      // **一条都没解出来、而对方明明带了条目**：不是「用户删光了」，是格式
+      // 对不上（对方版本换过结构 / 数据坏掉）。这时写空组等于替用户清掉本机
+      // 那一组常用语，而且没有任何提示 —— 与 spec §7.3「单条解不出来跳过、
+      // 本地保留」同一条精神。原样留着本地，等对方修好或用户自己重试。
+      if (snippets.isEmpty && raw.isNotEmpty) return;
       await prefs.setPhrases(email, snippets);
       return;
     }
