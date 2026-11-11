@@ -1,3 +1,7 @@
+// 只用扩展注册表那两样（`composeExtras` 的出口）；设置页的积木仍然走
+// 下面那个 re-export，免得同一个名字有两条 import 路径。
+import 'package:cirro_mail_ext/cirro_mail_ext.dart'
+    show AppExtension, AppExtensionRegistry;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,6 +30,16 @@ import '../settings_widgets.dart'
 ///
 /// 那要处理「用户手动删掉签名之后别再自动追加」这类状态，
 /// 而工具栏那颗插入按钮已经覆盖了真实用法。YAGNI。
+///
+/// ## 这一页有三组，管的都是「写信这件事本身」
+///
+/// 1. **发送**：点发送之后还能反悔多久（发送延迟）—— 它以前躺在「收信」页里，
+///    名字对不上，用户要找「撤销发送」得先去一个叫「收信」的分类；
+/// 2. **签名**：一行一个邮箱，点一行进编辑；
+/// 3. **常用语**：同样的邮箱分组，进子页编辑。
+///
+/// 再加扩展的块（[AppExtension.composeExtras]）—— 商业版的「云草稿同步」
+/// 就铺在这里：草稿是写信的另一半，单独占一栏会让人以为它跟写信无关。
 ///
 /// 外壳（`AppBar` / 分类栏 / 窄屏那一页）由 `SettingsScreen` 给 —— 它在
 /// 宽屏把这一块内嵌进右栏、窄屏在一个分类页里显示。所以这里返回的是一个
@@ -67,14 +81,29 @@ class ComposeSection extends ConsumerWidget {
     // 次解码 / 帧。整张表读一次、后面查局部量。
     final signatures = store.signatures;
 
+    // 「发送」这一组**与有没有邮箱无关**：它管的是点了发送之后还能后悔多久，
+    // 是写信这件事的收尾。所以它不是签名 / 常用语那种「一行一个邮箱」的
+    // 结构，空态下也照常画出来（以前它在「收信」页里，想撤销发送的人不会
+    // 想到去那儿找）。
+    final sendGroup = SettingsGroup(
+      title: l10n.send,
+      icon: Icons.send_outlined,
+      description: l10n.sendDelayHint,
+      children: const <Widget>[_SendDelayTile()],
+    );
+
     if (emails.isEmpty) {
       // 文案只说一件事：「还没有邮箱」。签名与常用语都按邮箱分，没有邮箱时
       // 两张表都是空的，说一次就够 —— 现在这句话**只在真的一台实例都没登**
       // 时成立（有邮箱、只是还没配签名，会走下面的非空分支）。
-      return const SettingsPage(
-        padding: EdgeInsets.only(top: 8, bottom: 32),
+      //
+      // 扩展的块（商业版的「云草稿同步」）也照常铺：它同样不依赖邮箱。
+      return SettingsPage(
+        padding: const EdgeInsets.only(top: 8, bottom: 32),
         children: <Widget>[
-          _EmptyComposeHint(),
+          sendGroup,
+          const _EmptyComposeHint(),
+          ...AppExtensionRegistry.instance.composeExtras(context),
         ],
       );
     }
@@ -82,6 +111,7 @@ class ComposeSection extends ConsumerWidget {
     return SettingsPage(
       padding: const EdgeInsets.only(top: 8, bottom: 32),
       children: <Widget>[
+        sendGroup,
         // 签名：一行一个邮箱。点一行进编辑对话框。
         SettingsGroup(
           title: l10n.composeSectionSignatures,
@@ -135,6 +165,9 @@ class ComposeSection extends ConsumerWidget {
               ),
           ],
         ),
+        // 扩展的块（商业版的「云草稿同步」）。空注册表时这里什么都不多 ——
+        // 公开版逐字不变。
+        ...AppExtensionRegistry.instance.composeExtras(context),
       ],
     );
   }
@@ -456,5 +489,56 @@ class _PhraseDialogState extends State<_PhraseDialog> {
         ),
       ],
     );
+  }
+}
+
+/// 「发送延迟」：点发送之后还能反悔多久（需求六）。
+///
+/// 做成下拉档位而不是滑块：可选值是**离散的几档**（立刻 / 1 / 3 / 5 分钟），
+/// 滑块能拖出来的 47 秒没有任何意义，还会让用户以为精度很重要。
+/// 与「收信」页的检查间隔一样用 `DropdownButton`，两页的档位控件同一个长相。
+class _SendDelayTile extends ConsumerWidget {
+  const _SendDelayTile();
+
+  static const List<int> _seconds = <int>[0, 60, 180, 300];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final value = ref.watch(sendDelayProvider).inSeconds;
+    return SettingsTile(
+      icon: Icons.schedule_send_outlined,
+      title: l10n.sendDelay,
+      subtitle: l10n.sendDelayHint,
+      trailing: DropdownButton<int>(
+        value: _nearest(value),
+        underline: const SizedBox.shrink(),
+        onChanged: (seconds) {
+          if (seconds == null) return;
+          ref.read(sendDelayProvider.notifier).set(Duration(seconds: seconds));
+        },
+        items: <DropdownMenuItem<int>>[
+          for (final seconds in _seconds)
+            DropdownMenuItem<int>(
+              value: seconds,
+              child: Text(
+                seconds == 0
+                    ? l10n.sendDelayNone
+                    : l10n.sendDelayMinutes(seconds ~/ 60),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 存过的值可能不在档位里（手改 prefs / 旧版本），取最接近的一档当显示值，
+  /// 否则 `DropdownButton` 会因为 value 不在 items 里直接抛断言。
+  static int _nearest(int seconds) {
+    var best = _seconds.first;
+    for (final candidate in _seconds) {
+      if ((candidate - seconds).abs() < (best - seconds).abs()) best = candidate;
+    }
+    return best;
   }
 }

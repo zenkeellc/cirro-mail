@@ -7,24 +7,33 @@ import 'package:go_router/go_router.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/data/models/profile.dart';
 import 'package:mail_app/features/ai/ai_service.dart';
+import 'package:mail_app/features/notifications/notification_service.dart';
 import 'package:mail_app/features/settings/sections/push_section.dart';
 import 'package:mail_app/features/settings/settings_screen.dart';
 import 'package:mail_app/features/shell/nav_sidebar.dart';
 import 'package:mail_app/l10n/app_localizations.dart';
 import 'package:mail_app/providers/ai_providers.dart';
 import 'package:mail_app/providers/core_providers.dart';
+import 'package:mail_app/providers/notification_providers.dart';
 import 'package:mail_app/providers/profile_providers.dart';
 import 'package:mail_app/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 设置页的两副形态。三个层面各自都会静默地错，所以要分开钉：
 ///
-/// 1. **分类本身**：十个、顺序、文案。分类栏只有 [Breakpoints.settingsRailWidth]
-///    宽，名字长一个字就会被省略号吃掉（推送那个短名字存在的理由）。
+/// 1. **分类本身**：十个、顺序、文案、分组带。分类栏只有
+///    [Breakpoints.settingsRailWidth] 宽，名字长一个字就会被省略号吃掉
+///    （短名字存在的理由），所以标签与图标两样都钉。
 /// 2. **窄屏**：一进来是**分类列表**而不是某个分类的正文 —— 漏了这一层，
-///    手机上打开设置会直接落在「实例」里，用户找不到其余十个。
+///    手机上打开设置会直接落在「实例」里，用户找不到其余十个。列表还按
+///    分组带拆成四张卡片，卡片标题就是带名。
 /// 3. **宽屏**：分类栏常驻 + 右栏跟着选；切换**不改地址、不压栈**（所以
-///    右栏里没敲完的草稿必须还在）。这一条只有把窗口拖宽才看得见。
+///    右栏里没敲完的草稿必须还在）。这一条只有把窗口拖宽才看得见。分类栏
+///    里每条带前有一行小标题，顺序与窄屏的四张卡片是同一份事实。
+///
+/// 「通知 → 后台推送」那个子页的进/退是另一条独立的行为（见
+/// `settings_notifications_test.dart`）：它不再是一栏，所以这里只钉
+/// 「点开『通知』页时**不**构造推送向导」这条按需构造的纪律。
 ///
 /// 另有一条**路由**的：那三条旧地址（`/settings/ai` / `/settings/push` /
 /// `/settings/diagnostics`）曾经是三个整页，现在必须仍然存在且是重定向 ——
@@ -54,7 +63,7 @@ void main() {
       expect(
         SettingsCategory.values.map((c) => c.label(zh)).toList(),
         const <String>[
-          '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
+          '实例', '邮箱', '收信', '通知', '写邮件', '外观', 'AI', '诊断', '安全', '关于',
         ],
       );
     });
@@ -67,10 +76,10 @@ void main() {
         SettingsCategory.instances,
         SettingsCategory.mailboxes,
         SettingsCategory.polling,
-        SettingsCategory.appearance,
+        SettingsCategory.notifications,
         SettingsCategory.compose,
+        SettingsCategory.appearance,
         SettingsCategory.ai,
-        SettingsCategory.push,
         SettingsCategory.diagnostics,
         SettingsCategory.security,
         SettingsCategory.about,
@@ -89,11 +98,34 @@ void main() {
       }
     });
 
-    test('分类栏里的「推送」用短名字', () {
-      // 长名字是 `pushTitle`（「后台推送（FCM）」），塞进 200 宽的分类栏会挤爆。
-      // 分类**页内**的标题仍然用长的（`_SettingsScreenState._titleOf`）。
-      expect(SettingsCategory.push.label(zh), '推送');
-      expect(zh.pushTitle, isNot('推送'));
+    test('「推送」不再是分类，那一栏叫「通知」', () {
+      // 以前「推送」独占一栏，与「收信」页里的两张提醒开关讲同一件事；
+      // 现在推送向导降级成「通知」页里的一个**子页**，分类栏里只剩「通知」。
+      // 两个词并排时用户得先猜哪个才是自己要的 —— 少一栏，路径反而更短。
+      expect(SettingsCategory.notifications.label(zh), '通知');
+      expect(
+        SettingsCategory.values.map((c) => c.label(zh)),
+        isNot(contains('推送')),
+        reason: '「推送」已经并进「通知」，分类栏里再出现一栏就是两处讲同一件事',
+      );
+      expect(
+        zh.pushTitle,
+        isNot('通知'),
+        reason: '「通知」页的标题与它里面那个推送子页的标题必须是两句话',
+      );
+    });
+
+    test('「通知」这一栏的图标是 notifications_active 那一对', () {
+      // 分类栏只有 `Breakpoints.settingsRailWidth` 宽，图标是「通知」被认
+      // 出来的主要信号；与「推送」时代同一颗字形，用户不用重新学。
+      expect(
+        SettingsCategory.notifications.icon,
+        Icons.notifications_active_outlined,
+      );
+      expect(
+        SettingsCategory.notifications.selectedIcon,
+        Icons.notifications_active,
+      );
     });
 
     test('「邮箱」紧跟「实例」，且与侧栏邮箱行用同一颗字形', () {
@@ -104,9 +136,54 @@ void main() {
       expect(SettingsCategory.mailboxes.icon, Icons.alternate_email_outlined);
       expect(SettingsCategory.mailboxes.selectedIcon, Icons.alternate_email);
       // 分类栏里的短名字复用已有的 `mailbox`（「邮箱」），分类**页内**的标题
-      // 用新的长名字 —— 与「推送」那条同一个理由。
+      // 用新的长名字 —— 与「通知」那条同一个理由。
       expect(SettingsCategory.mailboxes.label(zh), '邮箱');
       expect(zh.mailboxTitle, isNot('邮箱'));
+    });
+  });
+
+  /// 分类栏（窄屏那张列表也一样）按四条**分组带**铺：
+  /// 连接 / 收发 / 个性 / 系统。带归谁是枚举上的 `band`，分类栏只是照着画。
+  group('分组带', () {
+    test('四条带的小标题与顺序', () {
+      expect(
+        SettingsBand.values.map((b) => b.label(zh)).toList(),
+        const <String>['连接', '收发', '个性', '系统'],
+      );
+    });
+
+    test('每一栏都归带，且同一带在枚举里是连续的一段', () {
+      expect(
+        SettingsCategory.values.map((c) => c.band).toList(),
+        <SettingsBand>[
+          SettingsBand.connect, // 实例
+          SettingsBand.connect, // 邮箱
+          SettingsBand.flow, // 收信
+          SettingsBand.flow, // 通知
+          SettingsBand.flow, // 写邮件
+          SettingsBand.personal, // 外观
+          SettingsBand.personal, // AI
+          SettingsBand.system, // 诊断
+          SettingsBand.system, // 安全
+          SettingsBand.system, // 关于
+        ],
+      );
+
+      // `_banded` 只把**连续**的同一带收进一张卡 / 一段小标题。枚举里若把
+      // 一条带拆成两段（例如「通知」排到「诊断」后面），分类栏会出现两个
+      // 「收发」小标题、中间夹着别的带 —— 断言数据对了，界面却还是散的。
+      final seen = <SettingsBand>{};
+      SettingsBand? last;
+      for (final band in SettingsCategory.values.map((c) => c.band)) {
+        if (band == last) continue;
+        expect(
+          seen.add(band),
+          isTrue,
+          reason: '「${band.label(zh)}」这条带被拆成了两段 —— '
+              '分类栏会出现两个同名小标题',
+        );
+        last = band;
+      }
     });
   });
 
@@ -214,7 +291,7 @@ void main() {
     // 一进来是**分类列表**：标题「设置」+ 十个入口，而不是某个分类的正文。
     expect(find.text('设置'), findsOneWidget);
     for (final label in <String>[
-      '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
+      '实例', '邮箱', '收信', '通知', '写邮件', '外观', 'AI', '诊断', '安全', '关于',
     ]) {
       expect(categoryRow(label), findsOneWidget, reason: label);
     }
@@ -224,6 +301,27 @@ void main() {
     expect(find.byType(NavSidebarItem), findsNWidgets(10));
     // 也没进任何分类页：没有返回箭头。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
+
+    // 十行**拆成四张卡片**，卡片标题就是带名：手机上先按「这是哪一类事」
+    // 定位，再在三四行里挑，比一整张长卡好扫。以前是一张卡片装全部十行。
+    expect(
+      tester
+          .widgetList<SettingsGroup>(find.byType(SettingsGroup))
+          .map((group) => group.title)
+          .toList(),
+      <String>['连接', '收发', '个性', '系统'],
+      reason: '窄屏分类列表应当是一条带一张 SettingsGroup，卡片标题 = 带名',
+    );
+    // 卡片里的行顺序 = 枚举顺序（`_banded` 只分组、不重排）。
+    expect(
+      tester
+          .widgetList<SettingsCategoryTile>(find.byType(SettingsCategoryTile))
+          .map((tile) => tile.label)
+          .toList(),
+      <String>[
+        '实例', '邮箱', '收信', '通知', '写邮件', '外观', 'AI', '诊断', '安全', '关于',
+      ],
+    );
 
     // 点「外观」→ 进外观那一页。
     await tester.tap(categoryRow('外观'));
@@ -318,6 +416,9 @@ void main() {
           (ref) => Stream.value(const <Profile>[]),
         ),
         aiServiceProvider.overrideWithValue(_FakeAiService()),
+        // 「通知」页读 `notificationService.isSupported` —— 换成空实现，
+        // 免得构造真的平台插件（它只会在日志里留一行与本题无关的告警）。
+        notificationServiceProvider.overrideWithValue(_SilentNotifications()),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -342,11 +443,35 @@ void main() {
         );
 
     // 分类栏十个项常驻，且**没有**窄屏那张分类列表。
-    for (final label in <String>['实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于']) {
+    for (final label in <String>[
+      '实例', '邮箱', '收信', '通知', '写邮件', '外观', 'AI', '诊断', '安全', '关于',
+    ]) {
       expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
     }
     expect(find.byType(NavSidebarItem), findsNWidgets(10));
     expect(find.byType(SettingsCategoryTile), findsNothing);
+
+    // 分组带的小标题也在分类栏里：每条带的第一项之前一行小字。这四行是
+    // 「这几件事是一类」的唯一提示 —— 少了它，十栏又退回一列平铺。
+    for (final band in <String>['连接', '收发', '个性', '系统']) {
+      expect(find.text(band), findsOneWidget, reason: '分类栏缺少「$band」小标题');
+    }
+    // 小标题与它下面的行在同一条 `ListView` 里，顺序即视觉顺序：小标题在
+    // 带内第一行之**上**，下一条带的小标题在上一带最后一行之**下**。
+    double yOfText(String label) => tester.getTopLeft(find.text(label)).dy;
+    double yOfItem(String label) => tester.getTopLeft(railItem(label)).dy;
+    expect(yOfText('连接'), lessThan(yOfItem('实例')));
+    expect(yOfItem('实例'), lessThan(yOfItem('邮箱')));
+    expect(yOfItem('邮箱'), lessThan(yOfText('收发')));
+    expect(yOfText('收发'), lessThan(yOfItem('收信')));
+    expect(yOfItem('收信'), lessThan(yOfItem('通知')));
+    expect(yOfItem('通知'), lessThan(yOfItem('写邮件')));
+    expect(yOfItem('写邮件'), lessThan(yOfText('个性')));
+    expect(yOfText('个性'), lessThan(yOfItem('AI')));
+    expect(yOfItem('AI'), lessThan(yOfText('系统')));
+    expect(yOfText('系统'), lessThan(yOfItem('诊断')));
+    expect(yOfItem('诊断'), lessThan(yOfItem('安全')));
+    expect(yOfItem('安全'), lessThan(yOfItem('关于')));
 
     // 宽屏分类栏**不动**：行高仍是 40 —— 这次只改窄屏那张列表（48），
     // 别被「两处共用一颗行」带着把宽屏也撑高。
@@ -397,6 +522,22 @@ void main() {
           .text,
       'https://half-typed.example',
     );
+
+    // 「通知」页会列出「后台推送」那一行，但**不**构造 `PushSection` ——
+    // 那一页的第二组只是一行入口，向导（一建出来就读钥匙串、打 `/devices`）
+    // 要点进子页才建。这条把「按需构造」从「分类」延伸到「子页」。
+    await tester.tap(railItem('通知'));
+    await tester.pumpAndSettle();
+    expect(find.text(zh.notificationsInApp), findsOneWidget);
+    expect(find.text(zh.notificationsPush), findsOneWidget);
+    expect(find.text(zh.pushTitle), findsOneWidget);
+    expect(
+      find.byType(PushSection),
+      findsNothing,
+      reason: '「通知」页自己不该把推送向导建出来 —— 它只是那一页的第二组',
+    );
+    // 宽屏下子页**还**没打开：分类栏里也没有返回箭头。
+    expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
   // ── 扩展分类（`AppExtension.settingsSections`）────────────────────
@@ -414,19 +555,20 @@ void main() {
 
       // 内置十栏原样都在 —— 扩展是**追加**，不是替换。
       for (final label in <String>[
-        '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '安全', '关于',
+        '实例', '邮箱', '收信', '通知', '写邮件', '外观', 'AI', '诊断', '安全', '关于',
       ]) {
         expect(categoryRow(label), findsOneWidget, reason: label);
       }
       expect(categoryRow('免打扰'), findsOneWidget);
 
       // 顺序：「诊断」→ 扩展 → 「安全」→「关于」。「安全」「关于」固定收尾。
+      // 扩展没有 `pinFirst`，归「系统」带 —— 与诊断/安全/关于同一张卡片。
       final labels = tester
           .widgetList<SettingsCategoryTile>(find.byType(SettingsCategoryTile))
           .map((tile) => tile.label)
           .toList();
       expect(labels, <String>[
-        '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
+        '实例', '邮箱', '收信', '通知', '写邮件', '外观', 'AI', '诊断', '免打扰', '安全', '关于',
       ]);
     });
 
@@ -458,7 +600,7 @@ void main() {
             matching: find.text(label),
           );
       for (final label in <String>[
-        '实例', '邮箱', '收信', '外观', '写邮件', 'AI', '推送', '诊断', '免打扰', '安全', '关于',
+        '实例', '邮箱', '收信', '通知', '写邮件', '外观', 'AI', '诊断', '免打扰', '安全', '关于',
       ]) {
         expect(railItem(label), findsOneWidget, reason: '分类栏 $label');
       }
@@ -656,4 +798,21 @@ class _FakeAiService implements AiService {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('这一组测试不用 ${invocation.memberName}');
+}
+
+/// 「通知」页只读 `NotificationService.isSupported`。换成空实现，免得为一条
+/// 「这一页有没有把开关画出来」的断言去构造真的平台插件（它只会在日志里留
+/// 一行与本题无关的告警）。
+///
+/// 用 `implements` + `noSuchMethod` 而不是 `extends`：继承会把插件对象的
+/// 构造跑一遍，而这组用例根本不弹通知。
+///
+/// `isSupported` 必须回 `true`：默认的 `null` 落到 `bool` 位置会当场抛，
+/// 而「通知」页靠它决定横幅开关画不画。
+class _SilentNotifications implements NotificationService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (invocation.memberName == #isSupported) return true;
+    return null;
+  }
 }

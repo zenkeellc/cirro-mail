@@ -36,12 +36,14 @@ import 'theme_pack.dart';
 /// | [aiNoticeExtras] | `ai_stream_view.dart`（AI 失败 / 未配置提示的下方） |
 /// | [aiEntryAlwaysVisible] | `compose_screen.dart` / `suggest_flow.dart`（AI 入口可见性） |
 /// | [securityExtras] | `security_section.dart`（「设置 → 安全」页的正文末尾） |
+/// | [notificationExtras] | `notifications_section.dart`（「设置 → 通知」页的正文末尾） |
+/// | [composeExtras] | `compose_section.dart`（「设置 → 写邮件」页的正文末尾） |
 /// | [aiTransport] | `ai_providers.dart`（AI 能力改走托管通道）/ `ai_section.dart`（设置页「通道」行） |
 /// | [pushDefaults] | `push_section.dart#_prefillFromBuild`（「设置 → 后台推送」的预填） |
 /// | [managedPushConfig] | `push_service.dart#refreshManagedConfig`（推送三条值优先从哪来） |
 /// | [pushLicenseBinding] | `push_service.dart#syncAll`（`/register` 请求体里的两个 license 字段） |
 /// | [onDraftChanged] | `push_service.dart`（`kind=draft_changed` 的静默推送：前台 / 后台入口 / 点开推送） |
-/// | [pushSettings] | `settings_screen.dart#_pushBody`（「设置 → 后台推送」整块正文） |
+/// | [pushSettings] | `settings_screen.dart#_pushBody`（「设置 → 通知 → 后台推送」子页的整块正文） |
 /// | [autoLoadExternalResources] / [rewriteExternalResourceUrl] | `external_resource_banner.dart#_HtmlBodyViewState` / `html_body_view.dart`（读信页外联资源） |
 /// | [prepareNotificationPolicy] | 前台启动钩子、后台 isolate 显式 await |
 /// | [allowsNotification] | `NotificationGate.select` / `countNotifiable` |
@@ -241,6 +243,31 @@ abstract class AppExtension {
   /// 套出两层滚动。返回空列表即「什么都不加」—— 公开版（空注册表）的这一页
   /// 因此逐字不变。
   List<Widget> securityExtras(BuildContext context) => const <Widget>[];
+
+  /// 追加进「设置 → 通知」页的附加块。
+  ///
+  /// 核心会把这些 widget 依次铺在这一页正文的**末尾**、与内置的「应用内
+  /// 提醒」「后台推送」同一个 `ListView` 里。这一页管的是「新邮件到了要不要
+  /// 打扰我」，所以**只改通知层**的规则（例如商业版的「免打扰」：按发件人 /
+  /// 域名静音、只弹验证码）该合到这一页，而不是在分类栏里再占一栏 —— 以前它
+  /// 独占一栏、还排在「诊断」与「安全」之间，用户得跨半页去比对两处开关。
+  ///
+  /// 与 [securityExtras] 的约定相同：**不要返回自带滚动容器的 widget** ——
+  /// 那会套出两层滚动。返回空列表即「什么都不加」—— 公开版（空注册表）的
+  /// 这一页因此逐字不变。
+  List<Widget> notificationExtras(BuildContext context) => const <Widget>[];
+
+  /// 追加进「设置 → 写邮件」页的附加块。
+  ///
+  /// 核心会把这些 widget 铺在这一页正文的**末尾**（签名 / 常用语 / 发送延迟
+  /// 之后），与它们同一个 `ListView`。这一页管的是「写信这件事本身」，所以与
+  /// 草稿 / 写信相关的扩展功能（例如商业版的「云草稿同步」：草稿上传到订阅
+  /// 服务，换设备接着写）该合到这一页 —— 草稿就是写信的另一半，单独占一栏
+  /// 会让用户以为它和写信无关。
+  ///
+  /// 与 [securityExtras] 的约定相同：**不要返回自带滚动容器的 widget**。
+  /// 返回空列表即「什么都不加」—— 公开版的这一页因此逐字不变。
+  List<Widget> composeExtras(BuildContext context) => const <Widget>[];
 
   /// 构建期内置的「后台推送」三条值（中转地址 / 实例位 / 设备配对码）。
   ///

@@ -296,6 +296,12 @@
     }
   },
   "notifications": "通知",
+  "notificationsInApp": "应用内提醒",
+  "notificationsPush": "后台推送",
+  "settingsBandConnect": "连接",
+  "settingsBandFlow": "收发",
+  "settingsBandPersonal": "个性",
+  "settingsBandSystem": "系统",
   "notifyEnabledHint": "关闭后不再定时收信，也不再提醒新邮件；已收到的邮件仍可正常阅读。",
   "clearCache": "清理缓存",
   "unnamed": "（未命名）",

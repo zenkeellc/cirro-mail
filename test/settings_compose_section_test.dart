@@ -107,6 +107,9 @@ void main() {
     // 空态那句话不该出现（它现在写的是「还没有邮箱」，而这里明明有）。
     expect(find.text('还没有邮箱 —— 先登录一个实例'), findsNothing,
         reason: '有邮箱时不该显示「还没有邮箱」');
+    // 「发送」组（发送延迟）也在这一页 —— 它从「收信」页搬过来，但**不该**
+    // 挤掉上面那两条按邮箱分的行。
+    expect(find.text('发送延迟'), findsOneWidget);
   });
 
   // ── 空态：一台实例都没登 ────────────────────────────────────────────
@@ -117,8 +120,18 @@ void main() {
 
     expect(find.text('还没有邮箱 —— 先登录一个实例'), findsOneWidget,
         reason: '空态该由「真的一台实例都没登」触发，而不是并集硬造行时漏掉');
-    expect(find.byType(ListTile), findsOneWidget,
-        reason: '空态只有一块提示，不该再冒出任何地址行');
+    // 空态下**没有**任何地址行（签名 / 常用语都按邮箱分，没有邮箱就没有行）。
+    // `ListTile` 有两个：空态那块提示，以及「发送」组里的「发送延迟」——
+    // 后者与有没有邮箱无关，空态下也照常画出来。
+    expect(
+      find.byKey(const ValueKey('signature-$_email')),
+      findsNothing,
+      reason: '空态不该硬造地址行',
+    );
+    expect(find.byType(ListTile), findsNWidgets(2),
+        reason: '空态 = 一块提示 + 一行「发送延迟」，不该再冒出任何地址行');
+    expect(find.text('发送延迟'), findsOneWidget,
+        reason: '「发送」组不依赖邮箱 —— 空态下它照样在');
   });
 
   // ── Defect 2：常用语经真对话框的往返 ────────────────────────────────

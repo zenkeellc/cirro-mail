@@ -16,7 +16,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// 1. [SettingsSection.pinFirst]：置顶扩展要排在**所有内置分类之前**（商业版
 ///    的「账号」合并完订阅之后就是第一排），默认选中项也跟着它走；「安全」
-///    「关于」仍然固定收尾。
+///    「关于」仍然固定收尾。分组带上，置顶的归**「连接」**、其余扩展归
+///    **「系统」** —— 扩展只交一个 `pinFirst` 标志，挑不了自己排第几，也就
+///    挑不了自己进哪条带。
 /// 2. [AppExtension.aiUsageExtras]：扩展往「设置 → AI」页「用量」分组末尾
 ///    加的行要真的铺出来；空注册表（公开版）时一个像素都不多。
 ///
@@ -95,6 +97,18 @@ void main() {
         labels.sublist(labels.length - 4),
         <String>['诊断', '免打扰', '安全', '关于'],
       );
+
+      // 分组带的落位：置顶的「账号」在「连接」小标题之后、「实例」之前；
+      // 不置位的「免打扰」在「系统」小标题那一段里、诊断与安全之间。
+      // 只钉顺序不够 —— 带归属错了时顺序可能仍然对，界面却把它画到别的
+      // 小标题下面（或者多出一个同名小标题）。
+      double yOfText(String label) => tester.getTopLeft(find.text(label)).dy;
+      double yOfItem(String label) => tester.getTopLeft(railItem(label)).dy;
+      expect(yOfText('连接'), lessThan(yOfItem('账号')));
+      expect(yOfItem('账号'), lessThan(yOfItem('实例')));
+      expect(yOfText('系统'), lessThan(yOfItem('诊断')));
+      expect(yOfItem('诊断'), lessThan(yOfItem('免打扰')));
+      expect(yOfItem('免打扰'), lessThan(yOfItem('安全')));
     });
   });
 

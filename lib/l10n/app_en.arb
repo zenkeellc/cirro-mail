@@ -296,6 +296,12 @@
     }
   },
   "notifications": "Notifications",
+  "notificationsInApp": "In-app alerts",
+  "notificationsPush": "Background push",
+  "settingsBandConnect": "Connection",
+  "settingsBandFlow": "Mail flow",
+  "settingsBandPersonal": "Personalization",
+  "settingsBandSystem": "System",
   "notifyEnabledHint": "Turning this off stops scheduled fetching and new-mail alerts; mail you already received stays readable.",
   "clearCache": "Clear cache",
   "unnamed": "(unnamed)",

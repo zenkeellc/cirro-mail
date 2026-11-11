@@ -639,6 +639,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notifications => 'Notifications';
 
   @override
+  String get notificationsInApp => 'In-app alerts';
+
+  @override
+  String get notificationsPush => 'Background push';
+
+  @override
+  String get settingsBandConnect => 'Connection';
+
+  @override
+  String get settingsBandFlow => 'Mail flow';
+
+  @override
+  String get settingsBandPersonal => 'Personalization';
+
+  @override
+  String get settingsBandSystem => 'System';
+
+  @override
   String get notifyEnabledHint =>
       'Turning this off stops scheduled fetching and new-mail alerts; mail you already received stays readable.';
 

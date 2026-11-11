@@ -11,6 +11,8 @@ class _FakeExt extends AppExtension {
     this.id, {
     this.cards = 1,
     this.securityCards = 0,
+    this.notificationCards = 0,
+    this.composeCards = 0,
     this.extraRoutes = 0,
     this.branchRoutes = 0,
     this.onBoot,
@@ -40,6 +42,12 @@ class _FakeExt extends AppExtension {
 
   /// 往「设置 → 安全」页末尾插几块。
   final int securityCards;
+
+  /// 往「设置 → 通知」页末尾插几块。
+  final int notificationCards;
+
+  /// 往「设置 → 写邮件」页末尾插几块。
+  final int composeCards;
   final int extraRoutes;
 
   /// 往**邮件那一支**（壳里）插几条路由。
@@ -131,6 +139,15 @@ class _FakeExt extends AppExtension {
   @override
   List<Widget> securityExtras(BuildContext context) =>
       <Widget>[for (var i = 0; i < securityCards; i++) Text('sec:$id#$i')];
+
+  @override
+  List<Widget> notificationExtras(BuildContext context) => <Widget>[
+        for (var i = 0; i < notificationCards; i++) Text('notify:$id#$i'),
+      ];
+
+  @override
+  List<Widget> composeExtras(BuildContext context) =>
+      <Widget>[for (var i = 0; i < composeCards; i++) Text('compose:$id#$i')];
 
   @override
   List<RouteBase> routes() => <RouteBase>[
@@ -297,6 +314,8 @@ void main() {
       final context = tester.element(find.byType(SizedBox).first);
       expect(AppExtensionRegistry.instance.aboutExtras(context), isEmpty);
       expect(AppExtensionRegistry.instance.securityExtras(context), isEmpty);
+      expect(AppExtensionRegistry.instance.notificationExtras(context), isEmpty);
+      expect(AppExtensionRegistry.instance.composeExtras(context), isEmpty);
       expect(AppExtensionRegistry.instance.routes(), isEmpty);
       expect(AppExtensionRegistry.instance.mailBranchRoutes(), isEmpty);
       expect(AppExtensionRegistry.instance.shellActions(context), isEmpty);
@@ -332,6 +351,41 @@ void main() {
           .map((t) => t.data)
           .toList();
       expect(texts, <String>['sec:a#0', 'sec:a#1', 'sec:b#0']);
+    });
+
+    /// 「设置 → 通知」页末尾的块。商业版把「免打扰」铺在这里，与内置的
+    /// 应用内提醒 / 后台推送同一页 —— 以前它独占一栏、还排在「诊断」与
+    /// 「安全」之间，用户得跨半页去比对两处开关。
+    testWidgets('notificationExtras 按扩展顺序铺平', (tester) async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a', notificationCards: 2),
+        _FakeExt('b', notificationCards: 1),
+      ]);
+      await tester.pumpWidget(const SizedBox.shrink());
+      final context = tester.element(find.byType(SizedBox).first);
+      final texts = AppExtensionRegistry.instance
+          .notificationExtras(context)
+          .cast<Text>()
+          .map((t) => t.data)
+          .toList();
+      expect(texts, <String>['notify:a#0', 'notify:a#1', 'notify:b#0']);
+    });
+
+    /// 「设置 → 写邮件」页末尾的块。商业版的「云草稿同步」铺在这里：
+    /// 草稿是写信的另一半，单独占一栏会让人以为它跟写信无关。
+    testWidgets('composeExtras 按扩展顺序铺平', (tester) async {
+      AppExtensionRegistry.instance.registerAll(<AppExtension>[
+        _FakeExt('a', composeCards: 1),
+        _FakeExt('b', composeCards: 2),
+      ]);
+      await tester.pumpWidget(const SizedBox.shrink());
+      final context = tester.element(find.byType(SizedBox).first);
+      final texts = AppExtensionRegistry.instance
+          .composeExtras(context)
+          .cast<Text>()
+          .map((t) => t.data)
+          .toList();
+      expect(texts, <String>['compose:a#0', 'compose:b#0', 'compose:b#1']);
     });
 
     testWidgets('routes 按扩展顺序铺平且路径原样', (tester) async {

@@ -312,6 +312,16 @@ class AppExtensionRegistry {
         for (final ext in _extensions) ...ext.securityExtras(context),
       ];
 
+  /// 所有扩展往「设置 → 通知」页末尾加的块，按注册顺序拼接。
+  List<Widget> notificationExtras(BuildContext context) => <Widget>[
+        for (final ext in _extensions) ...ext.notificationExtras(context),
+      ];
+
+  /// 所有扩展往「设置 → 写邮件」页末尾加的块，按注册顺序拼接。
+  List<Widget> composeExtras(BuildContext context) => <Widget>[
+        for (final ext in _extensions) ...ext.composeExtras(context),
+      ];
+
   /// 所有扩展往顶栏加的图标按钮，按注册顺序拼接。
   List<Widget> shellActions(BuildContext context) => <Widget>[
         for (final ext in _extensions) ...ext.shellActions(context),

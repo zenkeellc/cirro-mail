@@ -595,6 +595,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get notifications => '通知';
 
   @override
+  String get notificationsInApp => '应用内提醒';
+
+  @override
+  String get notificationsPush => '后台推送';
+
+  @override
+  String get settingsBandConnect => '连接';
+
+  @override
+  String get settingsBandFlow => '收发';
+
+  @override
+  String get settingsBandPersonal => '个性';
+
+  @override
+  String get settingsBandSystem => '系统';
+
+  @override
   String get notifyEnabledHint => '关闭后不再定时收信，也不再提醒新邮件；已收到的邮件仍可正常阅读。';
 
   @override

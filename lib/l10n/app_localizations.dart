@@ -1190,6 +1190,42 @@ abstract class AppLocalizations {
   /// **'Notifications'**
   String get notifications;
 
+  /// No description provided for @notificationsInApp.
+  ///
+  /// In en, this message translates to:
+  /// **'In-app alerts'**
+  String get notificationsInApp;
+
+  /// No description provided for @notificationsPush.
+  ///
+  /// In en, this message translates to:
+  /// **'Background push'**
+  String get notificationsPush;
+
+  /// No description provided for @settingsBandConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection'**
+  String get settingsBandConnect;
+
+  /// No description provided for @settingsBandFlow.
+  ///
+  /// In en, this message translates to:
+  /// **'Mail flow'**
+  String get settingsBandFlow;
+
+  /// No description provided for @settingsBandPersonal.
+  ///
+  /// In en, this message translates to:
+  /// **'Personalization'**
+  String get settingsBandPersonal;
+
+  /// No description provided for @settingsBandSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get settingsBandSystem;
+
   /// No description provided for @notifyEnabledHint.
   ///
   /// In en, this message translates to:
