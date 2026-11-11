@@ -369,11 +369,39 @@ class RoamConfigHostImpl implements RoamConfigHost {
     prefs.notifyChanged();
   }
 
+  /// 删除本机条目。**只认 `sig:` / `phrases:` 两类**：跨设备删除的是「这条
+  /// 签名 / 这组常用语」，不是实例、不是登录态。写盘走既有 setter 之后，变更
+  /// 信号会自己打出去（导出里这一条自然消失）。
   @override
-  Future<void> deleteItems(List<String> keys) async {}
+  Future<void> deleteItems(List<String> keys) async {
+    for (final key in keys) {
+      if (key.startsWith('sig:')) {
+        final email = key.substring('sig:'.length).trim();
+        if (email.isEmpty) continue;
+        await prefs.setSignature(email, ''); // 空串 = 删这一条
+        continue;
+      }
+      if (key.startsWith('phrases:')) {
+        final email = key.substring('phrases:'.length).trim();
+        if (email.isEmpty) continue;
+        await prefs.setPhrases(email, const <WritingSnippet>[]); // 空组 = 删这个地址
+        continue;
+      }
+      // app.* / instance:* / secret.* / 未来版本的 key：**故意不动** ——
+      // 别的设备删条目不该把本机实例、实例登录态或 AI Key 一并清掉。
+    }
+  }
 
   @override
-  Future<String?> readSecret(String key) async => null;
+  Future<String?> readSecret(String key) async {
+    if (key == 'secret.ai_key') return aiKeys.read();
+    final instanceKey = _instanceKeyFromSecret(key);
+    if (instanceKey == null) return null;
+    final profile = await _profileFor(instanceKey);
+    // 用 `tokens.read`（走缓存）而不是重新打平台通道：读与写是同一份缓存，
+    // 刚 `writeSecret` 进来的值立刻读得到，也不会为一次快照读反复读钥匙串。
+    return profile == null ? null : tokens.read(profile.id);
+  }
 
   static const String _instanceSecretPrefix = 'secret.instance:';
 
