@@ -10,6 +10,7 @@ import 'app.dart';
 import 'bootstrap.dart';
 import 'core/db/core_mail_store.dart';
 import 'core/db/draft_store_impl.dart';
+import 'core/diagnostics/crash_log.dart';
 import 'core/extensions.dart';
 import 'core/theme/app_theme.dart';
 import 'features/notifications/background_sync_task.dart';
@@ -17,7 +18,19 @@ import 'features/notifications/push_service.dart';
 import 'providers/core_providers.dart';
 
 void main() {
+  // **第一句**：把未捕获异常的兜底装上。
+  //
+  // 早知道于 `runApp`（甚至早于 `ensureInitialized`）：启动阶段抛出来的异常
+  // 恰恰是最该有痕迹的那批 —— 「冷启动直接白屏」在过去完全查不了，就是因为它
+  // 发生在任何日志挂上之前。`install()` 只挂钩子、不碰平台通道，所以放在这里
+  // 是安全的；落盘目录晚一步由 `attachStorage()` 接（见下）。
+  CrashLog.install();
+
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 平台通道通了才拿得到「应用支持目录」，所以接日志放在这里。
+  // 这一步之前发生的异常不会丢：`CrashLog` 先攒内存，接上后补写。
+  CrashLog.attachStorage();
 
   // 扩展注册。清单在 `core/extensions.dart` —— **公开版它是空的**，
   // 商业版把那一个常量换成自己的扩展。
