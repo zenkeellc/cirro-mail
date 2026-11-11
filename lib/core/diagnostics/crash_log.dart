@@ -68,23 +68,42 @@ class CrashLog {
 
     _previousOnError = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
-      record(
-        'FlutterError',
-        details.exception,
-        details.stack,
-        where: details.context?.toDescription() ?? details.library,
-      );
+      // **兜底路径自己绝不许抛。** 这里可能踩到两种坑：
+      // - `record` 里的落盘（已自带 try/catch）；
+      // - 交给 `FlutterError.presentError` 时的**栈格式化**：`defaultStackFilter`
+      //   会把每一行按 `#N 函数 (文件:行:列)` 解析，遇到非标准行（平台/原生
+      //   转上来的栈、被 eval/混淆过的行）会断言失败甚至抛 TypeError。
+      // 实测过：一条非标准栈就能让错误处理本身再抛一次，把「记录」这件事也
+      // 一起带走。所以两段都包在 try 里，记不下来/打不出来都不影响 App。
+      try {
+        record(
+          'FlutterError',
+          details.exception,
+          details.stack,
+          where: details.context?.toDescription() ?? details.library,
+        );
+      } catch (_) {
+        // 记不下来就算了，绝不让记录失败变成新的崩溃。
+      }
       // 控制台照旧：debug 下那串栈是排障主力，不能被我们吞掉。
-      final previous = _previousOnError;
-      if (previous != null) {
-        previous(details);
-      } else {
-        FlutterError.presentError(details);
+      try {
+        final previous = _previousOnError;
+        if (previous != null) {
+          previous(details);
+        } else {
+          FlutterError.presentError(details);
+        }
+      } catch (_) {
+        // 格式化失败（见上）不该把异常再抛回框架的错误路径。
       }
     };
 
     PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-      record('uncaught', error, stack);
+      try {
+        record('uncaught', error, stack);
+      } catch (_) {
+        // 同上：兜底路径不许抛。
+      }
       // false = 交回默认处理（debug 下会打到控制台）。我们不静默吃掉。
       return false;
     };

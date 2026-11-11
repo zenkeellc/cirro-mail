@@ -117,6 +117,25 @@ void main() {
     );
   });
 
+  test('前一个 onError 自己抛异常时，我们的钩子不许把异常再抛回去', () {
+    // 实测踩到过：`FlutterError.presentError` 里的栈格式化（defaultStackFilter）
+    // 遇到非标准栈行会抛 —— 错误处理自己抛异常，比原来的错误难查一个数量级。
+    FlutterError.onError = (details) => throw StateError('presentation blew up');
+    CrashLog.install();
+
+    expect(
+      () => FlutterError.reportError(FlutterErrorDetails(
+        exception: StateError('recorded anyway'),
+        stack: StackTrace.current,
+      )),
+      returnsNormally,
+    );
+    expect(
+      CrashLog.recent.any((line) => line.contains('recorded anyway')),
+      isTrue,
+    );
+  });
+
   testWidgets('替代那块灰白的卡片：有摘要，且不依赖 Theme / Localizations',
       (tester) async {
     final details = FlutterErrorDetails(
