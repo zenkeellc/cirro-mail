@@ -58,8 +58,11 @@ class RoamConfigItem {
 /// 实例的跨设备稳定身份：`<scheme>://<host[:port]>|<email>`。
 ///
 /// 本机 `profiles.id` 是 UUID，换设备就换；能对上「同一台实例」的只有地址 +
-/// 登录邮箱。规则：全小写；丢掉 `/api` 与尾斜杠；默认端口不写；没写协议按
-/// https 补；**没有登录邮箱 → null**（这种实例不参与漫游）。
+/// 登录邮箱。规则：全小写；丢掉 path 与尾斜杠（**整条 path**，不只是 `/api`
+/// 那段 —— 同一 host 上不同 path 前缀视为同一实例：`https://host/mail` 与
+/// `https://host/app` 会塌成同一个 key，因为同一个服务端换个挂载路径装的还是
+/// 那套账号）；默认端口不写；没写协议按 https 补；**没有登录邮箱 → null**
+/// （这种实例不参与漫游）。
 String? roamInstanceKey({required String baseUrl, required String email}) {
   final mail = email.trim().toLowerCase();
   if (mail.isEmpty) return null;
