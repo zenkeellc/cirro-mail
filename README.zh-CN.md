@@ -316,6 +316,8 @@ test/             单测：信封拆包、游标、URL 解析、时间解析、�
 
 `dart:io` 只允许出现在 `core/storage/`、`data/repositories/attachment_repository.dart`、`features/notifications/background_sync_task.dart`。其余层保持平台无关 —— 现在不做 Web，但这条线能让日后想加 PWA 时不至于全盘返工。
 
+`core/settings/` 放**配置快照**（导入 / 导出）的核心实现，接缝在 `cirro_mail_ext` 的 `RoamConfigHost` —— 哪些设置算配置、条目 key 怎么定、敏感项为什么不走普通写回，见 [`docs/config-snapshot.md`](docs/config-snapshot.md)。
+
 ## 一些不那么显然的坑（都在代码注释里，这里列提纲）
 
 - **HTTP 状态码恒为 200**。`401/403/501/502` 全在 body 的 `{code}` 里，所以 dio 必须 `validateStatus: (_) => true`，否则鉴权与错误处理全部失效。

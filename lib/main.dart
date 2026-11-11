@@ -12,6 +12,7 @@ import 'core/db/core_mail_store.dart';
 import 'core/db/draft_store_impl.dart';
 import 'core/diagnostics/crash_log.dart';
 import 'core/extensions.dart';
+import 'core/settings/roam_config_host.dart';
 import 'core/theme/app_theme.dart';
 import 'features/notifications/background_sync_task.dart';
 import 'features/notifications/push_service.dart';
@@ -143,6 +144,17 @@ class _BootstrapGateState extends State<BootstrapGate> {
         // 一致：两个 store 意味着同步层对着两个库文件推同一批草稿，比「云草稿
         // 不生效」难查得多。
         AppExtensionRegistry.instance.attachDraftStore(CoreDraftStore(data.db));
+
+        // 配置快照读写口：与两个 store 同一时机、同一处挂 —— 库 / prefs / 钥匙串
+        // 此刻都就绪，而扩展的启动钩子早跑完（它们要么等 `roamConfigHostReady`，
+        // 要么安静降级）。先判 null：这个 builder 每次重建都会跑，而
+        // `registerRoamConfigHost` 只认第一次（与 `attachMailStore` 同一口径）。
+        // 公开版没人读它：这一段不启动任何东西、不改任何行为。
+        if (AppExtensionRegistry.instance.roamConfigHost == null) {
+          AppExtensionRegistry.instance.registerRoamConfigHost(
+            RoamConfigHostImpl(prefs: data.prefs, tokens: data.tokens, db: data.db),
+          );
+        }
 
         // `key` 用 data 的身份：重试后是一份新的 BootstrapData，
         // 换 key 会让整个 ProviderScope（以及底下所有 provider）从头建，
