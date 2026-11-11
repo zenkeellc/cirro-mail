@@ -47,6 +47,14 @@ class AppDelegate: FlutterAppDelegate {
 
   /// 关掉窗口之后用来顶着 App Nap 的那个「活动」。见 [updateWindowlessActivity]。
   private var windowlessActivity: NSObjectProtocol?
+
+  /// 窗口外框（大小与位置）的 autosave 名字。
+  ///
+  /// `UserDefaults` 里的键是 `NSWindow Frame <这个名字>`。名字**两个检出逐字
+  /// 相同**：公开版与商业版的 defaults 域本来就是各自的 bundle id（沙箱容器
+  /// 也各自一份），同名不会互相踩，反而少一处品牌差异。见 [applicationDidFinishLaunching]
+  /// 里设置它的那段注释。
+  private static let mainWindowFrameAutosaveName = "CirroMainWindow"
   /// 关掉窗口后 App 不许跟着退。这是「留在菜单栏」的**前提**：只要它还返回
   /// true，下面那套菜单栏图标根本没有机会存在。
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -82,6 +90,26 @@ class AppDelegate: FlutterAppDelegate {
     // `applicationWillFinishLaunching` 里已经做完了 —— 那个方法
     // `FlutterAppDelegate` 确实实现了，而且早于这里。
     retainedWindow = mainFlutterWindow
+
+    // **记住窗口的大小与位置。** 这件事交给 AppKit 的 frame autosave，而不是
+    // 自己存一份 CGRect：
+    //
+    // - 它把外框写进本 App 的 `UserDefaults`（键 `NSWindow Frame CirroMainWindow`），
+    //   并且**在设置名字的这一刻就把存下来的 frame 套上去** —— 所以这行必须在
+    //   下面 `showMainWindow()` 之前。放到显示之后，用户会先看见窗口弹在 nib
+    //   里那个默认位置、再跳一下。
+    // - 保存也是 AppKit 自己管的：窗口被拖/被缩放、以及关窗时它都会写回，
+    //   不用另挂 `windowDidMove` / `windowDidResize` 观察者。
+    // - 窗口被拖到一块**已经拔掉**的显示器上时，AppKit 会在窗口上屏前用
+    //   `constrainFrameRect` 把它挤回可见区域。自己存就得在三个平台各写一遍
+    //   钳位逻辑（Windows / Linux 的 runner 就是这么做的，因为那边没有等价的
+    //   现成机制）。
+    //
+    // 不恢复的是**全屏 / 缩放（绿按钮那两种）**：那是窗口管理器的状态，不在
+    // frame 这条路上。见 `docs/window-state.md`。
+    (retainedWindow ?? mainFlutterWindow)?
+      .setFrameAutosaveName(Self.mainWindowFrameAutosaveName)
+
     setUpStatusItem()
     setUpWindowChannel()
     setUpBadgeChannel()

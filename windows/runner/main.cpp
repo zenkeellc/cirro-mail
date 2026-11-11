@@ -37,11 +37,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
-  Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"Cirro Mail", origin, size)) {
+  // 上次退出时的外框/最大化（`windows/runner/flutter_window.cpp` 的
+  // `LoadStartupFrame`）。**在 `Create` 之前交进去**：`Create` 内部就会跑
+  // `FlutterWindow::OnCreate`，那里要在建 Flutter 控制器之前先把窗口摆到最终
+  // 位置（见 `SetStartupFrame` 的注释）。没有可信的保存值时窗口就是下面这个
+  // 默认的 10,10 + 1280x720。
+  const StartupFrame startup_frame = LoadStartupFrame();
+  window.SetStartupFrame(startup_frame);
+  if (!window.Create(L"Cirro Mail", Win32Window::Point(10, 10),
+                     Win32Window::Size(1280, 720))) {
     return EXIT_FAILURE;
   }
+
+  // 最大化的那一下要等首帧之后才发（窗口在那之前一直是隐藏的，`ShowWindow`
+  // 对隐藏窗口不生效），所以这里只是把意图交进去，真正的
+  // `ShowWindow(SW_SHOWMAXIMIZED)` 在 `FlutterWindow::OnCreate` 的
+  // `SetNextFrameCallback` 里。
+  window.SetStartMaximized(startup_frame.maximized);
 
   // 关窗**不**退出进程 —— 这是 Windows 和 macOS 两边一致的「关窗之后还留在
   // 通知区里收信」的一半（见 `windows/runner/flutter_window.cpp` 的

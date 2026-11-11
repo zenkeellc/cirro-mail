@@ -11,6 +11,39 @@
 #include "tray_icon.h"
 #include "win32_window.h"
 
+// 上次退出时窗口的外框（**物理像素**，left/top 可以是负数 —— 显示器摆在主屏
+// 左边/上边时就是负坐标）与最大化状态。
+//
+// 为什么是物理像素、而不是像 `Win32Window::Create` 那样收逻辑像素：
+//
+// 1. 注册表里存的就是物理像素（`GetWindowPlacement` 的 `rcNormalPosition`）。
+//    换成逻辑像素要先除一次 DPI 缩放比，启动后 `Create` 内部再乘一次 —— 一条
+//    没有必要的往返，每次启动都多一次舍入（±1px）；负坐标还被
+//    `Win32Window::Point` 的无符号字段直接表达不了（副屏在主屏左边就丢位置）。
+// 2. 更要命的是 `Create` 拿**逻辑** origin 去 `MonitorFromPoint` 挑一块显示器
+//    算 DPI，跟我们自己按物理坐标挑的那块不一定是同一块。混合 DPI 多屏上，
+//    窗口会按错的缩放比摆，位置/大小都偏。
+//
+// 所以恢复到「窗口建好之后、首帧之前」用 `SetWindowPos` 按物理像素摆一次：
+// 那时窗口还隐藏着，用户看不到任何跳动；而 `GetClientArea()` 已经是最终尺寸，
+// Flutter 控制器一次就按正确大小建出来。
+struct StartupFrame {
+  // 外框（物理像素）。left/top 允许为负。
+  RECT bounds;
+  // 上次退出时是不是最大化。与 [bounds] 是否可信无关：位置丢了、窗口也还是
+  // 可以按最大化开（回到默认位置所在那块屏的最大化）。
+  bool maximized;
+  // false = 没有可信的保存值（没存过 / 尺寸越界 / 那块屏已经不在了）：保持
+  // `Create` 给的默认几何，别拿一个不可信的矩形去摆窗口。
+  bool valid;
+};
+
+// 读回上次保存的窗口几何并校验（尺寸区间、与某块显示器的可用工作区至少有
+// 120x80 的重叠，全部用物理坐标，不做任何 DPI 换算）；读不到、或被判定不可信
+// 时返回 `valid == false` 的结构。任何注册表错误都静默：记不住窗口位置不值得
+// 打扰用户，更不该影响启动。
+StartupFrame LoadStartupFrame();
+
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
  public:
@@ -28,6 +61,18 @@ class FlutterWindow : public Win32Window {
   // （见 `single_instance.cpp`）；托盘那条路上，点托盘图标本身就让本进程
   // 拿到了前台资格。这是 Windows 的前台锁规则，跟 App 的代码没关系。
   void ShowMainWindow();
+
+  // 启动时第一次显示要不要直接最大化。`main.cpp` 在 `Create` 之后、进消息循环
+  // 之前调一次；真正那一下 `ShowWindow(SW_SHOWMAXIMIZED)` 发生在首帧回调里
+  // （见 `flutter_window.cpp` 的 `SetNextFrameCallback`）—— 窗口在首帧之前一直
+  // 是隐藏的，那之前调 `ShowWindow` 等于没调。
+  void SetStartMaximized(bool maximized);
+
+  // 交进启动几何。**必须在 `Create` 之前调**：`Create` 内部就会跑 `OnCreate`，
+  // 而 [OnCreate] 要把窗口先摆到最终位置、再按摆好之后的客户区尺寸建 Flutter
+  // 控制器。（晚一步就等于让引擎先按默认尺寸建一次 surface、再因为 `WM_SIZE`
+  // 重来一次，启动时白费一帧的渲染资源。）
+  void SetStartupFrame(const StartupFrame& startup_frame);
 
  protected:
   // Win32Window:
@@ -52,6 +97,11 @@ class FlutterWindow : public Win32Window {
   // 托盘菜单里的「退出」：摘掉图标、销毁窗口，走上 `main.cpp` 那条
   // `SetQuitOnClose(true)` → `PostQuitMessage` 的路径。
   void QuitApplication();
+
+  // 把当前外框和最大化状态写进注册表。调用点见 [MessageHandler] 里的
+  // `WM_EXITSIZEMOVE` / `WM_SIZE` / `WM_CLOSE`、[HideToTray]、[QuitApplication]。
+  // 幂等（和上一次写进去的一样就什么都不做）、便宜、任何失败静默、不抛异常。
+  void SaveWindowState();
 
   // 图标徽章的统一入口：Dart 侧 `lib/core/notify/icon_badge.dart` 每次未读数
   // 变化推一条 `{"count": int}`，`count <= 0` 表示清除。两个落点（任务栏窗口
@@ -90,6 +140,25 @@ class FlutterWindow : public Win32Window {
   // 图标要等第一次关窗才建（[EnsureTrayIcon]），而徽章可能在窗口还开着时
   // 就到了；这个数在两个落点之间共用，「补建托盘」时拿它补画。
   int badge_count_ = 0;
+
+  // 启动时第一次显示要不要最大化。见 [SetStartMaximized]。
+  bool start_maximized_ = false;
+
+  // [SetStartupFrame] 交进来的几何，`OnCreate` 里用一次。
+  StartupFrame startup_frame_{};
+
+  // 窗口已经显示过至少一次。
+  //
+  // [SaveWindowState] 拿它当闸门：`Create` 内部那几条 `WM_SIZE` 和首帧之前的
+  // 几何都是构造期间的中间值（那一刻启动意图甚至还没从 `main.cpp` 传进来），
+  // 存它只会把刚读出来的正确值覆盖掉。
+  bool window_shown_ = false;
+
+  // [SaveWindowState] 上一次**真的写进注册表**的值，用来做幂等判断：拖动/贴边
+  // 时 `WM_SIZE` 会连着来几十上百条，值没变就不必每条都去开一次注册表键。
+  RECT saved_rect_{};
+  bool saved_maximized_ = false;
+  bool has_saved_state_ = false;
 
   // 窗口图标的句柄。两份都是本类 `LoadImage` / `CreateBadgeIcon` 出来的
   // **自己的一份**（不是窗口类里那个 `LoadIcon` 的共享图标），换下来当场
