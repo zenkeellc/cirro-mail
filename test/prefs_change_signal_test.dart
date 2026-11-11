@@ -54,6 +54,14 @@ void main() {
       'setUpdateLastNotified': () => prefs.setUpdateLastNotified('0.2.0+132'),
       'dismissPromo': () => prefs.dismissPromo('https://promo.example.com'),
       'clearPushConfig': () => prefs.clearPushConfig(),
+      // remove 支：值是 null / 默认值 → 走 `_putOrRemove` 的删 key 那一半，
+      // 和上面那些 setString 不是同一行代码，漏了就是「删掉的配置永远不
+      // 触发同步」。
+      'setActiveProfileId(null)': () => prefs.setActiveProfileId(null),
+      'setThemePackId(null)': () => prefs.setThemePackId(null),
+      'setQuietTrackingPixels(true)': () => prefs.setQuietTrackingPixels(true),
+      // 放最后：它清空整个 prefs，排在后面会让那些 setter 的断言失去意义。
+      'clearAll': () => prefs.clearAll(),
     };
     var count = 0;
     final sub = prefs.changes.listen((_) => count++);
