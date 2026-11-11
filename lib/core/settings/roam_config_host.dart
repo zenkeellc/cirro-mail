@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../data/models/profile.dart';
 import '../../features/ai/ai_settings_store.dart';
+import '../../features/compose/writing_snippets.dart';
 import '../db/database.dart';
 import '../storage/prefs_store.dart';
 import '../storage/token_store.dart';
@@ -200,7 +202,110 @@ class RoamConfigHostImpl implements RoamConfigHost {
   }
 
   @override
-  Future<void> applyItems(List<RoamConfigItem> items) async {}
+  Future<void> applyItems(List<RoamConfigItem> items) async {
+    for (final item in items) {
+      try {
+        await _applyOne(item);
+      } catch (e) {
+        // 单条写不进去不该让整份快照失败（类型不对 / JSON 编不出来就跳过）。
+        debugPrint('配置条目 ${item.key} 写回失败（已跳过）：$e');
+      }
+    }
+  }
+
+  Future<void> _applyOne(RoamConfigItem item) async {
+    final key = item.key;
+    // 敏感项永远不经过这里：恢复实例登录态要用户逐个授权，走 writeSecret。
+    if (item.secret || key.startsWith('secret.')) return;
+    if (key == 'app.appearance') {
+      final mode = item.data['themeMode'];
+      if (mode is String &&
+          const <String>{'system', 'light', 'dark'}.contains(mode)) {
+        await prefs.setThemeMode(mode);
+      }
+      if (item.data.containsKey('themePackId')) {
+        final pack = item.data['themePackId'];
+        await prefs.setThemePackId(pack is String && pack.isNotEmpty ? pack : null);
+      }
+      if (item.data.containsKey('locale')) {
+        final locale = item.data['locale'];
+        await prefs
+            .setLocaleCode(locale is String && locale.isNotEmpty ? locale : null);
+      }
+      return;
+    }
+    if (key == 'app.compose') {
+      final seconds = _int(item.data['sendDelaySeconds']);
+      if (seconds != null) await prefs.setSendDelay(Duration(seconds: seconds));
+      return;
+    }
+    if (key.startsWith('sig:')) {
+      final email = key.substring('sig:'.length);
+      final text = item.data['text'];
+      if (email.isEmpty || text is! String) return;
+      await prefs.setSignature(email, text);
+      return;
+    }
+    if (key.startsWith('phrases:')) {
+      final email = key.substring('phrases:'.length);
+      final raw = item.data['items'];
+      if (email.isEmpty || raw is! List) return;
+      final snippets = <WritingSnippet>[];
+      for (final entry in raw) {
+        final snippet = WritingSnippet.fromJson(entry);
+        if (snippet != null) snippets.add(snippet);
+      }
+      await prefs.setPhrases(email, snippets);
+      return;
+    }
+    if (key == 'app.reading') {
+      final poll = _int(item.data['pollSeconds']);
+      if (poll != null) await prefs.setPollInterval(Duration(seconds: poll));
+      final prefetch = _bool(item.data['prefetchFull']);
+      if (prefetch != null) await prefs.setPrefetchFull(prefetch);
+      final notify = _bool(item.data['notifyEnabled']);
+      if (notify != null) await prefs.setNotifyEnabled(notify);
+      final banner = _bool(item.data['notifyBanner']);
+      if (banner != null) await prefs.setNotifyBanner(banner);
+      final quiet = _bool(item.data['quietTrackingPixels']);
+      if (quiet != null) await prefs.setQuietTrackingPixels(quiet);
+      final hosts = item.data['externalAllowedHosts'];
+      if (hosts is List) await prefs.setExternalAllowedHosts(hosts.whereType<String>());
+      return;
+    }
+    if (key == 'app.ai') {
+      final settings = item.data['settings'];
+      if (settings is Map) {
+        await prefs.setAiSettingsJson(jsonEncode(<String, Object?>{
+          for (final entry in settings.entries)
+            if (entry.key is String) entry.key as String: entry.value,
+        }));
+      }
+      if (item.data.containsKey('source')) {
+        final source = item.data['source'];
+        await prefs
+            .setAiSourceCode(source is String && source.isNotEmpty ? source : null);
+      }
+      return;
+    }
+    if (key.startsWith('instance:')) {
+      await _applyInstance(key.substring('instance:'.length), item.data);
+      return;
+    }
+    // app.schema / 扩展自己的条目（免打扰、外联代理…）/ 未来版本的条目：
+    // 核心不解释。不抛、不写 —— 数据由消费方自己保管。
+  }
+
+  static int? _int(Object? raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return null;
+  }
+
+  static bool? _bool(Object? raw) => raw is bool ? raw : null;
+
+  // Task 8 填实现
+  Future<void> _applyInstance(String instanceKey, Map<String, Object?> data) async {}
 
   @override
   Future<void> deleteItems(List<String> keys) async {}
