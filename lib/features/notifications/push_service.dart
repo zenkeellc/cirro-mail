@@ -83,10 +83,11 @@ int get backgroundRegisterAllCalls => _backgroundRegisterAllCalls;
 /// 它**不查库、不解析** —— 那些是 [PushService.background] 的活。这里只
 /// 决定「现在有人接，还是先存起来」。
 ///
-/// **`draft_changed` 是例外**：那是云草稿的跨设备事件，不是「有一封新信」，
-/// 它的归宿是扩展钩子（`AppExtension.onDraftChanged`），不是后台事件流 ——
-/// 存进去只会让前台把它当一封信去同步一轮。所以这里直接交给钩子并返回，
-/// **既不进待取槽也不自己弹通知**（服务端发的本来就是 data-only 静默消息）。
+/// **`draft_changed` / `config_changed` 是例外**：那是跨设备的静默事件，
+/// 不是「有一封新信」，归宿是扩展钩子（`AppExtension.onDraftChanged` /
+/// `onConfigChanged`），不是后台事件流 —— 存进去只会让前台把它当一封信去
+/// 同步一轮。所以这两类直接交给钩子并返回，**既不进待取槽也不自己弹通知**
+/// （服务端发的本来就是 data-only 静默消息）。
 @pragma('vm:entry-point')
 Future<void> pushServiceBackgroundEntry(RemoteMessage message) async {
   // **这里必须重新注册一遍扩展。** Android 上这个入口跑在插件另起的一个
@@ -102,6 +103,17 @@ Future<void> pushServiceBackgroundEntry(RemoteMessage message) async {
   AppExtensionRegistry.instance.registerAll(kAppExtensions);
   _backgroundRegisterAllCalls++;
 
+  // `config_changed`：**只转发，不解释、不 await 网络。**
+  //
+  // 别在这里顺手写「待拉」标记、也别把事件塞进 `_rawBackground`：Android
+  // 上这个入口跑在插件另起的后台 isolate 里，系统随时可能把它杀掉 ——
+  // 内存里的标记带不回去，下一次冷启动就丢了。所以「待拉」这种状态必须走
+  // **持久化通道**，由消费方（扩展）自己在钩子里写 prefs，核心不掺和；
+  // 核心这里只负责调钩子，与前台 `_decode` 的分派逐字同形。
+  if (message.data['kind'] == 'config_changed') {
+    unawaited(AppExtensionRegistry.instance.notifyConfigChanged());
+    return;
+  }
   if (message.data['kind'] == 'draft_changed') {
     unawaited(AppExtensionRegistry.instance.notifyDraftChanged());
     return;
@@ -607,15 +619,22 @@ class PushService {
   ///
   /// 前台 / 点开 / 冷启动三个入口与后台事件流都收口到这里；**后台 entry
   /// （[pushServiceBackgroundEntry]）是独立的一条** —— 它不构造事件、不经过
-  /// 这里，`draft_changed` 在那边就地交给扩展钩子。除此之外 `kind` 的分派
-  /// 只有这一处：
+  /// 这里，`draft_changed` / `config_changed` 在那边就地交给扩展钩子。除此之外
+  /// `kind` 的分派只有这一处：
   ///
+  /// - `config_changed`：配置快照有变化的跨设备静默事件 —— 交给扩展钩子
+  ///   （`AppExtension.onConfigChanged`），**只转发、不构造通知事件**，也不
+  ///   在这里 await 任何网络（拉取由消费方自己安排）；
   /// - `draft_changed`：云草稿的跨设备静默事件 —— 交给扩展钩子，**不构造
   ///   通知事件**（没有 `PushMailEvent` 就没有横幅）；服务端发的是 data-only
   ///   消息，客户端这边不再补一条本地通知；
   /// - `new_mail`：照旧折成事件（行为逐字不变）；
   /// - 其它：安静地丢掉。
   Future<PushMailEvent?> _decode(Map<String, dynamic> data) async {
+    if (data['kind'] == 'config_changed') {
+      unawaited(AppExtensionRegistry.instance.notifyConfigChanged());
+      return null;
+    }
     if (data['kind'] == 'draft_changed') {
       unawaited(AppExtensionRegistry.instance.notifyDraftChanged());
       return null;
