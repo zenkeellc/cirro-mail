@@ -9,6 +9,7 @@ import 'package:mail_app/core/settings/roam_config_host.dart';
 import 'package:mail_app/core/storage/change_signal.dart';
 import 'package:mail_app/core/storage/prefs_store.dart';
 import 'package:mail_app/core/storage/token_store.dart';
+import 'package:mail_app/data/models/profile.dart';
 import 'package:mail_app/features/ai/ai_settings_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -101,5 +102,55 @@ void main() {
     );
     expect(byKey['app.ai']!.data['source'], 'byok');
     expect(items.any((item) => item.secret), isFalse, reason: '默认不导敏感项');
+  });
+
+  test('实例按 instanceKey 出条目；敏感项只在 includeSecrets 时出现', () async {
+    final r = await rig();
+    await r.db.profileDao.upsertProfile(const Profile(
+      id: 'p-1',
+      baseUrl: 'https://mail.example.com/api',
+      name: '工作',
+      email: 'A@B.com',
+      colorIndex: 2,
+      sort: 4,
+      needsLogin: true,
+    ));
+    await r.tokens.write('p-1', 'tok-1');
+    await r.host.writeSecret('secret.ai_key', 'sk-1');
+    final plain = await r.host.exportItems();
+    final instance = plain.firstWhere(
+      (item) => item.key == 'instance:https://mail.example.com|a@b.com',
+    );
+    expect(instance.group, 'instances');
+    expect(instance.data, <String, Object?>{
+      'baseUrl': 'https://mail.example.com/api',
+      'name': '工作',
+      'email': 'A@B.com',
+      'colorIndex': 2,
+      'sort': 4,
+    });
+    expect(plain.any((item) => item.secret), isFalse);
+    final withSecrets = await r.host.exportItems(includeSecrets: true);
+    final tokenItem = withSecrets.firstWhere(
+      (item) =>
+          item.key == 'secret.instance:https://mail.example.com|a@b.com',
+    );
+    expect(tokenItem.secret, isTrue);
+    expect(tokenItem.group, 'secrets');
+    expect(tokenItem.data['value'], 'tok-1');
+    expect(
+      withSecrets.firstWhere((item) => item.key == 'secret.ai_key').data['value'],
+      'sk-1',
+    );
+    await r.db.profileDao.upsertProfile(const Profile(
+      id: 'p-2',
+      baseUrl: 'https://other.example.com/api',
+    ));
+    expect(
+      (await r.host.exportItems())
+          .any((item) => item.key.startsWith('instance:https://other')),
+      isFalse,
+      reason: '没有登录邮箱的实例不漫游',
+    );
   });
 }

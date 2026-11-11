@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 
+import '../../data/models/profile.dart';
 import '../../features/ai/ai_settings_store.dart';
 import '../db/database.dart';
 import '../storage/prefs_store.dart';
@@ -42,6 +43,46 @@ class RoamConfigHostImpl implements RoamConfigHost {
       _readingItem(),
       _aiItem(),
     ];
+    final profiles = await db.profileDao.allProfiles();
+    for (final profile in profiles) {
+      final instanceKey =
+          roamInstanceKey(baseUrl: profile.baseUrl, email: profile.email);
+      // 没有登录邮箱 / 地址坏掉：缺一个就没有跨设备身份，硬编 key 只会在别的
+      // 设备上凭空造出一条假条目。
+      if (instanceKey == null) continue;
+      items.add(RoamConfigItem(
+        key: 'instance:$instanceKey',
+        group: 'instances',
+        secret: false,
+        data: <String, Object?>{
+          'baseUrl': profile.baseUrl,
+          'name': profile.name,
+          'email': profile.email,
+          'colorIndex': profile.colorIndex,
+          'sort': profile.sort,
+        },
+      ));
+      if (!includeSecrets) continue;
+      final token = await tokens.read(profile.id);
+      if (token == null || token.isEmpty) continue;
+      items.add(RoamConfigItem(
+        key: 'secret.instance:$instanceKey',
+        group: 'secrets',
+        secret: true,
+        data: <String, Object?>{'value': token},
+      ));
+    }
+    if (includeSecrets) {
+      final apiKey = await aiKeys.read();
+      if (apiKey != null && apiKey.isNotEmpty) {
+        items.add(RoamConfigItem(
+          key: 'secret.ai_key',
+          group: 'secrets',
+          secret: true,
+          data: <String, Object?>{'value': apiKey},
+        ));
+      }
+    }
     return items;
   }
 
@@ -139,6 +180,42 @@ class RoamConfigHostImpl implements RoamConfigHost {
   @override
   Future<String?> readSecret(String key) async => null;
 
+  static const String _instanceSecretPrefix = 'secret.instance:';
+
   @override
-  Future<void> writeSecret(String key, String value) async {}
+  Future<void> writeSecret(String key, String value) async {
+    if (key == 'secret.ai_key') {
+      await aiKeys.write(value); // 空串 = 删（`AiApiKeyStore.write` 的语义）
+      prefs.notifyChanged();
+      return;
+    }
+    final instanceKey = _instanceKeyFromSecret(key);
+    if (instanceKey == null) return;
+    final profile = await _profileFor(instanceKey);
+    // 本机没有这台实例：不写、不新建 —— 否则一次失误就能在这台机器上凭空
+    // 多出一条别人的登录态。
+    if (profile == null) return;
+    if (value.isEmpty) {
+      await tokens.delete(profile.id);
+    } else {
+      await tokens.write(profile.id, value);
+    }
+    prefs.notifyChanged();
+  }
+
+  static String? _instanceKeyFromSecret(String key) {
+    if (!key.startsWith(_instanceSecretPrefix)) return null;
+    final instanceKey = key.substring(_instanceSecretPrefix.length);
+    return instanceKey.isEmpty ? null : instanceKey;
+  }
+
+  Future<Profile?> _profileFor(String instanceKey) async {
+    for (final profile in await db.profileDao.allProfiles()) {
+      if (roamInstanceKey(baseUrl: profile.baseUrl, email: profile.email) ==
+          instanceKey) {
+        return profile;
+      }
+    }
+    return null;
+  }
 }
