@@ -100,4 +100,73 @@ void main() {
     await r.host.applyItems(await r.host.exportItems());
     expect(snapshot(await r.host.exportItems()), once);
   });
+
+  test('实例按 instanceKey 去重：新建 → 再写只改展示字段、不碰登录态', () async {
+    final r = await roamRig();
+    const apiBase = 'https://mail.example.com/api';
+    const key = 'instance:https://mail.example.com|a@b.com';
+    await r.host.applyItems(const <RoamConfigItem>[
+      RoamConfigItem(
+        key: key,
+        group: 'instances',
+        secret: false,
+        data: <String, Object?>{
+          'baseUrl': apiBase,
+          'name': '工作',
+          'email': 'a@b.com',
+          'colorIndex': 2,
+          'sort': 0,
+        },
+      ),
+    ]);
+    var profiles = await r.db.profileDao.allProfiles();
+    expect(profiles.length, 1);
+    expect(profiles.single.needsLogin, isTrue, reason: '没有 token 的实例恢复后要先登录');
+    expect(profiles.single.colorIndex, 2);
+    final id = profiles.single.id;
+    await r.db.profileDao.updateProfileFields(
+      id,
+      userId: 7,
+      userName: 'Alice',
+      needsLogin: false,
+    );
+    await r.host.applyItems(const <RoamConfigItem>[
+      RoamConfigItem(
+        key: key,
+        group: 'instances',
+        secret: false,
+        data: <String, Object?>{
+          'baseUrl': apiBase,
+          'name': '新备注',
+          'email': 'a@b.com',
+          'colorIndex': 5,
+          'sort': 0,
+        },
+      ),
+    ]);
+    profiles = await r.db.profileDao.allProfiles();
+    expect(profiles.length, 1, reason: '同一个 instanceKey 不许建出第二台');
+    expect(profiles.single.id, id, reason: '本机 id 不动（token 的 key 是它）');
+    expect(profiles.single.name, '新备注');
+    expect(profiles.single.colorIndex, 5);
+    expect(profiles.single.userId, 7);
+    expect(profiles.single.userName, 'Alice');
+    expect(profiles.single.needsLogin, isFalse);
+  });
+
+  test('key 与 data 对不上的实例条目不写（脏数据不制造假实例）', () async {
+    final r = await roamRig();
+    await r.host.applyItems(const <RoamConfigItem>[
+      RoamConfigItem(
+        key: 'instance:https://a.example.com|x@y.com',
+        group: 'instances',
+        secret: false,
+        data: <String, Object?>{
+          'baseUrl': 'https://b.example.com/api',
+          'email': 'x@y.com',
+        },
+      ),
+    ]);
+    expect(await r.db.profileDao.allProfiles(), isEmpty);
+  });
 }

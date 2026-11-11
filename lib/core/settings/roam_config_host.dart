@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cirro_mail_ext/cirro_mail_ext.dart';
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../data/models/profile.dart';
 import '../../features/ai/ai_settings_store.dart';
@@ -9,6 +10,8 @@ import '../../features/compose/writing_snippets.dart';
 import '../db/database.dart';
 import '../storage/prefs_store.dart';
 import '../storage/token_store.dart';
+import '../theme/instance_colors.dart';
+import '../util/url_utils.dart';
 
 /// 核心侧的配置快照读写口：把本机设置读成条目、把条目写回同一批存储、写盘后
 /// 让 [changes] 响一声。没有网络 / 加密 / 云端概念（见 `docs/config-snapshot.md`）。
@@ -18,12 +21,18 @@ class RoamConfigHostImpl implements RoamConfigHost {
     required this.tokens,
     required this.db,
     AiApiKeyStore? aiKeys,
-  }) : aiKeys = aiKeys ?? AiApiKeyStore();
+    Uuid? uuid,
+  })  : aiKeys = aiKeys ?? AiApiKeyStore(),
+        _uuid = uuid ?? const Uuid();
 
   final PrefsStore prefs;
   final TokenStore tokens;
   final AppDatabase db;
   final AiApiKeyStore aiKeys;
+
+  /// 只在 `_applyInstance` 里给新实例发本机 id 用；测试可注入固定种子的假
+  /// `Uuid` 让断言好写。
+  final Uuid _uuid;
 
   /// 就是 `PrefsStore` 那一条（实例 / token 的写入口也已汇进同一个 signal）。
   @override
@@ -304,8 +313,56 @@ class RoamConfigHostImpl implements RoamConfigHost {
 
   static bool? _bool(Object? raw) => raw is bool ? raw : null;
 
-  // Task 8 填实现
-  Future<void> _applyInstance(String instanceKey, Map<String, Object?> data) async {}
+  /// 实例写回：按 `instanceKey` 去重，绝不用对方给的 id（跨设备的 `profiles.id`
+  /// 是两套 UUID，拿对方的写本机会把 `token_<id>` 弄拧）。已存在 → 只改展示
+  /// 字段（备注名 / 色标 / 排序），不碰 `userId` / `userName` / `serverTitle` /
+  /// `ossBase` / `needsLogin`：那几样是登录与探测的产物。也不删本机多出来的
+  /// 实例 —— 别的设备没导出不等于本机该删。
+  Future<void> _applyInstance(String instanceKey, Map<String, Object?> data) async {
+    final baseUrl = data['baseUrl'];
+    final email = data['email'];
+    if (baseUrl is! String || email is! String) return;
+    final normalizedBase = UrlUtils.normalizeApiBase(baseUrl);
+    // key 与 data 必须自洽：对不上说明这条是脏数据（或对方版本算 key 的规则
+    // 变了），照 data 硬建会凭空多出一台谁也没登记过的实例。
+    final wanted = roamInstanceKey(baseUrl: normalizedBase, email: email);
+    if (wanted == null || wanted != instanceKey) return;
+    final existing = await db.profileDao.allProfiles();
+    Profile? match;
+    for (final profile in existing) {
+      if (roamInstanceKey(baseUrl: profile.baseUrl, email: profile.email) ==
+          wanted) {
+        match = profile;
+        break;
+      }
+    }
+    final name = data['name'];
+    final colorIndex = _int(data['colorIndex']);
+    final sort = _int(data['sort']);
+    if (match != null) {
+      await db.profileDao.updateProfileFields(
+        match.id,
+        name: name is String ? name : null,
+        colorIndex: colorIndex,
+        sort: sort,
+      );
+      prefs.notifyChanged();
+      return;
+    }
+    await db.profileDao.upsertProfile(Profile(
+      id: _uuid.v4(),
+      baseUrl: normalizedBase,
+      name: name is String ? name : '',
+      email: email,
+      sort: sort ?? existing.length,
+      colorIndex: colorIndex ??
+          InstanceColors.nextIndex(existing.map((profile) => profile.colorIndex)),
+      needsLogin: true, // 恢复出来的实例没有 token：先落「需要登录」
+      ossBase: UrlUtils.ossBase(userApi: normalizedBase),
+      createdAt: DateTime.now().toUtc(),
+    ));
+    prefs.notifyChanged();
+  }
 
   @override
   Future<void> deleteItems(List<String> keys) async {}
