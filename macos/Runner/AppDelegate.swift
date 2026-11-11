@@ -162,8 +162,27 @@ class AppDelegate: FlutterAppDelegate {
   /// 这条覆盖的是**点通知**：系统会激活 App，但桌面版不像 iOS 那样自带
   /// 「打开某个界面」的语义 —— 用户点了邮件通知，屏幕上却什么都没发生，
   /// 只会以为 App 卡死了。Cmd-Tab 切回来也算同一种情况。
+  ///
+  /// ## 为什么不调 `super`
+  ///
+  /// **这一版 `FlutterAppDelegate` 根本没有实现 `applicationDidBecomeActive:`。**
+  /// 本机探针实测（加载 `FlutterMacOS.framework` 后问运行时）：
+  ///
+  /// ```
+  /// instancesRespondToSelector(applicationDidBecomeActive:) = 0   // 父类链上也没有
+  /// ```
+  ///
+  /// 它只是在头文件里声明了 `NSApplicationDelegate` 一致性，可选方法并没有实现。
+  /// 于是 `super.applicationDidBecomeActive(...)` 编译得过、运行期却走
+  /// `doesNotRecognizeSelector`，抛 **NSInvalidArgumentException** ——
+  /// 系统日志里每启动一次就有一条
+  /// `[com.apple.hiservices:HIExceptions] FAULT: NSInvalidArgumentException`。
+  ///
+  /// 更糟的是这个异常会把本方法**后面几行一起吞掉**：「激活时若没有可见窗口
+  /// 就补一个出来」那条兜底从来没执行过（点通知把 App 叫起来时窗口不会回来）。
+  /// 与 [applicationDidFinishLaunching] 里「不要调 super」同一条理由：这个版本
+  /// 的生命周期转发在 macOS 上不完整，别指望它。
   override func applicationDidBecomeActive(_ notification: Notification) {
-    super.applicationDidBecomeActive(notification)
     if let window = retainedWindow ?? mainFlutterWindow, !window.isVisible {
       showMainWindow()
     }
