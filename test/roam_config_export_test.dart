@@ -222,4 +222,68 @@ void main() {
       isTrue,
     );
   });
+
+  test('同 instanceKey 的多条本机 profile 只导出一条实例（先到先得）', () async {
+    final r = await rig();
+    // 同 host 同邮箱、挂载 path 不同 → instanceKey 相同。
+    await r.db.profileDao.upsertProfile(const Profile(
+      id: 'p-1',
+      baseUrl: 'https://mail.example.com/api',
+      name: '工作',
+      email: 'a@b.com',
+      colorIndex: 2,
+      sort: 0,
+    ));
+    await r.db.profileDao.upsertProfile(const Profile(
+      id: 'p-2',
+      baseUrl: 'https://mail.example.com/mail/api',
+      name: '工作（重复登记）',
+      email: 'a@b.com',
+      colorIndex: 5,
+      sort: 1,
+    ));
+    await r.tokens.write('p-1', 'tok-1');
+    await r.tokens.write('p-2', 'tok-2');
+    final withSecrets = await r.host.exportItems(includeSecrets: true);
+    const key = 'instance:https://mail.example.com|a@b.com';
+    final instances =
+        withSecrets.where((item) => item.group == 'instances').toList();
+    expect(instances.length, 1, reason: '按 key 建 map 的消费方会静默丢掉一条');
+    expect(instances.single.key, key);
+    expect(instances.single.data['name'], '工作', reason: '先到先得（按 sort 的顺序）');
+    expect(instances.single.data['colorIndex'], 2);
+    final tokens = withSecrets
+        .where((item) => item.group == 'secrets')
+        .toList(growable: false);
+    expect(tokens.length, 1, reason: '一台实例至多一份登录态');
+    expect(tokens.single.key, 'secret.instance:https://mail.example.com|a@b.com');
+    expect(tokens.single.data['value'], 'tok-1');
+  });
+
+  test('先去的那条没有 token 时，token 仍从同 key 的另一条带上', () async {
+    final r = await rig();
+    await r.db.profileDao.upsertProfile(const Profile(
+      id: 'p-1',
+      baseUrl: 'https://mail.example.com/api',
+      email: 'a@b.com',
+      needsLogin: true,
+      sort: 0,
+    ));
+    await r.db.profileDao.upsertProfile(const Profile(
+      id: 'p-2',
+      baseUrl: 'https://mail.example.com/mail/api',
+      email: 'a@b.com',
+      sort: 1,
+    ));
+    await r.tokens.write('p-2', 'tok-2');
+    final tokens = (await r.host.exportItems(includeSecrets: true))
+        .where((item) => item.group == 'secrets')
+        .toList(growable: false);
+    expect(tokens.length, 1);
+    expect(
+      tokens.single.data['value'],
+      'tok-2',
+      reason: '同实例还有一条留着 token，别的设备就不该被要求重登',
+    );
+  });
 }

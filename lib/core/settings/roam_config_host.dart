@@ -44,12 +44,41 @@ class RoamConfigHostImpl implements RoamConfigHost {
       _aiItem(),
     ];
     final profiles = await db.profileDao.allProfiles();
+    // 同一台实例在本机可能被登记成多条 profile（同 host 同邮箱、只是挂载 path
+    // 不同 → `roamInstanceKey` 相同）。**按 key 去重、先到先得**：消费方按
+    // key 建 map，重复条目只会被静默丢掉一条 —— 等于让迭代顺序决定别人的备注名
+    // / 色标取哪条，还白传一份 token。`instance:` 与 `secret.instance:` 共用
+    // 这个去重后的 key，所以一台实例至多一条配置 + 一条 token。
+    final firstByInstance = <String, Profile>{};
     for (final profile in profiles) {
       final instanceKey =
           roamInstanceKey(baseUrl: profile.baseUrl, email: profile.email);
       // 没有登录邮箱 / 地址坏掉：缺一个就没有跨设备身份，硬编 key 只会在别的
       // 设备上凭空造出一条假条目。
       if (instanceKey == null) continue;
+      firstByInstance.putIfAbsent(instanceKey, () => profile);
+    }
+    // token 也按去重后的 key 收：先去的那条可能恰好是「需要重新登录」的，
+    // 只要同实例还有一条留着 token 就不该让别的设备丢登录态。
+    final tokensByInstance = <String, String>{};
+    if (includeSecrets) {
+      for (final profile in profiles) {
+        final instanceKey =
+            roamInstanceKey(baseUrl: profile.baseUrl, email: profile.email);
+        if (instanceKey == null ||
+            !firstByInstance.containsKey(instanceKey) ||
+            tokensByInstance.containsKey(instanceKey)) {
+          continue;
+        }
+        final token = await tokens.read(profile.id);
+        if (token != null && token.isNotEmpty) {
+          tokensByInstance[instanceKey] = token;
+        }
+      }
+    }
+    for (final entry in firstByInstance.entries) {
+      final instanceKey = entry.key;
+      final profile = entry.value;
       items.add(RoamConfigItem(
         key: 'instance:$instanceKey',
         group: 'instances',
@@ -62,9 +91,8 @@ class RoamConfigHostImpl implements RoamConfigHost {
           'sort': profile.sort,
         },
       ));
-      if (!includeSecrets) continue;
-      final token = await tokens.read(profile.id);
-      if (token == null || token.isEmpty) continue;
+      final token = tokensByInstance[instanceKey];
+      if (token == null) continue;
       items.add(RoamConfigItem(
         key: 'secret.instance:$instanceKey',
         group: 'secrets',
@@ -198,9 +226,10 @@ class RoamConfigHostImpl implements RoamConfigHost {
     if (value.isEmpty) {
       await tokens.delete(profile.id);
     } else {
+      // `TokenStore.write` 自己会 notify（同一 signal），这里不再补一枪：
+      // 一次写盘只该让消费方醒一次，否则漫游会重复上传同一份快照。
       await tokens.write(profile.id, value);
     }
-    prefs.notifyChanged();
   }
 
   static String? _instanceKeyFromSecret(String key) {
