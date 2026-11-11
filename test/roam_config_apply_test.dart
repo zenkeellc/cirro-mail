@@ -189,6 +189,57 @@ void main() {
     );
   });
 
+  test('常用语空列表照样清空本机那一组（对方删光了要跟）', () async {
+    final r = await roamRig(seed: <String, Object>{
+      'cm_phrases': jsonEncode(<String, dynamic>{
+        'a@b.com': <Map<String, String>>[
+          <String, String>{'id': 'p1', 'name': '问候', 'text': '你好'},
+        ],
+      }),
+    });
+    expect(r.prefs.phrasesFor('a@b.com'), hasLength(1));
+
+    await r.host.applyItems(const <RoamConfigItem>[
+      RoamConfigItem(
+        key: 'phrases:a@b.com',
+        group: 'compose',
+        secret: false,
+        data: <String, Object?>{'items': <Object?>[]},
+      ),
+    ]);
+
+    // 「空列表」是对方那台**删光了**，与「一条都解不出来」（上一条用例）是
+    // 两件事：前者要跟着删，后者要保住本地。把这两条混成一条（比如「空就
+    // 一律 return」）会让跨设备删除永远不生效 —— 用户删了常用语，另一台
+    // 永远还在。
+    expect(r.prefs.phrasesFor('a@b.com'), isEmpty,
+        reason: '空列表 = 删除传播，必须清掉本机这一组');
+  });
+
+  test('常用语坏条目跳过、好的那条照写（不因第一条坏就整组放弃）', () async {
+    final r = await roamRig();
+
+    await r.host.applyItems(const <RoamConfigItem>[
+      RoamConfigItem(
+        key: 'phrases:a@b.com',
+        group: 'compose',
+        secret: false,
+        data: <String, Object?>{
+          'items': <Object?>[
+            // 第一条就解不出来（不是 Map）：只该跳过它，不该连累后面那条。
+            'junk',
+            <String, Object?>{'id': 'p2', 'name': '约时间', 'text': '周四下午？'},
+          ],
+        },
+      ),
+    ]);
+
+    final saved = r.prefs.phrasesFor('a@b.com');
+    expect(saved, hasLength(1), reason: '坏条目跳过，好的那条必须留下');
+    expect(saved.single.id, 'p2');
+    expect(saved.single.text, '周四下午？');
+  });
+
   test('key 与 data 对不上的实例条目不写（脏数据不制造假实例）', () async {
     final r = await roamRig();
     await r.host.applyItems(const <RoamConfigItem>[
