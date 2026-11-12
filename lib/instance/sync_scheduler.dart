@@ -12,6 +12,7 @@ import '../core/notify/new_mail_bus.dart';
 import '../core/storage/prefs_store.dart';
 import '../core/util/diag_log.dart';
 import '../data/models/mail_row.dart';
+import '../data/models/user_info.dart';
 import 'runtime_registry.dart';
 import 'sync_engine.dart';
 
@@ -35,6 +36,7 @@ class SyncScheduler {
     this.sends,
     this.onNewMail,
     this.onSessionRecovered,
+    this.onRestoredSessionAdopted,
   });
 
   final AppDatabase db;
@@ -63,6 +65,21 @@ class SyncScheduler {
   /// 这边负责撤销它。做成回调而不是在这里直接持有 `ProfileRepository`，
   /// 理由与 registry 里那条一样 —— 调度器不该反向依赖仓储层。
   final Future<void> Function(String profileId)? onSessionRecovered;
+
+  /// 恢复出来的登录态**核对通过**之后把身份落库（`userId` / `userName` /
+  /// `needs_login = 0`）。
+  ///
+  /// 为什么需要它：配置漫游写回的是「实例条目 + token」，实例行本身是
+  /// `needs_login = 1`、`userId = 0` 落库的。没有这一步，一台明明能收信的
+  /// 恢复实例会一直停在 `Profile.isLoggedIn == false` —— 主界面 / 侧栏
+  /// （只列已登录实例）里看不见它，设置页却写着「需要登录」，用户只能手动
+  /// 再登一次；而手动重登会用 `loginUserInfo.email` 覆盖 `profile.email`，
+  /// 漫游 key 当场变成另一个账号 —— 两个同名实例、串账号就是这么来的。
+  ///
+  /// 做成回调而不是直接写库：理由与 [onSessionRecovered] 一样，调度器不
+  /// 反向依赖仓储层。
+  final Future<void> Function(Profile profile, UserInfo user)?
+      onRestoredSessionAdopted;
 
   /// 心跳的慢活回调：每 [slowEveryTicks] 拍（≈20 秒）调一次。
   ///
@@ -209,13 +226,56 @@ class SyncScheduler {
   ///    「未登录」并且永远等不到用户重登（`_stopped` 是粘的）。用户重登后
   ///    `markLoggedIn` 改 `profiles` 流 → `SyncController` 重算 → 再走一遍这里。
   ///
-  /// 第 3 条（「需要重登」这个标记要先验活）见 [RuntimeRegistry.probeSession]：
-  /// 它只在**内存里**有这个标记时才会走到 —— 冷启动时那是空的，于是
-  /// 「库里标着 needs_login、钥匙串里其实还有一个能用的 token」那种情况
-  /// 由下面 `hasToken` 直接放行，真 401 了由 `SyncEngine` 停下并报出来。
+  /// 第 3 条是**恢复出来的实例**先核对身份：`needs_login = 1` 但钥匙串里
+  /// 已经有 token（配置漫游 / 换机恢复的常态）时，先问一次
+  /// `/my/loginUserInfo` 确认这枚 token 就是实例记录的登录邮箱 ——
+  /// 对上了才回填身份、对不上就不建 engine（见下面 `needsLogin` 那一段）。
+  /// 内存里那条「需重登」标记的验活仍归 [RuntimeRegistry.probeSession]。
   Future<SyncEngine?> _ensureEngineFor(Profile profile) async {
     final runtime = await registry.ensureReady(profile);
     if (runtime.isDisposed) return null;
+
+    // **恢复出来的实例先核对 token 属于谁**（配置漫游 / 换机恢复的入口）。
+    //
+    // `needs_login = 1` + 钥匙串里已经有 token，是恢复路径的常态：实例条目
+    // 先落库，token 后写回。之前这里直接放行去收信，于是云端若有一条串了
+    // 账号的实例条目（同一台实例上用另一个账号登录过、宿主又同时承载两个
+    // 域名），恢复出来就会「实例名是对的、邮箱全是另一个账号的」。
+    //
+    // 核对通过才把身份回填并清 `needs_login`；对不上就不建 engine（不把
+    // 别的账号的信混进来），也不改 `profile.email`（改名会让漫游 key 跟着
+    // 变，越描越黑），界面保持「需要登录」等用户自己处理。
+    if (profile.needsLogin) {
+      final adoption = await registry.adoptRestoredSession(profile);
+      switch (adoption.result) {
+        case RestoredSession.adopted:
+          final user = adoption.user;
+          if (user != null) {
+            DiagLog.log(
+              'sync',
+              '恢复的登录态属于 ${profile.email}，回填身份（${profile.id}）',
+            );
+            final persist = onRestoredSessionAdopted;
+            if (persist != null) unawaited(persist(profile, user));
+          }
+        case RestoredSession.mismatch:
+          DiagLog.log(
+            'sync',
+            '恢复的登录态属于 ${adoption.actualEmail}，与实例邮箱 '
+            '${profile.email} 不一致：不建 engine，等用户重登（${profile.id}）',
+          );
+          return null;
+        case RestoredSession.expired:
+          DiagLog.log('sync', '${profile.id} 的恢复 token 已失效，等用户重登');
+          return null;
+        case RestoredSession.none:
+          // 没有 token：与下面的 `hasToken` 闸同结论（建了 engine 也是空转）。
+          return null;
+        case RestoredSession.unknown:
+          // 断网 / 服务端抖动：不下结论，按原样继续（有 token 就照常收信）。
+          break;
+      }
+    }
 
     if (registry.needsLoginMessage(profile.id) != null) {
       switch (await registry.probeSession(profile)) {

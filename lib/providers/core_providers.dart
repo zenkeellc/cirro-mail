@@ -305,6 +305,25 @@ final Provider<SyncScheduler> syncSchedulerProvider = Provider<SyncScheduler>(
         }
         await profiles.markNeedsLogin(profileId, needsLogin: false);
       },
+      // 恢复出来的登录态（配置漫游写回的 token）核对通过 → 回填身份。
+      //
+      // **email 用实例自己的**（`profile.email`），不用 `user.email`：这一步
+      // 的结论本来就要求两者一致，写回同一个值只是避免大小写/空白被服务端
+      // 的写法带偏 —— 它是漫游 key 的一部分，不能因为一次恢复而变。
+      onRestoredSessionAdopted: (profile, user) async {
+        if (tokens.isDegraded) {
+          // 与上一条同口径：钥匙串降级时 token 只活在内存里，这次「已登录」
+          // 活不过重启，落库只会让用户下次启动又看到「登录已失效」。
+          DiagLog.log('sync', '钥匙串降级中，不回填恢复身份（${profile.id}）');
+          return;
+        }
+        await profiles.markLoggedIn(
+          profile.id,
+          userId: user.userId,
+          email: profile.email,
+          userName: user.primaryAccountName,
+        );
+      },
     );
     ref.onDispose(scheduler.dispose);
     return scheduler;

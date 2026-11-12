@@ -42,6 +42,35 @@ import 'sidebar_counts.dart';
 /// 与 `watchUnreadByProfile` 同款），写一次库只重建一次 —— 那 N 个订阅共享它，
 /// 不是 N 条查询。原来这里是每个邮箱一条 `Future`，而且算完就不再失效：
 /// 读掉一封信之后侧栏的数字会一直停在旧的。
+/// 侧栏实例行显示什么。
+///
+/// **重名的实例必须能分辨**：配置漫游恢复出来的实例带着备注名（例如两台
+/// 都叫「GUIKE」，一台登录 `kedong@gui-ke.com`、一台登录 `admin@en.ke`），
+/// 只显示名字的话用户根本分不清哪一行是哪台 —— 从 2026-11-12 的
+/// 「恢复出来的 guike 实例显示的全是 @en.ke 邮箱」就是这么被误读成丢数据的。
+///
+/// 只在**重名**时才补登录邮箱：每行都挂邮箱会把侧栏撑得很长，而正常情况下
+/// 备注名本身就够用。名字恰好就是邮箱时不再重复拼一遍。
+String sidebarInstanceLabel(Profile profile, {required bool duplicated}) {
+  final email = profile.email.trim();
+  final name = profile.displayName.trim();
+  if (!duplicated || email.isEmpty) return profile.displayName;
+  if (name.toLowerCase() == email.toLowerCase()) return profile.displayName;
+  return '$name · $email';
+}
+
+/// 哪些显示名在**当前这批实例里重复**（大小写不敏感，空名不参与）。
+Set<String> duplicatedInstanceNames(Iterable<Profile> profiles) {
+  final seen = <String>{};
+  final duplicated = <String>{};
+  for (final profile in profiles) {
+    final name = profile.displayName.trim().toLowerCase();
+    if (name.isEmpty) continue;
+    if (!seen.add(name)) duplicated.add(name);
+  }
+  return duplicated;
+}
+
 class SidebarMailboxTree extends ConsumerWidget {
   const SidebarMailboxTree({
     super.key,
@@ -86,6 +115,7 @@ class SidebarMailboxTree extends ConsumerWidget {
     if (profiles.isEmpty) return const SizedBox.shrink();
 
     final byProfile = ref.watch(allMailboxesByProfileProvider);
+    final duplicatedNames = duplicatedInstanceNames(profiles);
     final pinned = pinnedMailboxOf(uri);
     // 地址停在哪台实例的实例级列表上（`/mail/<实例>`，不带 `account`）。
     final node = instanceNodeOf(uri);
@@ -99,6 +129,9 @@ class SidebarMailboxTree extends ConsumerWidget {
             uri: uri,
             push: push,
             masterExpanded: masterExpanded,
+            showEmail: duplicatedNames.contains(
+              profile.displayName.trim().toLowerCase(),
+            ),
             selected: node == profile.id || pinned?.profileId == profile.id,
             boxes: boxesOfProfile(
               profile.id,
@@ -127,6 +160,7 @@ class _ProfileGroup extends ConsumerStatefulWidget {
     required this.uri,
     required this.push,
     required this.masterExpanded,
+    required this.showEmail,
     required this.selected,
     required this.boxes,
     required this.byProfile,
@@ -136,6 +170,10 @@ class _ProfileGroup extends ConsumerStatefulWidget {
   final Uri uri;
   final bool push;
   final bool masterExpanded;
+
+  /// 是否有**另一个实例也叫这个名字**：是的话实例行补上登录邮箱，
+  /// 否则两台同名实例在侧栏里长得一模一样（见 [sidebarInstanceLabel]）。
+  final bool showEmail;
 
   /// 实例行与它下面的子行要不要高亮。
   final bool selected;
@@ -249,6 +287,7 @@ class _ProfileGroupState extends ConsumerState<_ProfileGroup> {
       children: <Widget>[
         _InstanceSidebarRow(
           profile: profile,
+          showEmail: widget.showEmail,
           selected: widget.selected,
           expanded: expanded,
           onTap: () => _openInstance(context, ref, profile),
@@ -562,6 +601,7 @@ class _SidebarMailboxRowState extends State<SidebarMailboxRow> {
 class _InstanceSidebarRow extends ConsumerWidget {
   const _InstanceSidebarRow({
     required this.profile,
+    required this.showEmail,
     required this.selected,
     required this.expanded,
     required this.onTap,
@@ -569,6 +609,7 @@ class _InstanceSidebarRow extends ConsumerWidget {
   });
 
   final Profile profile;
+  final bool showEmail;
   final bool selected;
   final bool expanded;
   final VoidCallback onTap;
@@ -581,7 +622,7 @@ class _InstanceSidebarRow extends ConsumerWidget {
       emphasized: true,
       icon: Icons.dns_outlined,
       color: InstanceColors.of(profile.colorIndex),
-      label: profile.displayName,
+      label: sidebarInstanceLabel(profile, duplicated: showEmail),
       selected: selected,
       onTap: onTap,
       total: ref.watch(instanceTotalProvider(profile.id)),

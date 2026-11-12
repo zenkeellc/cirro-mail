@@ -9,6 +9,7 @@ import '../core/storage/prefs_store.dart';
 import '../core/storage/token_store.dart';
 import '../core/util/diag_log.dart';
 import '../data/models/profile.dart';
+import '../data/models/user_info.dart';
 import 'profile_runtime.dart';
 
 /// `profileId → ProfileRuntime`。
@@ -141,6 +142,91 @@ class RuntimeRegistry {
   /// 只按 id 拿一个**已经建好**的运行时（UI 里已经同步拿不到 profile 时用）。
   ProfileRuntime? peek(String profileId) => _runtimes[profileId];
 
+  /// 恢复出来的登录态与实例记录的邮箱**对不上**的实例（内存态）。
+  ///
+  /// 为什么不是「对不上就删 token」：token 可能是用户自己的另一个账号，删掉
+  /// 是不可逆的；但也不能拿它当这台实例的登录态 —— 否则这台实例的信箱里
+  /// 会出现另一个账号的邮件（配置漫游恢复时最典型的症状）。这里记住结论，
+  /// 调度器据此**不建 engine**，界面上仍是「需要登录」，用户自己重登即可。
+  ///
+  /// 用户重新登录（[clearNeedsLogin]）或实例被删除（[discard]）时清掉。
+  final Map<String, String> _identityMismatch = <String, String>{};
+
+  /// 上一次**尝试**核对恢复登录态的时刻（冷却与 [probeSession] 同口径）。
+  final Map<String, DateTime> _adoptAt = <String, DateTime>{};
+
+  /// 恢复出来的登录态被判定「不是这个实例的账号」时，服务器上那个账号的
+  /// 邮箱（诊断用；null = 没判过 / 已清）。
+  String? identityMismatchEmail(String profileId) => _identityMismatch[profileId];
+
+  /// 核对「恢复出来的 token 到底是不是这个实例记录的登录邮箱」。
+  ///
+  /// 场景：配置漫游把 `instance:<host>|<email>` 与 `secret.instance:<host>|<email>`
+  /// 一起写回本机。实例行落库时 `needs_login = 1`，token 一写进钥匙串，
+  /// 同步引擎就会拿它去收信 —— 但**没有人核对过这枚 token 属于谁**。
+  /// 云端条目本身可能已经串了（例如同一台实例上用另一个账号登录过，
+  /// 宿主又同时承载两个域名，登录照样成功），于是恢复出来的实例名字没错、
+  /// 邮箱却全是另一个账号的。
+  ///
+  /// 这里用 `/my/loginUserInfo` 做一次权威核对：
+  /// - 一致 → 回填身份（由调用方落库）并清掉 `needs_login`；
+  /// - 不一致 → **不改** `profile.email`（改名会让漫游 key 跟着变，越描越黑），
+  ///   记下结论、不建 engine，留给用户重登；
+  /// - 401 / 断网 → 不下结论（401 走既有的「需要重登」路径；断网按原样继续）。
+  ///
+  /// [force] = true 绕开 [_probeCooldown]（用户点「立即同步」时用）。
+  Future<RestoredAdoption> adoptRestoredSession(
+    Profile profile, {
+    bool force = false,
+  }) async {
+    final rejected = _identityMismatch[profile.id];
+    if (rejected != null && !force) {
+      return RestoredAdoption(RestoredSession.mismatch, actualEmail: rejected);
+    }
+    final runtime = _runtimes[profile.id];
+    if (runtime == null || runtime.isDisposed) {
+      return const RestoredAdoption(RestoredSession.none);
+    }
+    final now = DateTime.now().toUtc();
+    if (!force) {
+      final last = _adoptAt[profile.id];
+      if (last != null && now.difference(last) < _probeCooldown) {
+        return const RestoredAdoption(RestoredSession.unknown);
+      }
+    }
+    _adoptAt[profile.id] = now;
+
+    await runtime.warmUp();
+    if (!runtime.hasToken) return const RestoredAdoption(RestoredSession.none);
+
+    try {
+      final user = await runtime.myApi.loginUserInfo();
+      final expected = _normalizeEmail(profile.email);
+      final actual = _normalizeEmail(user.email);
+      if (expected.isEmpty || actual != expected) {
+        _identityMismatch[profile.id] = user.email;
+        DiagLog.log(
+          'registry',
+          '恢复的登录态与实例邮箱不一致（${profile.id}），不采用',
+        );
+        return RestoredAdoption(RestoredSession.mismatch, actualEmail: user.email);
+      }
+      _identityMismatch.remove(profile.id);
+      // 内存里的「需重登」标记与探测冷却一起撤；落库由调用方做。
+      clearNeedsLogin(profile.id);
+      return RestoredAdoption(RestoredSession.adopted, user: user);
+    } on AuthExpiredException {
+      _adoptAt.remove(profile.id);
+      return const RestoredAdoption(RestoredSession.expired);
+    } catch (error) {
+      // 断网 / 5xx：不下结论，按原样继续（引擎会照常收信）。
+      DiagLog.log('registry', '恢复登录态核对无结论（${profile.id}）：$error');
+      return const RestoredAdoption(RestoredSession.unknown);
+    }
+  }
+
+  static String _normalizeEmail(String value) => value.trim().toLowerCase();
+
   /// 丢掉某个实例的运行时（删实例、登出时）。
   void discard(String profileId) {
     final runtime = _runtimes.remove(profileId);
@@ -152,6 +238,8 @@ class RuntimeRegistry {
     runtime?.dispose();
     _needsLoginMessages.remove(profileId);
     _probedAt.remove(profileId);
+    _adoptAt.remove(profileId);
+    _identityMismatch.remove(profileId);
     _revalidating.remove(profileId);
     if (!_invalidated.isClosed) _invalidated.add(profileId);
   }
@@ -164,6 +252,9 @@ class RuntimeRegistry {
     // 标记撤了，冷却也一起撤：下一次 `start` 不该被上一次探测的结论挡住
     // （那会让「刚重登成功」的实例在两分钟内拒绝被重新调度）。
     _probedAt.remove(profileId);
+    _adoptAt.remove(profileId);
+    // 用户已经重登：身份核对（以及「这枚 token 不是这个账号的」）作废。
+    _identityMismatch.remove(profileId);
   }
 
   /// 上一次**尝试**探测的时刻。
@@ -361,4 +452,38 @@ enum SessionProbe {
   /// 问不出结论：断网、超时、服务端 5xx —— 既不能据此判死，
   /// 也不能据此翻案。
   unknown,
+}
+
+/// [RuntimeRegistry.adoptRestoredSession] 的结论。
+enum RestoredSession {
+  /// token 有效，且 `loginUserInfo.email` 与实例记录的登录邮箱一致。
+  /// 调用方据此把身份落库（`markLoggedIn`），实例从此正常参与 UI / 同步。
+  adopted,
+
+  /// token 有效，但属于**另一个登录邮箱**。不采用：这是「恢复出来的实例
+  /// 显示的是别人/另一个账号的邮箱」的根因形态。用户重登后才恢复。
+  mismatch,
+
+  /// token 已失效（401）。走既有的「需要重登」路径，不在这里删 token。
+  expired,
+
+  /// 本机没有这枚 token（漫游没写回、或钥匙串读不到）。
+  none,
+
+  /// 网络 / 服务端抖动，得不出结论。按原样继续（有 token 就照常收信）。
+  unknown,
+}
+
+/// 一次身份核对的结果：[result] 是结论，[user] 只在 [RestoredSession.adopted]
+/// 时非空，[actualEmail] 只在 [RestoredSession.mismatch] 时非空（诊断用）。
+@immutable
+class RestoredAdoption {
+  const RestoredAdoption(this.result, {this.user, this.actualEmail});
+
+  final RestoredSession result;
+  final UserInfo? user;
+  final String? actualEmail;
+
+  @override
+  String toString() => 'RestoredAdoption($result, actual=$actualEmail)';
 }
